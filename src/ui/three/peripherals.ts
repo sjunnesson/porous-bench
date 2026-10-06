@@ -169,7 +169,6 @@ function tactile(input: Button): Peripheral {
   cap.add(fill);
   cap.position.z = capZ;
   root.add(cap);
-  for (const [x, y] of [[-6.5, 6.5], [6.5, 6.5], [-6.5, -6.5], [6.5, -6.5]]) root.add(place(cylinder(0.7, 0.2, 0, false, LINE_DIM), x, y, 1.7));
   withLabel(root, input.label, -12.5);
   const body = handle(18, 18, 5, 0);
   root.add(body);
@@ -198,7 +197,6 @@ function encoder(input: Knob): Peripheral {
   const root = new THREE.Group();
   root.add(block(26, 19, 1.6));
   root.add(block(12.5, 13.5, 6.5, 1.6));
-  for (let i = 0; i < 5; i++) root.add(place(block(0.64, 0.64, 6, 0, LINE_DIM), 11.5, -5.08 + i * 2.54, 1.6 + 3));
   const knob = new THREE.Group();
   knob.position.z = 8.1;
   const R = 7.5;

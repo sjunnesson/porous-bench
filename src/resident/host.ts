@@ -250,7 +250,10 @@ export class ResidentHost {
   private present() {
     const d = this.board.display;
     d.invalidate(); // a flip blits the whole frame buffer
-    this.presents.push(d.show());
+    const shown = d.show();
+    // Stopping the app mid-transfer rejects it; settle() reports that, so don't let it surface as unhandled.
+    shown.catch(() => {});
+    this.presents.push(shown);
   }
 
   private drawString(s: string, x: number, y: number) {
