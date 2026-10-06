@@ -217,8 +217,20 @@ kbd {
 .main {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  grid-template-areas: 'info stage controls';
   min-height: 0;
+}
+.sidebar-info {
+  grid-area: info;
+  border-right: 1px solid var(--rule);
+}
+.stage-wrap {
+  grid-area: stage;
+}
+.sidebar-controls {
+  grid-area: controls;
+  border-left: 1px solid var(--rule);
 }
 
 .stage-wrap {
@@ -312,7 +324,6 @@ kbd {
 /* ---- sidebar ------------------------------------------------------------------------------ */
 
 .sidebar {
-  border-left: 1px solid var(--rule);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -712,15 +723,37 @@ textarea.code {
   tab-size: 2;
 }
 
+/* Narrower windows: the information column moves under the stage. */
+@media (max-width: 1180px) {
+  .main {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'stage controls'
+      'info controls';
+    overflow-y: auto;
+  }
+  .sidebar-info {
+    border-right: none;
+    border-top: 1px solid var(--rule);
+    max-height: 45vh;
+  }
+}
+
 @media (max-width: 900px) {
   .main {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(440px, 62vh) auto;
+    grid-template-rows: minmax(440px, 62vh) auto auto;
+    grid-template-areas: 'stage' 'controls' 'info';
   }
-  .sidebar {
+  .sidebar,
+  .sidebar-controls,
+  .sidebar-info {
     border-left: none;
+    border-right: none;
     border-top: 1px solid var(--rule);
     padding: 0 16px;
+    max-height: none;
   }
   .toolbar,
   .sketch-desc,

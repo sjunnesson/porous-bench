@@ -243,6 +243,12 @@ export default function App() {
       {entry.sketch.description && <div className="sketch-desc">{entry.sketch.description}</div>}
 
       <main className="main">
+        {/* Left: what's running and what it's running on — code, relay, device facts, logs. */}
+        <aside className="sidebar sidebar-info" aria-label="Information and code">
+          <ResidentPanel code={entry.code ?? null} appName={entry.code ? entry.name.replace(/^▶ /, '') : null} />
+          <DeviceInfo device={device} />
+          <Console lines={logs} onClear={() => setLogs([])} />
+        </aside>
         {run && (
           <DeviceView
             run={run}
@@ -252,7 +258,8 @@ export default function App() {
             onDropApp={(name, code) => session.setLive({ name: name.replace(/\.lua$/, ''), code, source: 'file' })}
           />
         )}
-        <aside className="sidebar">
+        {/* Right: the things you operate — controls and hardware. */}
+        <aside className="sidebar sidebar-controls" aria-label="Controls and hardware">
           {run && (
             <InputPanel
               run={run}
@@ -262,9 +269,6 @@ export default function App() {
               }}
             />
           )}
-          <ResidentPanel code={entry.code ?? null} appName={entry.code ? entry.name.replace(/^▶ /, '') : null} />
-          <DeviceInfo device={device} />
-          <Console lines={logs} onClear={() => setLogs([])} />
         </aside>
       </main>
     </div>
