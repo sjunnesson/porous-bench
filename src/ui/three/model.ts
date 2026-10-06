@@ -1,0 +1,249 @@
+// Builds the "ghosted" wireframe model of a device from its profile's enclosure: every hard edge
+// as a thin translucent line, the live screen as a textured plane, buttons as solid caps you can
+// press. Units are millimetres; +z points out of the screen.
+
+import * as THREE from 'three';
+import type { DeviceProfile, Enclosure, EnclosurePart, Face } from '../../sim/devices/types';
+
+export const GHOST = new THREE.LineBasicMaterial({ color: 0xe4e9f4, transparent: true, opacity: 0.78, depthWrite: false });
+const GHOST_DIM = new THREE.LineBasicMaterial({ color: 0xe4e9f4, transparent: true, opacity: 0.4, depthWrite: false });
+
+export interface ModelButton {
+  mesh: THREE.Mesh;
+  input?: number;
+  label: string;
+  color: THREE.Color;
+  rest: THREE.Vector3;
+  normal: THREE.Vector3;
+}
+
+export interface BuiltModel {
+  group: THREE.Group;
+  screen: THREE.Mesh;
+  texture: THREE.CanvasTexture;
+  buttons: ModelButton[];
+  radius: number;
+  dispose(): void;
+}
+
+function roundedRect(w: number, h: number, r: number): THREE.Shape {
+  r = Math.max(0.001, Math.min(r, w / 2, h / 2));
+  const s = new THREE.Shape();
+  const x = -w / 2;
+  const y = -h / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y);
+  s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h);
+  s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r);
+  s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+
+/** A rounded slab of w×h×d centred on the origin, as edge lines. `bevel` softens the rim like a moulded case. */
+function slab(w: number, h: number, d: number, r: number, bevel: number, material = GHOST): THREE.LineSegments {
+  const b = Math.min(bevel, d / 2 - 0.01, w / 4, h / 4);
+  const geo = new THREE.ExtrudeGeometry(roundedRect(w - 2 * b, h - 2 * b, Math.max(0.1, r - b)), {
+    depth: Math.max(0.01, d - 2 * b),
+    bevelEnabled: b > 0,
+    bevelThickness: b,
+    bevelSize: b,
+    bevelSegments: b > 0 ? 3 : 0,
+    curveSegments: 4,
+  });
+  geo.translate(0, 0, -(d - 2 * b) / 2);
+  // A low threshold keeps each facet of the rounded corners: the striated, hand-drawn look.
+  const edges = new THREE.EdgesGeometry(geo, 8);
+  geo.dispose();
+  return new THREE.LineSegments(edges, material);
+}
+
+function outline(w: number, h: number, r: number, material = GHOST): THREE.LineLoop {
+  const pts = roundedRect(w, h, r).getPoints(10);
+  return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), material);
+}
+
+/** Position and orient a flat object (its +z = outward normal) on a face of the body. */
+function onFace(obj: THREE.Object3D, face: Face, u: number, v: number, body: Enclosure['body'], lift: number) {
+  const { w, h, d } = body;
+  switch (face) {
+    case 'front':
+      obj.position.set(u, v, d / 2 + lift);
+      break;
+    case 'back':
+      obj.position.set(-u, v, -d / 2 - lift);
+      obj.rotation.y = Math.PI;
+      break;
+    case 'right':
+      obj.position.set(w / 2 + lift, v, u);
+      obj.rotation.y = Math.PI / 2;
+      break;
+    case 'left':
+      obj.position.set(-w / 2 - lift, v, u);
+      obj.rotation.y = -Math.PI / 2;
+      break;
+    case 'top':
+      obj.position.set(u, h / 2 + lift, v);
+      obj.rotation.x = -Math.PI / 2;
+      break;
+    case 'bottom':
+      obj.position.set(u, -h / 2 - lift, v);
+      obj.rotation.x = Math.PI / 2;
+      break;
+  }
+}
+
+function faceNormal(face: Face): THREE.Vector3 {
+  return {
+    front: new THREE.Vector3(0, 0, 1),
+    back: new THREE.Vector3(0, 0, -1),
+    right: new THREE.Vector3(1, 0, 0),
+    left: new THREE.Vector3(-1, 0, 0),
+    top: new THREE.Vector3(0, 1, 0),
+    bottom: new THREE.Vector3(0, -1, 0),
+  }[face];
+}
+
+/** A plain enclosure for profiles that don't describe one: the glass plus a thin frame. */
+function fallbackEnclosure(p: DeviceProfile): Enclosure {
+  const w = p.look.activeWidthMm || p.width / 6;
+  const h = p.look.activeHeightMm || p.height / 6;
+  return { style: 'pcb', body: { w: w + 6, h: h + 6, d: 1.6, r: 1.5 }, module: { w: w + 3, h: h + 3, d: 1.6, r: 1, x: 0, y: 0 }, screen: { x: 0, y: 0 } };
+}
+
+export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasElement): BuiltModel {
+  const enc = profile.enclosure ?? fallbackEnclosure(profile);
+  const { body } = enc;
+  const group = new THREE.Group();
+  const disposables: { dispose(): void }[] = [];
+  const track = <T extends { dispose(): void }>(x: T) => (disposables.push(x), x);
+
+  // Body
+  if (enc.style === 'case') {
+    // Front and back outlines joined by the corner facets, plus an inset lip on the front face.
+    group.add(slab(body.w, body.h, body.d, body.r, 0));
+    const lip = outline(body.w - 3, body.h - 3, Math.max(0.5, body.r - 1.5));
+    lip.position.z = body.d / 2 + 0.02;
+    group.add(lip);
+  } else {
+    group.add(slab(body.w, body.h, body.d, body.r, 0));
+  }
+
+  // Display module on a bare board
+  let frontZ = body.d / 2;
+  if (enc.module) {
+    const m = enc.module;
+    const mod = slab(m.w, m.h, m.d, m.r, 0);
+    mod.position.set(m.x, m.y, body.d / 2 + m.d / 2);
+    group.add(mod);
+    frontZ = body.d / 2 + m.d;
+  }
+
+  // Screen: rounded like the glass, textured with the live panel
+  const sw = profile.look.activeWidthMm || profile.width / 6;
+  const sh = profile.look.activeHeightMm || profile.height / 6;
+  const radiusMm = ((profile.look.cornerRadiusPx ?? 0) * sw) / profile.width;
+  const screenGeo = track(new THREE.ShapeGeometry(roundedRect(sw, sh, radiusMm), 12));
+  const pos = screenGeo.attributes.position;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = (pos.getX(i) + sw / 2) / sw;
+    uv[i * 2 + 1] = (pos.getY(i) + sh / 2) / sh;
+  }
+  screenGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  const texture = track(new THREE.CanvasTexture(screenCanvas));
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const screen = new THREE.Mesh(screenGeo, track(new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })));
+  screen.position.set(enc.screen.x, enc.screen.y, frontZ + 0.05);
+  group.add(screen);
+  const rim = outline(sw + 0.6, sh + 0.6, radiusMm + 0.3, GHOST_DIM);
+  rim.position.copy(screen.position);
+  group.add(rim);
+
+  // Parts
+  const buttons: ModelButton[] = [];
+  for (const part of enc.parts ?? []) addPart(part);
+
+  function addPart(part: EnclosurePart) {
+    switch (part.kind) {
+      case 'button': {
+        const depth = 1.2;
+        const geo = track(
+          new THREE.ExtrudeGeometry(roundedRect(part.w, part.h, Math.min(part.w, part.h) / 2), {
+            depth,
+            bevelEnabled: false,
+            curveSegments: 12,
+          }),
+        );
+        geo.translate(0, 0, -depth / 2);
+        const color = new THREE.Color(part.color ?? '#d6dbe6');
+        const mesh = new THREE.Mesh(geo, track(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 })));
+        mesh.add(new THREE.LineSegments(track(new THREE.EdgesGeometry(geo, 30)), GHOST));
+        onFace(mesh, part.face, part.u, part.v, body, depth / 2 - 0.2);
+        group.add(mesh);
+        buttons.push({ mesh, input: part.input, label: part.label ?? 'button', color, rest: mesh.position.clone(), normal: faceNormal(part.face) });
+        break;
+      }
+      case 'port': {
+        const o = new THREE.Group();
+        o.add(outline(part.w, part.h, part.h / 2));
+        o.add(outline(part.w - 1.6, part.h - 1.4, (part.h - 1.4) / 2, GHOST_DIM));
+        onFace(o, part.face, part.u, part.v, body, 0.02);
+        group.add(o);
+        break;
+      }
+      case 'header': {
+        const o = new THREE.Group();
+        const pitch = 2.54;
+        const len = part.pins * pitch;
+        const base = slab(part.along === 'u' ? len : 2.5, part.along === 'u' ? 2.5 : len, 2.5, 0.2, 0, GHOST_DIM);
+        base.position.z = 1.25;
+        o.add(base);
+        for (let i = 0; i < part.pins; i++) {
+          const off = -len / 2 + pitch / 2 + i * pitch;
+          const pin = slab(0.64, 0.64, 6, 0.05, 0);
+          pin.position.set(part.along === 'u' ? off : 0, part.along === 'u' ? 0 : off, 3);
+          o.add(pin);
+        }
+        onFace(o, part.face, part.u, part.v, body, 0);
+        group.add(o);
+        break;
+      }
+      case 'hole': {
+        const pts = new THREE.EllipseCurve(0, 0, part.r, part.r).getPoints(24);
+        const ring = new THREE.LineLoop(track(new THREE.BufferGeometry().setFromPoints(pts)), GHOST);
+        onFace(ring, part.face, part.u, part.v, body, 0.02);
+        group.add(ring);
+        break;
+      }
+      case 'led': {
+        const geo = track(new THREE.CircleGeometry(part.r, 20));
+        const led = new THREE.Mesh(geo, track(new THREE.MeshBasicMaterial({ color: part.color, transparent: true, opacity: 0.85 })));
+        onFace(led, part.face, part.u, part.v, body, 0.03);
+        group.add(led);
+        break;
+      }
+    }
+  }
+
+  const radius = 0.5 * Math.hypot(body.w, body.h, body.d + (enc.module?.d ?? 0) * 2);
+  return {
+    group,
+    screen,
+    texture,
+    buttons,
+    radius,
+    dispose() {
+      group.traverse((o) => {
+        if (o instanceof THREE.LineSegments || o instanceof THREE.LineLoop) o.geometry.dispose();
+      });
+      disposables.forEach((d) => d.dispose());
+    },
+  };
+}
