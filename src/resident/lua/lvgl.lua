@@ -121,16 +121,22 @@ for _, s in ipairs(SIZES) do M.BUILTIN_FONT["MONTSERRAT_" .. s] = M.Font("montse
 
 local STYLE = {}
 STYLE.__index = STYLE
-function STYLE:set(props) for k, v in pairs(props) do self.props[k] = v end P.style_changed() end
-function STYLE:delete() self.props = {} P.style_changed() end
+-- A Style is shared: objects refer to it by id, so set() reaches every object that added it.
+local nextStyle = 0
+function STYLE:set(props) for k, v in pairs(props) do self.props[k] = v end P.update_style(self.__sid, self:_plain()) end
+function STYLE:remove_prop(k) self.props[k] = nil P.update_style(self.__sid, self:_plain()) end
+function STYLE:delete() self.props = {} P.update_style(self.__sid, {}) end
 function M.Style(props)
-  local s = setmetatable({ __style = true, props = {} }, STYLE)
+  nextStyle = nextStyle + 1
+  local s = setmetatable({ __style = true, __sid = nextStyle, props = {} }, STYLE)
   if props then for k, v in pairs(props) do s.props[k] = v end end
   return s
 end
 
 -- Property tables cross into JS as plain data: fonts become {family,size,weight}.
-local function plain(props)
+local plain
+function STYLE:_plain() return plain(self.props) end
+function plain(props)
   local out = {}
   for k, v in pairs(props) do
     if type(v) == "table" and v.__font then out[k] = { family = v.family, size = v.size, weight = v.weight }
@@ -202,7 +208,7 @@ function OBJ:add_style(style, selector)
   if type(style) ~= "table" or not style.__style then error("add_style: expected an lvgl.Style", 2) end
   self.__styles = self.__styles or {}
   self.__styles[#self.__styles + 1] = style
-  P.add_style(id, plain(style.props), floor(selector or 0))
+  P.add_style(id, plain(style.props), floor(selector or 0), style.__sid)
   return self
 end
 function OBJ:set_style(props, selector)

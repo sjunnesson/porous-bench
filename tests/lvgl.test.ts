@@ -166,6 +166,21 @@ describe('lvgl module', () => {
     expect(t.logs.some((l) => /object deleted/.test(l))).toBe(false);
   });
 
+  it('shares lvgl.Style updates and merges set_style into one local style', async () => {
+    const t = await boot(`function init()
+      local h = lvgl.bind("main")
+      local st = lvgl.Style { w = 50, h = 10 }
+      local a, b = h.Object(nil, {}), h.Object(nil, {})
+      a:add_style(st) b:add_style(st)
+      st:set { w = 80 }                       -- reaches both objects
+      log.info(a:get_width(), b:get_width())
+      b:set_style({ w = 30 }) b:set_style({ h = 20 })   -- one local style: the width stays
+      log.info(b:get_width(), b:get_height(), a:get_width())
+    end`);
+    expect(t.error).toBeUndefined();
+    expect(t.logs).toEqual(['80\t80', '30\t20\t80']);
+  });
+
   it('owns the panel once bound: lgfx flips stand down', async () => {
     const t = await boot(`local g = lgfx.bind("main")
       function init() g:fillScreen(0xFF0000) g:flip() end

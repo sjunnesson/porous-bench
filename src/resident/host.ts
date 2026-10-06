@@ -501,15 +501,14 @@ export class ResidentHost {
       lv_state: (id: number, st: number, on: boolean) => this.lv!.state(id, st, on),
       lv_has_state: (id: number, st: number) => this.lv!.hasState(id, st),
       lv_get_state: (id: number) => this.lv!.getState(id),
-      lv_add_style: (id: number, props: Record<string, unknown>, selector?: number) => this.lv!.addStyle(id, props ?? {}, selector ?? 0),
+      lv_add_style: (id: number, props: Record<string, unknown>, selector?: number, sid?: number | null) =>
+        this.lv!.addStyle(id, props ?? {}, selector ?? 0, sid),
+      lv_update_style: (sid: number, props: Record<string, unknown>) => this.lv!.updateStyle(sid, props ?? {}),
       lv_remove_styles: (id: number) => this.lv!.removeStyles(id),
       lv_coords: (id: number) => this.lv!.coords(id),
       lv_parent: (id: number) => this.lv!.parentOf(id),
       lv_child_count: (id: number) => this.lv!.childCount(id),
       lv_invalidate: () => {
-        this.lv!.dirty = true;
-      },
-      lv_style_changed: () => {
         this.lv!.dirty = true;
       },
       lv_theme: (theme: Record<string, Record<string, unknown>> | null | undefined) => this.lv!.setTheme(theme ?? null),

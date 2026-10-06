@@ -113,12 +113,16 @@ Like the device, `on_tick` runs 10 times a second, so animation runs at 10 FPS; 
 motion so speeds are right whatever the timing. A tap or other event can redraw between ticks.
 Coordinates are checked like `luaL_checkinteger`, so `math.floor` anything computed.
 
-Included, from Bench: **Hello display** (adapts to every display type), **Patterns** (plasma,
-starfield, Game of Life, test card …), **Characters** (text sizes and a walking robot), **Knob menu**
-(an encoder-driven settings UI), **LD2410 radar** (a presence dashboard) and **Little devil** (a cute
-chibi devil whose mood follows the radar: it naps when nobody's there, gets curious, schemes, pops up
-with a "boo!" when you come close and gets cozy if you stay). From Resident: the Swiss
-railway clock, water-sim, daisy, accelerometer and the rest of its M5Stick examples.
+Included, from Bench, all drawn with LVGL and moved by `lvgl.Anim` (see [LVGL](#lvgl-smooth-animation)):
+**Hello display** (device facts and a DVD-style bouncing ball; adapts to every display type),
+**Patterns** (orbits, rippling tiles, rings, an equaliser, a spinner and a test card), **Characters**
+(text sizes and a walking, jumping pixel robot), **Knob menu** (an encoder-driven settings UI whose
+highlight slides between rows), **LD2410 radar** (a presence dashboard with gliding markers and bars),
+**Little devil** (a cute chibi devil whose mood follows the radar: it naps when nobody's there, gets
+curious, schemes, pops up with a "boo!" when you come close and gets cozy if you stay) and **LVGL
+motion** (an `Anim` and an `on_tick` dot side by side). On e-paper they skip the animation and jump to
+each end state, since every refresh is a slow one. From Resident: the Swiss railway clock, water-sim,
+daisy, accelerometer and the rest of its M5Stick examples, which draw with `lgfx`.
 
 ### Controls: swap the hardware, keep the code
 
@@ -209,8 +213,10 @@ the simulated glass, the first updates about 25 times a second and the second 10
   now. Layout covers sizes, `lvgl.PCT`, `lvgl.SIZE_CONTENT`, `align`, `align_to`, translate, rotation
   and flex rows and columns.
 - **Styles**: the property vocabulary from Resident's `prompts/lvgl.md`, `h:set_theme{...}`,
-  `lvgl.Style` with `add_style`, and `set_style(props, lvgl.PART.*)` for an arc's track, indicator
-  and knob.
+  `lvgl.Style` with `add_style` (a later `style:set{}` reaches every object using it), and
+  `set_style(props, lvgl.PART.*)`, which updates the object's own style for that part, for example an
+  arc's track, indicator and knob. An `Arc` takes `value` within `range = {min, max}` (0–100 by
+  default).
 - **One panel, one library**: once an app calls `lvgl.bind`, `lgfx` flips are dropped, and the other
   way round.
 - **Bus timing**: each refresh sends only the pixels that changed, like LVGL's partial flushes.

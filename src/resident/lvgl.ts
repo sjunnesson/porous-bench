@@ -10,6 +10,12 @@ import { color565 } from '../sim/color';
 import type { Display } from '../sim/display';
 
 type Props = Record<string, unknown>;
+interface StyleEntry {
+  props: Props;
+  selector: number;
+  /** The lvgl.Style it came from, or undefined for the object's own local style. */
+  sid?: number;
+}
 
 interface Node {
   id: number;
@@ -18,7 +24,8 @@ interface Node {
   children: Node[];
   props: Props;
   theme: Props;
-  styles: Props[];
+  /** Local styles (set_style, one per part) and added lvgl.Styles (by id), in the order applied. */
+  styles: StyleEntry[];
   flags: number;
   states: number;
   alignTo?: { base: number | null; type: number; x: number; y: number };
@@ -86,6 +93,22 @@ function coord(v: unknown, base: number): number | 'content' | null {
   return v;
 }
 
+/** Expand style shorthands (pad_all, pad_hor, size, width, …) into the properties the layout reads. */
+function expand(props: Props): Props {
+  const out: Props = {};
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'pad_all') for (const s of ['pad_top', 'pad_bottom', 'pad_left', 'pad_right']) out[s] = v;
+    else if (k === 'pad_hor') out.pad_left = out.pad_right = v;
+    else if (k === 'pad_ver') out.pad_top = out.pad_bottom = v;
+    else if (k === 'pad_gap') out.pad_row = out.pad_column = v;
+    else if (k === 'size') out.w = out.h = v;
+    else if (k === 'width') out.w = v;
+    else if (k === 'height') out.h = v;
+    else out[k] = v;
+  }
+  return out;
+}
+
 export class LvglScreen {
   private nodes = new Map<number, Node>();
   private next = 1;
@@ -126,27 +149,13 @@ export class LvglScreen {
 
   set(id: number, props: Props): void {
     const n = this.get(id);
-    for (const [k, v] of Object.entries(props)) {
+    for (const [k, v] of Object.entries(expand(props))) {
       if (k === 'align' && v && typeof v === 'object') {
         // align = { type, x_ofs, y_ofs }
         const a = v as Props;
         n.props.align = a.type;
         if (a.x_ofs !== undefined) n.props.x = a.x_ofs;
         if (a.y_ofs !== undefined) n.props.y = a.y_ofs;
-        continue;
-      }
-      if (k === 'pad_all' || k === 'pad_hor' || k === 'pad_ver' || k === 'pad_gap') {
-        const sides = k === 'pad_all' ? ['pad_top', 'pad_bottom', 'pad_left', 'pad_right'] : k === 'pad_hor' ? ['pad_left', 'pad_right'] : k === 'pad_ver' ? ['pad_top', 'pad_bottom'] : ['pad_row', 'pad_column'];
-        for (const s of sides) n.props[s] = v;
-        continue;
-      }
-      if (k === 'size') {
-        n.props.w = v;
-        n.props.h = v;
-        continue;
-      }
-      if (k === 'width' || k === 'height') {
-        n.props[k === 'width' ? 'w' : 'h'] = v;
         continue;
       }
       if (k === 'angles' && Array.isArray(v)) {
@@ -218,22 +227,46 @@ export class LvglScreen {
   hasState(id: number, s: number): boolean {
     return (this.get(id).states & s) === s;
   }
-  /** add_style / set_style. On an Arc the part selector picks which arc or the knob it styles. */
-  addStyle(id: number, props: Props, selector = 0): void {
-    const n = this.get(id);
+  /** On an Arc, a part selector decides whether a style reaches the track, the indicator or the knob. */
+  private forPart(n: Node, raw: Props, selector: number): Props {
+    const props = expand(raw);
     const part = selector & 0xff0000;
-    let p = props;
     if (n.kind === 'Arc' && part === 0x020000) {
-      p = { ...props };
+      const p = { ...props };
       if (props.arc_color !== undefined) p.indicator_color = props.arc_color;
       delete p.arc_color;
-    } else if (n.kind === 'Arc' && part === 0x030000) {
-      p = {};
-      if (props.bg_color !== undefined) p.knob_color = props.bg_color;
-      if (props.pad_all !== undefined) p.knob_pad = props.pad_all;
-      if (props.bg_opa === 0) p.knob = false;
+      return p;
     }
-    n.styles.push(p);
+    if (n.kind === 'Arc' && part === 0x030000) {
+      const p: Props = {};
+      if (props.bg_color !== undefined) p.knob_color = props.bg_color;
+      if (props.pad_top !== undefined) p.knob_pad = props.pad_top;
+      if (props.bg_opa === 0) p.knob = false;
+      return p;
+    }
+    return props;
+  }
+
+  /**
+   * obj:add_style(style, selector) with the style's id, or obj:set_style(props, selector) without:
+   * that one merges into the object's local style for the part (as luavgl replaces local props).
+   */
+  addStyle(id: number, raw: Props, selector = 0, sid?: number | null): void {
+    const n = this.get(id);
+    const props = this.forPart(n, raw, selector);
+    if (sid == null) {
+      const local = n.styles.find((e) => e.sid === undefined && e.selector === selector);
+      if (local) Object.assign(local.props, props);
+      else n.styles.push({ props, selector });
+    } else n.styles.push({ props, selector, sid });
+    this.dirty = true;
+  }
+
+  /** style:set{...} / remove_prop / delete: every object that added the style sees the change. */
+  updateStyle(sid: number, raw: Props): void {
+    for (const n of this.nodes.values()) {
+      for (const e of n.styles) if (e.sid === sid) e.props = this.forPart(n, raw, e.selector);
+    }
     this.dirty = true;
   }
   childCount(id: number): number {
@@ -259,8 +292,8 @@ export class LvglScreen {
 
   /** h:set_theme{...}: defaults for widgets created from now on; `screen` applies at once. */
   setTheme(theme: Record<string, Props> | null): void {
-    this.userTheme = theme;
-    if (theme?.screen) Object.assign(this.screen.props, theme.screen);
+    this.userTheme = theme ? Object.fromEntries(Object.entries(theme).map(([k, v]) => [k, expand(v ?? {})])) : null;
+    if (this.userTheme?.screen) Object.assign(this.screen.props, this.userTheme.screen);
     this.dirty = true;
   }
 
@@ -371,7 +404,12 @@ export class LvglScreen {
   /** A style property: set on the object, then added styles, then the theme, then inherited. */
   private prop(n: Node, key: string): unknown {
     if (n.props[key] !== undefined) return n.props[key];
-    for (let i = n.styles.length - 1; i >= 0; i--) if (n.styles[i][key] !== undefined) return n.styles[i][key];
+    // Local styles win over added ones (LVGL keeps them first); among added ones, the latest wins.
+    for (const e of n.styles) if (e.sid === undefined && e.props[key] !== undefined) return e.props[key];
+    for (let i = n.styles.length - 1; i >= 0; i--) {
+      const e = n.styles[i];
+      if (e.sid !== undefined && e.props[key] !== undefined) return e.props[key];
+    }
     if (n.theme[key] !== undefined) return n.theme[key];
     if (INHERITED.has(key) && n.parent) return this.prop(n.parent, key);
     return undefined;
@@ -433,6 +471,13 @@ export class LvglScreen {
     return { w: Math.ceil(w), h };
   }
 
+  /** A Line's points; an empty Lua table can arrive as {} rather than []. */
+  private points(n: Node): number[][] {
+    const p = this.prop(n, 'points');
+    const list = Array.isArray(p) ? p : p && typeof p === 'object' ? Object.values(p) : [];
+    return list.filter((q): q is number[] => Array.isArray(q) && q.length >= 2);
+  }
+
   private pads(n: Node) {
     const b = this.num(n, 'border_width');
     return { l: this.num(n, 'pad_left') + b, r: this.num(n, 'pad_right') + b, t: this.num(n, 'pad_top') + b, b: this.num(n, 'pad_bottom') + b };
@@ -444,7 +489,7 @@ export class LvglScreen {
       case 'Label':
         return this.textSize(n, cw);
       case 'Line': {
-        const pts = (this.prop(n, 'points') as number[][] | undefined) ?? [];
+        const pts = this.points(n);
         const lw = this.num(n, 'line_width', 1);
         return { w: Math.max(0, ...pts.map((p) => p[0])) + lw, h: Math.max(0, ...pts.map((p) => p[1])) + lw };
       }
@@ -814,7 +859,7 @@ export class LvglScreen {
   }
 
   private drawLine(ctx: OffscreenCanvasRenderingContext2D, n: Node) {
-    const pts = (this.prop(n, 'points') as number[][] | undefined) ?? [];
+    const pts = this.points(n);
     if (pts.length < 2) return;
     const invert = !!this.prop(n, 'y_invert');
     ctx.strokeStyle = this.rgba(this.prop(n, 'line_color'), opa(this.prop(n, 'line_opa'), 255), '#000000');
