@@ -9,6 +9,7 @@ import type { LD2410 } from '../sim/inputs/ld2410';
 import type { Pot } from '../sim/inputs/pot';
 import type { SketchRun } from '../sim/runner';
 import { useAnimationFrame, useInput } from './hooks';
+import { Panel } from './Panel';
 import { ButtonWidget } from './widgets/ButtonWidget';
 import { BuzzerWidget } from './widgets/BuzzerWidget';
 import { ImuWidget } from './widgets/ImuWidget';
@@ -19,7 +20,7 @@ import { RadarWidget } from './widgets/RadarWidget';
 
 interface Props {
   run: SketchRun;
-  /** The display block (picker and specs), shown first under Hardware. */
+  /** The display block (picker and specs), in its own section after Controls. */
   display?: ReactNode;
   /** Remember the hardware the user picked for a control. */
   onBind(control: Control, source: string): void;
@@ -31,22 +32,23 @@ export function InputPanel({ run, display, onBind }: Props) {
   return (
     <>
       {run.controls.length > 0 && (
-        <div className="panel">
-          <h2>Controls</h2>
+        <Panel id="controls" title="Controls">
           {run.controls.map((c) => (
             <ControlRow key={c.name} control={c} onBind={onBind} builtIn={hasBuiltInButton(run, c)} />
           ))}
-        </div>
+        </Panel>
       )}
-      <div className="panel">
-        <h2>Hardware</h2>
-        {display}
-        <h3>Parts</h3>
+      {display && (
+        <Panel id="display" title="Display">
+          {display}
+        </Panel>
+      )}
+      <Panel id="parts" title="Parts">
         {parts.length === 0 && <p className="dim">This app uses no inputs.</p>}
         {parts.map((input, i) => (
           <Widget key={`${input.kind}-${i}-${input.label}`} input={input} />
         ))}
-      </div>
+      </Panel>
     </>
   );
 }

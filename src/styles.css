@@ -228,11 +228,10 @@ select.wide {
 
 /* The display block heads the Hardware panel; its pinout and notes fold away. */
 .display-info {
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0;
 }
 .display-info > h3:first-child,
-.panel h2 + h3 {
+.panel-body > h3:first-child {
   margin-top: 0;
 }
 .display-info .readout {
@@ -413,6 +412,48 @@ select.wide {
   justify-content: space-between;
   align-items: center;
 }
+/* The header folds its section: a quiet button, a chevron that turns, the extras staying put. */
+.panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  margin: -4px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.panel-toggle:hover {
+  color: var(--blue);
+}
+.panel-toggle .chevron {
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.15s ease;
+}
+.panel.collapsed .panel-toggle .chevron {
+  transform: rotate(-45deg);
+}
+.panel.collapsed {
+  padding-bottom: 18px;
+}
+.panel.collapsed h2 {
+  margin-bottom: 0;
+}
+.panel.collapsed h2 > :not(.panel-toggle) {
+  opacity: 0.6;
+}
+.panel-body[hidden] {
+  display: none;
+}
+
 .panel h3 {
   margin: 18px 0 8px;
   font: 400 10px/1.3 var(--mono);
@@ -503,6 +544,16 @@ select.wide {
   display: flex;
   flex-direction: column;
   min-height: 170px;
+}
+.console-panel > .panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.console-panel.collapsed {
+  flex: none;
+  min-height: 0;
 }
 .console {
   flex: 1;

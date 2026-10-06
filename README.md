@@ -42,7 +42,8 @@ npm run dev        # → http://localhost:5199
 
 The page has three columns. The **left** column holds the code: pick an **App**, and see its
 source, the Resident relay and the console. The **desk** is in the middle. The **right** column holds
-the hardware: the controls, the **Display** picker with its specs, and the parts on the desk.
+the hardware: the controls, the **Display** picker with its specs, and the parts on the desk. Click a
+section's heading to fold it away; folded sections stay folded next time.
 Everything runs locally in the browser;
 `npm run build` produces a static site you can host anywhere.
 

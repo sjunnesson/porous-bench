@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { session } from '../resident/session';
+import { Panel } from './Panel';
 
 const STATUS = {
   off: { label: 'offline', cls: '' },
@@ -55,13 +56,16 @@ export function ResidentPanel({ code, appName }: Props) {
   };
 
   return (
-    <div className="panel resident-panel">
-      <h2>
-        Resident
+    <Panel
+      id="resident"
+      title="Resident"
+      className="resident-panel"
+      extra={
         <span className={`status ${st.cls}`}>
           <span className={`led ${st.cls === 'on' ? 'on' : ''}`} /> {st.label}
         </span>
-      </h2>
+      }
+    >
 
       <div className="row">
         <span className="dim">Device ID</span>
@@ -124,6 +128,6 @@ export function ResidentPanel({ code, appName }: Props) {
           {eventError && <p className="warn small">{eventError}</p>}
         </>
       )}
-    </div>
+    </Panel>
   );
 }

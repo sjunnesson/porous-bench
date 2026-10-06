@@ -13,6 +13,7 @@ import { DeviceInfo } from './ui/DeviceInfo';
 import { DeviceView, type ViewState } from './ui/DeviceView';
 import { useClockState, usePersisted } from './ui/hooks';
 import { InputPanel } from './ui/InputPanel';
+import { Panel } from './ui/Panel';
 import { ResidentPanel } from './ui/ResidentPanel';
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
@@ -198,8 +199,7 @@ export default function App() {
       <main className="main">
         {/* Left: the code — which app, its source, the relay, its logs. */}
         <aside className="sidebar sidebar-info" aria-label="App and code">
-          <div className="panel">
-            <h2>App</h2>
+          <Panel id="app" title="App">
             <select className="wide" value={entry.id} onChange={(e) => (setSketchId(e.target.value), e.target.blur())} aria-label="App">
               {GROUPS.filter((group) => entries.some((e) => e.group === group)).map((group) => (
                 <optgroup key={group} label={group}>
@@ -214,7 +214,7 @@ export default function App() {
               ))}
             </select>
             {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
-          </div>
+          </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>

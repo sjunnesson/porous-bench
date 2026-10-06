@@ -16,7 +16,6 @@ export function DeviceInfo({ device, children }: { device: DeviceProfile; childr
       : `I2C @ ${device.bus.hz / 1e3} kHz, addr 0x${(device.bus.i2cAddress ?? 0x3c).toString(16)}`;
   return (
     <div className="display-info">
-      <h3>Display</h3>
       {children}
       <table className="readout">
         <tbody>
