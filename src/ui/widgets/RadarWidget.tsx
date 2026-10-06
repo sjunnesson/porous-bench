@@ -78,13 +78,17 @@ export function RadarWidget({ input }: { input: LD2410 }) {
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // The canvas keeps a W:H aspect (CSS) and scales with the sidebar. Size its pixel buffer to what's
+    // displayed, then draw in W×H units so drawing and pointer mapping share one coordinate system.
     const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== W * dpr) {
-      canvas.width = W * dpr;
-      canvas.height = H * dpr;
+    const pw = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    const ph = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
     }
     const ctx = canvas.getContext('2d')!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(pw / W, 0, 0, ph / H, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
     const half = ((FOV_DEG / 2) * Math.PI) / 180;
@@ -152,8 +156,9 @@ export function RadarWidget({ input }: { input: LD2410 }) {
   useAnimationFrame(draw);
 
   const toPerson = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return toWorld(((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H);
+    // offsetX/Y are measured inside the border, like clientWidth/Height: the area that's drawn.
+    const c = e.currentTarget;
+    return toWorld((e.nativeEvent.offsetX / c.clientWidth) * W, (e.nativeEvent.offsetY / c.clientHeight) * H);
   };
   // A click sends the person walking there; a drag carries them directly.
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
@@ -194,7 +199,7 @@ export function RadarWidget({ input }: { input: LD2410 }) {
       <canvas
         ref={canvasRef}
         className="radar-canvas"
-        style={{ width: W, height: H }}
+        style={{ aspectRatio: `${W} / ${H}` }}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

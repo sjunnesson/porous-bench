@@ -633,7 +633,9 @@ kbd {
 }
 .radar-canvas {
   align-self: center;
-  max-width: 100%;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
   background: var(--paper);
   border: 1px solid var(--rule);
   touch-action: none;
