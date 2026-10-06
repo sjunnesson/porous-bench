@@ -6,6 +6,17 @@ const NAMES: Record<string, string> = {
   ArrowRight: '→',
   ArrowUp: '↑',
   ArrowDown: '↓',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Minus: '−',
+  Equal: '=',
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+  Semicolon: ';',
+  Quote: "'",
+  Backquote: '`',
+  Backslash: '\\',
 };
 
 /** KeyboardEvent.code → short label. */

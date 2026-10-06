@@ -1,10 +1,10 @@
 # porous.systems Bench
 
 **A workbench in the browser for ESP32 hardware: the small displays you wire to it (LCD, OLED and
-e-paper) and the buttons, knobs and sensors that drive them, laid out on a desk.** Try animations, fonts, sprites and UI ideas without
-flashing hardware, and switch the display under your code with one click. It also runs
-[Resident](https://github.com/inanimate-tech/resident) Lua apps unmodified, and can join the Resident
-relay as a device.
+e-paper) and the buttons, knobs and sensors that drive them, laid out on a desk.** Apps are Lua, written
+for [Resident](https://github.com/inanimate-tech/resident)'s runtime: try animations, fonts and UI
+ideas without flashing hardware, switch the display under your code with one click, and push the same
+app to a real device. Bench can also join the Resident relay as a device.
 
 **Try it: [bench.porous.systems](https://bench.porous.systems)**
 
@@ -40,7 +40,7 @@ npm install
 npm run dev        # → http://localhost:5199
 ```
 
-The page has three columns. The **left** column holds the code: pick a **Sketch**, and see its
+The page has three columns. The **left** column holds the code: pick an **App**, and see its
 source, the Resident relay and the console. The **desk** is in the middle. The **right** column holds
 the hardware: the controls, the **Display** picker with its specs, and the parts on the desk.
 Everything runs locally in the browser;
@@ -53,7 +53,8 @@ Everything runs locally in the browser;
 - **Real constraints.** `show()` takes as long as pushing the changed pixels over the real SPI or
   I2C bus, so frame rates are honest (≈40 fps ceiling on a 400 kHz I2C OLED). E-paper refreshes take
   their real 2 s / 0.3 s, flash on a full refresh and leave ghosting after partial ones.
-- **Two kinds of program.** TypeScript sketches written in an Arduino shape, and Resident Lua apps.
+- **One kind of app: Lua, the Resident way.** `init`, `on_tick` at 10 FPS, `on_event`, drawing with
+  `lgfx`. Resident apps run unmodified, and Bench adds drivers for the hardware on its desk.
 - **Inputs you can poke.** Push buttons, a rotary encoder, a potentiometer, an IMU you tilt and
   shake, a buzzer you can hear, and an HLK-LD2410 presence radar. Each has a widget and keyboard keys.
 - **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
@@ -65,7 +66,8 @@ Everything runs locally in the browser;
   a piezo that pulses while it sounds, and the LD2410 with its detection fan and a little character
   who walks, blinks and looks around; click anywhere to send it walking there, or pick it up by the head to carry it. Each part is wired back
   to the device. With an IMU the device itself tilts and shakes.
-- **Hot reload.** Saving a sketch file restarts it in place.
+- **Hot reload.** Edit an app in the code panel and press Run (⌘↵), drop a `.lua` file on the device,
+  or save a bundled one: it restarts in place.
 
 ## Displays
 
@@ -82,109 +84,82 @@ Everything runs locally in the browser;
 The Device panel shows each one's controller, RAM offsets, wiring and the things a driver must get
 right on hardware (the Waveshare's 34-pixel column offset and INVON, the SSD1306 charge pump, …).
 
-## TypeScript sketches
+## Writing apps
 
-Drop a file in `src/sketches/` and it appears in the Sketch menu. The drawing API follows
-Adafruit_GFX / TFT_eSPI names and colours are RGB565 numbers, so a port to C++ is mostly a matter of
-deleting `await`.
+An app is one Lua file. Pick one in the **App** menu, edit it in the code panel and press Run
+(⌘↵), or drop a `.lua` file on the device. The bundled ones live in `src/resident-apps/`; a new file
+there appears in the menu, named by its first comment line (`-- Name: what it does`).
 
-```ts
-import { colors, defineSketch, dial, hsv565, trigger } from '../sim';
+```lua
+-- Comet: a dot that circles the screen. A changes colour; Speed can be any hardware.
+local g = lgfx.bind("main")
+local W, H = g:width(), g:height()
+local speed = dial.new("speed", { min = 1, max = 10, start = 3 })   -- a rotary encoder by default
+local colour, angle = 0xFF8800, 0
 
-let x = 0;
+function on_tick(ctx, dt_ms)                     -- every 100 ms, with the real dt
+  angle = angle + speed:value() * dt_ms / 1000
+  g:fillScreen(0x000000)
+  g:fillCircle(W // 2 + math.floor(math.cos(angle) * W / 3), H // 2 + math.floor(math.sin(angle) * H / 3), 6, colour)
+  g:flip()                                       -- nothing is visible until flip()
+end
 
-export default defineSketch({
-  name: 'My sketch',
-  inputs: {
-    // What the sketch needs, not which part provides it. Pick the hardware in the Controls panel.
-    fire: trigger({ label: 'Fire', key: 'Space' }),                  // push button by default
-    speed: dial({ label: 'Speed', min: 1, max: 10, start: 3 }),       // rotary encoder by default
-  },
-  setup({ display }) {
-    display.fillScreen(colors.BLACK);
-    x = 0;
-  },
-  async loop({ display, inputs, millis, delay, log }) {
-    if (inputs.fire.wasPressed()) log('fire!');
-    display.fillCircle(x, 40, 6, hsv565(millis() / 10, 1, 1));
-    x = (x + inputs.speed.value) % display.width();
-    await display.show(); // as long as the real bus transfer takes
-    await delay(16);
-  },
-});
+function on_event(ctx, e)
+  if e.name == "tap" and e.data.index == 0 then colour = colour ~ 0xFFFFFF end
+end
 ```
+
+Like the device, `on_tick` runs 10 times a second, so animation runs at 10 FPS; use `dt_ms` for
+motion so speeds are right whatever the timing. A tap or other event can redraw between ticks.
+Coordinates are checked like `luaL_checkinteger`, so `math.floor` anything computed.
+
+Included, from Bench: **Hello display** (adapts to every display type), **Patterns** (plasma,
+starfield, Game of Life, test card …), **Characters** (text sizes and a walking robot), **Knob menu**
+(an encoder-driven settings UI) and **LD2410 radar** (a presence dashboard). From Resident: the Swiss
+railway clock, water-sim, daisy, accelerometer and the rest of its M5Stick examples.
 
 ### Controls: swap the hardware, keep the code
 
-`dial()` and `trigger()` describe what a sketch needs. In the **Controls** panel each one has a
-**via** menu, and you can change it while the sketch runs:
+A `dial` or `trigger` describes what an app needs, not which part provides it. Declaring one puts
+its hardware on the desk; in the **Controls** panel each has a **via** menu you can change while the
+app runs:
 
-| Control | Sketch API | Hardware it can run on |
+| Declare | Read | Hardware it can run on |
 |---|---|---|
-| `dial({ min, max, step, start, wrap })` | `value`, `delta()` (steps since last read), `fraction` | rotary encoder · slide pot · IMU tilt ←→ or ↑↓ · two buttons − / + · LD2410 distance |
-| `trigger({ key })` | `isPressed() wasPressed() wasReleased() pressedFor(ms)` | push button (built-in or external) · encoder push · IMU shake · LD2410 presence |
+| `dial.new(name, { min, max, step, start, wrap, via, label, keys })` | `d:value()`, `d:delta()` (steps since last read), `d:fraction()` | rotary encoder · slide pot · IMU tilt ←→ or ↑↓ · two buttons − / + · LD2410 distance |
+| `trigger.new(name, { key, via, label })` | `t:is_pressed()`, `t:was_pressed()`, `t:was_released()`, `t:pressed_for(ms)` | push button (built-in or external) · encoder push · IMU shake · LD2410 presence |
 
-A trigger's **push button** uses the device's own button when the device has one for it (the
-M5StickC's A and B, say); pick **External button** to put a separate switch on the desk instead.
-Relative hardware (encoder, buttons) steps a dial; absolute hardware (pot, tilt, distance) sets it,
-and on a swap the new hardware takes over at the current value, so nothing jumps. `delta()` works
-the same either way, so menu code doesn't care what's turning it. Parts are shared the way a real
-bench would: one IMU and one radar per board, and one encoder can turn one control while its push
-fires another. The choice is remembered per sketch, and the keyboard keys work whatever the
-hardware. Concrete parts (`button()`, `knob()`, `pot()`, `ld2410()`, `imu()`, `buzzer()`) are still
-there for sketches that need a specific device, like the radar dashboard parsing UART frames.
+The board's own buttons A and B are triggers too, so they can be swapped the same way. A trigger's
+**push button** uses the device's own button when it has one for it (the M5StickC's A and B, say);
+pick **External button** to put a separate switch on the desk instead. Relative hardware (encoder,
+buttons) steps a dial; absolute hardware (pot, tilt, distance) sets it, and on a swap the new hardware
+takes over at the current value, so nothing jumps. `delta()` works the same either way, so menu code
+doesn't care what's turning it. Parts are shared the way a real bench would: one IMU and one radar
+per board, and one encoder can turn one dial while its push fires a trigger. The choice is remembered
+per app, and the keyboard keys work whatever the hardware.
 
-Included: **Hello display** (adapts to every display type), **Patterns** (plasma, starfield, Game
-of Life, test card …), **Characters** (fonts and a walking sprite), **LD2410 radar** (presence
-dashboard) and **Knob menu** (an encoder-driven settings UI).
+### Bench drivers
 
-<details>
-<summary>Drawing API</summary>
+Resident boards add hardware through drivers: a Lua module plus events into `on_event` on the
+`driver` channel. Bench's desk has three, on top of the M5StickC Plus2's (`screen`, `imu`,
+`buzzer`, `button`):
 
-`width() height() setRotation(0–3) fillScreen drawPixel getPixel drawLine drawFastHLine
-drawFastVLine drawRect fillRect drawRoundRect fillRoundRect drawCircle fillCircle drawTriangle
-fillTriangle drawBitmap drawRGBBitmap drawSprite setCursor setTextColor(fg, bg?) setTextSize
-setTextWrap setFont(null | 'bold 16px monospace') print println drawString(text, x, y, align)
-textWidth fontHeight setDither show('auto' | 'full' | 'partial') setBrightness(0–100) isColor() tech`
-
-- **Colours**: `colors.*` (TFT_eSPI names), `color565(r, g, b)`, `hsv565(h, s, v)`, `hex565('#ff8800')`.
-  On 1-bit panels a colour lights a pixel at ≥ 50% brightness; `setDither(true)` dithers instead.
-- **Fonts**: the classic 5×7 font at any integer size, or any browser font rasterised to 1 bit.
-- **Sprites**: `sprite({ palette: { '#': colors.WHITE }, frames: [['.##.', '####']] })`, then
-  `display.drawSprite(s, x, y, { frame, scale, flipX })`.
-
-</details>
-
-<details>
-<summary>Inputs API</summary>
-
-| Input | Sketch API |
+| Module | Events |
 |---|---|
-| `button()` | `isPressed() wasPressed() wasReleased() pressedFor(ms) digitalRead()` |
-| `knob()`: EC11 encoder with push | `getPosition() setPosition() delta() isPressed() wasPressed()` |
-| `pot()` | `read()`: 0–4095 like ESP32 `analogRead`, with ADC noise · `readFloat() readMilliVolts()` |
-| `ld2410()` | `read() isConnected() presenceDetected() movingTargetDetected() stationaryTargetDetected() movingTargetDistance() movingTargetEnergy() stationaryTargetDistance() stationaryTargetEnergy() detectionDistance() outPin()`, raw `available() readByte()` |
-| `imu()` | `accel() gyro()` |
-| `buzzer()` | `beep(hz, ms) tone(hz) stop()` |
+| `dial`: as above | `dial` `{ name, value, delta }` when a dial moves |
+| `trigger`: as above | `trigger` `{ name, pressed }` on each press and release |
+| `ld2410.begin({ mode })`, `ld2410.read()` → `{ connected, moving, still, distance_cm, moving_cm, moving_energy, still_cm, still_energy, out }` | `presence` `{ moving, still, distance_cm }` when the state changes |
 
 The LD2410 is simulated at the UART level: the virtual sensor sends real 23-byte report frames at
-10 Hz into a serial buffer and your code parses them, with method names from the Arduino `ld2410`
-library. Drag the person around the radar panel (speed decides "moving" vs "stationary"), or let
-them wander or approach. Presence is held for the module's 5 s "no-one duration".
+10 Hz and `read()` parses them. Drag the character around the radar (speed decides "moving" vs
+"stationary"), click to send it walking, or let it wander (`mode = "wander"`) or approach.
+Presence is held for the module's 5 s "no-one duration". `screens.get("main")` also carries Bench
+extras: `model`, `controller` and `tech`.
 
-</details>
+### How it matches Resident
 
-## Resident apps
-
-[Resident](https://github.com/inanimate-tech/resident) is a sandboxed Lua runtime for ESP32 devices
-with hot-reloadable apps. Bench runs those apps unmodified in a real Lua 5.4 VM
-([wasmoon](https://github.com/ceifa/wasmoon)), on whichever display is selected.
-
-Pick an app under **Resident apps (Lua)** in the Sketch menu, **drop a `.lua` file on the device**,
-or edit the source in the Resident panel and press Run (⌘↵). Included are Resident's own examples
-(Swiss railway clock, water-sim, daisy, accelerometer, …) and two that adapt to any screen.
-
-What matches the firmware:
+Bench runs apps in a real Lua 5.4 VM ([wasmoon](https://github.com/ceifa/wasmoon)) with Resident's
+sandbox:
 
 - **Lifecycle**: `init`, `on_tick` every 100 ms with real `dt_ms`, `on_event` from an 8-slot ring,
   `ctx.time_ms`. Apps that define no callback are rejected.
@@ -195,10 +170,11 @@ What matches the firmware:
   kept across reloads), `time` and `datetime` (Resident's own Lua source over a ported strftime).
 - **Argument checks** behave like `luaL_checkinteger`: `g:fillRect(1.5, …)` raises the same error here
   as on the device.
-- **Buttons** produce `tap`, `hold` (500 ms) and `button` events (keys **A** and **B**). They're
-  triggers, so you can swap a button for an encoder push, an IMU shake or the radar.
+- **Buttons** produce `tap`, `hold` (500 ms) and `button` events (keys **A** and **B**).
 
-Not supported yet: LVGL, 32-bit integer wrap-around (the VM is 64-bit), the boot countdown.
+Apps that only use Resident's modules run unchanged on a real device. The Bench drivers (`dial`,
+`trigger`, `ld2410`) need a board whose firmware provides them. Not supported yet: LVGL, 32-bit
+integer wrap-around (the VM is 64-bit), the boot countdown.
 
 ### Push apps from your terminal or Claude Code
 
@@ -229,24 +205,24 @@ connected. Use **new** in the Resident panel to rotate it.
 
 | Key | Does |
 |---|---|
-| Space | the sketch's main button (e.g. BOOT) |
-| A / B | Resident buttons 0 and 1 |
-| ← / → / Enter | turn / push the rotary encoder |
-| Esc | "back" button in the knob menu |
+| A / B | the board's buttons 0 and 1 |
+| ← / → / Enter | turn / push the rotary encoder (a dial's keys, unless the app sets others) |
+| [ / ] | the knob menu's gauge dial |
+| F | fit everything in the 3D view |
 
 In the 3D view everything stands on one desk:
 
 - **Use a part:** click buttons, turn the encoder ring, slide the pot, click the radar floor.
 - **Move things:** drag the body of the device or of a part (its board, not its controls) to slide
   it across the desk; the wires follow. ⌥ Option-drag moves anything. Double-click something to put
-  it back. Layouts are remembered per device and sketch. **Tidy** puts every part back in an
+  it back. Layouts are remembered per device and app. **Tidy** puts every part back in an
   automatic layout chosen to suit the stage's shape (beside the device, or under it on a tall stage).
 - **Look around:** drag empty space to orbit; scroll or pinch to zoom towards the cursor; right- or
   middle-drag to pan; double-click empty space to reset the angle and fit everything.
 - **Fit:** **Fit all** (or **F**) frames the device, every part and the wires. Until you zoom or pan
   yourself, the view keeps everything fitted as the window resizes or parts are swapped. The **+ / −**
   buttons zoom too.
-- **Tilt:** shift-drag the device when the sketch has an IMU.
+- **Tilt:** shift-drag the device when the app uses the IMU.
 
 ## Add a display
 
@@ -276,11 +252,12 @@ export default {
 } satisfies DeviceProfile;
 ```
 
-Enclosure `parts` can be buttons (`input: n` makes one clickable as the sketch's n-th button),
+Enclosure `parts` can be buttons (`input: n` makes one clickable as the app's n-th button),
 ports, pin headers, mounting holes and LEDs, placed on any face of the body.
 
-To add an input type, subclass `SimInput` in `src/sim/inputs/`, export a factory like `button()`, and
-add a widget in `src/ui/widgets/` with a case in `InputPanel.tsx`.
+To add an input type, subclass `SimInput` in `src/sim/inputs/`, export a factory like `button()`, add
+a widget in `src/ui/widgets/` with a case in `InputPanel.tsx`, and give Lua a driver for it: bridge
+functions in `src/resident/host.ts` and the module in `src/resident/lua/prelude.lua`.
 
 ## Project layout
 
@@ -290,12 +267,12 @@ src/sim/            simulator core, framework-free
   gfx.ts              drawing API          framebuffer.ts   MCU-side buffer + dirty rect
   display.ts          show(): bus timing   panels/          LCD, OLED, e-paper physics
   devices/            one file per display inputs/          button, knob, pot, LD2410, IMU, buzzer
-  runner.ts           runs setup()/loop()  renderer.ts      flat canvas view
-src/resident/       Resident runtime: wasmoon host, Lua sandbox prelude, relay client, datetime
-src/resident-apps/  bundled Lua apps
-src/sketches/       bundled TypeScript sketches
+  runner.ts           runs a program       renderer.ts      flat canvas view
+src/resident/       Lua runtime: wasmoon host, Resident sandbox prelude, Bench drivers, relay, datetime
+src/resident-apps/  bundled Lua apps (Bench's examples and Resident's)
 src/ui/             React UI; ui/three/ builds the wireframe models from each enclosure
-tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol, Resident sandbox
+tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol, Lua sandbox and
+                    drivers, every bundled app on every kind of display
 docs/resident/      DEVICE-SKILL.md for Resident's agent skills
 ```
 

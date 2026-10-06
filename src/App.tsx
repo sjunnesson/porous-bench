@@ -8,7 +8,6 @@ import type { Button } from './sim/inputs/button';
 import type { Knob } from './sim/inputs/knob';
 import { type LogLine, SketchRun } from './sim/runner';
 import type { InputSpecs, Sketch } from './sim/sketch';
-import { type RegisteredSketch, sketches as initialSketches, SKETCHES_UPDATED } from './sketches';
 import { Console } from './ui/Console';
 import { DeviceInfo } from './ui/DeviceInfo';
 import { DeviceView, type ViewState } from './ui/DeviceView';
@@ -19,13 +18,15 @@ import { ResidentPanel } from './ui/ResidentPanel';
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
 const TECH_LABEL = { lcd: 'LCD', oled: 'OLED', epaper: 'E-paper' } as const;
 
+const GROUPS = ['Your app', 'Bench examples', 'Resident examples'] as const;
+
+/** One Lua app in the Sketch menu. */
 interface Entry {
   id: string;
   name: string;
-  group: 'TypeScript sketches' | 'Resident apps (Lua)';
+  group: (typeof GROUPS)[number];
   sketch: Sketch<InputSpecs>;
-  /** Lua source, for Resident apps. */
-  code?: string;
+  code: string;
 }
 
 /** Which hardware the user picked for a sketch's control, kept across reloads. */
@@ -44,10 +45,10 @@ function saveBinding(sketchId: string, control: string, source: string) {
   }
 }
 
-const bundledResident: Entry[] = residentApps.map((a) => ({
+const bundled: Entry[] = residentApps.map((a) => ({
   id: `resident:${a.id}`,
   name: a.name,
-  group: 'Resident apps (Lua)',
+  group: a.origin === 'resident' ? 'Resident examples' : 'Bench examples',
   sketch: residentSketch({ name: a.name, code: a.code, description: a.description || undefined }),
   code: a.code,
 }));
@@ -55,26 +56,18 @@ const bundledResident: Entry[] = residentApps.map((a) => ({
 export default function App() {
   const clock = useMemo(() => new SimClock(), []);
   const { paused, speed } = useClockState(clock);
-  const [sketchList, setSketchList] = useState<RegisteredSketch[]>(initialSketches);
-  const [sketchId, setSketchId] = usePersisted('sketch', 'hello');
+  const [sketchId, setSketchId] = usePersisted('sketch', 'resident:hello-display');
   const [deviceId, setDeviceId] = usePersisted('device', 'waveshare-esp32-c6-lcd-1.47');
   const [view, setView] = usePersisted<ViewState>('view', { zoom: 'fit', grid: true, rotation: 'auto' });
   const [restarts, setRestarts] = useState(0);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Hot-swap sketches when their files change.
-  useEffect(() => {
-    const onUpdate = (e: Event) => setSketchList((e as CustomEvent<RegisteredSketch[]>).detail);
-    window.addEventListener(SKETCHES_UPDATED, onUpdate);
-    return () => window.removeEventListener(SKETCHES_UPDATED, onUpdate);
-  }, []);
-
   // Resident: an app pushed over the relay, dropped on the device or run from the editor.
   useSyncExternalStore(session.subscribe, session.getVersion);
   const live = session.live;
   const liveEntry = useMemo<Entry | null>(
-    () => (live ? { id: 'resident:live', name: `▶ ${live.name}`, group: 'Resident apps (Lua)', sketch: residentSketch({ ...live, live }), code: live.code } : null),
+    () => (live ? { id: 'resident:live', name: `▶ ${live.name}`, group: 'Your app', sketch: residentSketch({ ...live, live }), code: live.code } : null),
     [live],
   );
   const lastLive = useRef(live);
@@ -83,11 +76,7 @@ export default function App() {
     lastLive.current = live;
   }, [live, setSketchId]);
 
-  const entries: Entry[] = [
-    ...sketchList.map((s) => ({ id: s.id, name: s.sketch.name, group: 'TypeScript sketches' as const, sketch: s.sketch })),
-    ...(liveEntry ? [liveEntry] : []),
-    ...bundledResident,
-  ];
+  const entries: Entry[] = [...(liveEntry ? [liveEntry] : []), ...bundled];
   const entry = entries.find((s) => s.id === sketchId) ?? entries[0];
   const device = findDevice(deviceId) ?? devices[0];
 
@@ -96,11 +85,9 @@ export default function App() {
     const r = new SketchRun(entry.sketch, device, clock, {
       onLog: (line) => setLogs((l) => [...l.slice(-299), line]),
       onError: (err) => setError(err instanceof Error ? (err.stack ?? err.message) : String(err)),
+      // Controls appear as the app declares them; each picks up the hardware chosen last time.
+      bindingFor: (control) => loadBinding(entry.id, control),
     });
-    for (const control of r.controls) {
-      const saved = loadBinding(entry.id, control.name);
-      if (saved) control.bind(saved);
-    }
     setRun(r);
     setLogs([]);
     setError(null);
@@ -209,12 +196,12 @@ export default function App() {
       </header>
 
       <main className="main">
-        {/* Left: the code — which sketch, its source, the relay, its logs. */}
-        <aside className="sidebar sidebar-info" aria-label="Sketch and code">
+        {/* Left: the code — which app, its source, the relay, its logs. */}
+        <aside className="sidebar sidebar-info" aria-label="App and code">
           <div className="panel">
-            <h2>Sketch</h2>
-            <select className="wide" value={entry.id} onChange={(e) => (setSketchId(e.target.value), e.target.blur())} aria-label="Sketch">
-              {(['TypeScript sketches', 'Resident apps (Lua)'] as const).map((group) => (
+            <h2>App</h2>
+            <select className="wide" value={entry.id} onChange={(e) => (setSketchId(e.target.value), e.target.blur())} aria-label="App">
+              {GROUPS.filter((group) => entries.some((e) => e.group === group)).map((group) => (
                 <optgroup key={group} label={group}>
                   {entries
                     .filter((e) => e.group === group)
@@ -228,7 +215,7 @@ export default function App() {
             </select>
             {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
           </div>
-          <ResidentPanel code={entry.code ?? null} appName={entry.code ? entry.name.replace(/^▶ /, '') : null} />
+          <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>
         {run && (

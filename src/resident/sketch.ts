@@ -1,10 +1,12 @@
 // A Resident Lua app as a Bench sketch: the board (display, two buttons, IMU, buzzer) is
-// whatever display is selected, and the sandbox loop runs inside loop().
+// whatever display is selected, plus any dials, triggers or radar the app declares (Bench's
+// drivers). The sandbox loop runs inside loop().
 
 import type { Display } from '../sim/display';
-import { trigger } from '../sim/controls/controls';
+import { dial, trigger } from '../sim/controls/controls';
 import { buzzer } from '../sim/inputs/buzzer';
 import { imu } from '../sim/inputs/imu';
+import { ld2410 } from '../sim/inputs/ld2410';
 import { defineSketch, type Sketch } from '../sim/sketch';
 import { type ResidentBoard, ResidentHost, resetScreen } from './host';
 import { luaFactory } from './lua';
@@ -36,7 +38,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
       buzzer: buzzer(),
     },
 
-    async setup({ display, device, inputs, millis, log, warn, error }) {
+    async setup({ display, device, inputs, millis, declare, log, warn, error }) {
       display.setRotation(device.firmwareRotation ?? 0);
       await resetScreen(display);
       const board: ResidentBoard = {
@@ -46,6 +48,9 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         buttons: [inputs.a, inputs.b],
         imu: inputs.imu,
         buzzer: inputs.buzzer,
+        dial: (name, opts) => declare(name, dial(opts)),
+        trigger: (name, opts) => declare(name, trigger(opts)),
+        radar: (opts) => declare('radar', ld2410(opts)),
         store: new AppStore(app.storeNs ?? 'app', true, (key) => {
           warn(`store: '${key}' rejected, over the 2048-byte budget`);
           session.telemetry('store_full', { error: key });

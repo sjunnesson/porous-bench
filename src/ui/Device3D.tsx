@@ -545,7 +545,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
           ? `${hit.button.label}${input.key ? ` (${input.key.replace(/^Key/, '')})` : ''}`
           : mapped
             ? `${hit.button.label}: "${mapped.label}" is on other hardware right now`
-            : `${hit.button.label} (not used by this sketch)`;
+            : `${hit.button.label} (not used by this app)`;
       } else if (hit?.kind === 'part') {
         el.style.cursor = 'pointer';
         el.title = hit.part.title(hit.object);
@@ -721,6 +721,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       });
       wires.traverse((o) => o instanceof THREE.Line && o.geometry.dispose());
       renderer.dispose();
+      renderer.forceContextLoss(); // dispose() keeps the WebGL context; browsers cap how many stay alive
       el.remove();
       onCanvas?.(null);
     };

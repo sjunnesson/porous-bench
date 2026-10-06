@@ -2,7 +2,8 @@
 
 Bench is a browser simulator that runs Resident apps on a choice of virtual displays. Its board
 surface is the M5StickC Plus2's (`screen`, `imu`, `buzzer`, `button`, two buttons) plus `lgfx`, on
-whichever display the user has selected. Apps written for the M5Stick run unchanged; apps that read
+whichever display the user has selected, plus three Bench drivers for hardware on its desk (`dial`,
+`trigger`, `ld2410`). Apps written for the M5Stick run unchanged; apps that read
 `screens.get("main")` adapt to every display.
 
 Pass this file to the Resident plugin: `/resident:create-app --device-skill docs/resident/DEVICE-SKILL.md …`
@@ -12,7 +13,8 @@ Pass this file to the Resident plugin: `/resident:create-app --device-skill docs
 **Screen** `"main"`: the selected display. Ask for its facts, never assume them:
 
 ```lua
-local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme = "dark" | "light", dpi?, brightness }
+local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme = "dark" | "light", dpi?, brightness,
+                                --   model, controller, tech = "lcd" | "oled" | "epaper" }  (the last three are Bench extras)
 ```
 
 | Display | Size seen by apps | depth | scheme | Notes |
@@ -73,6 +75,32 @@ buzzer.beep(440, 200)   buzzer.tone(1000)   buzzer.stop()
 button.press_count()    -- taps since the app loaded
 ```
 
+### dial, trigger, ld2410 (Bench drivers)
+
+Declare these at the top of the app (or in `init`): each declaration puts the part on the desk.
+Which hardware drives a dial or trigger is the user's choice in Bench's Controls panel, so write
+against the API, not a specific part.
+
+```lua
+local speed = dial.new("speed", { min = 1, max = 10, step = 1, start = 3 })
+--   options: label, min, max, step, start, wrap, via = "encoder" | "pot" | "imu-x" | "imu-y" | "buttons" | "radar",
+--            keys = { down = "ArrowLeft", up = "ArrowRight" }
+speed:value()   speed:delta()   -- steps since the last call   speed:fraction()   -- 0..1 in the range
+
+local fire = trigger.new("fire", { key = "Space" })
+--   options: label, key (a KeyboardEvent.code), via = "button" | "external-button" | "encoder-push" | "shake" | "presence"
+fire:is_pressed()   fire:was_pressed()   fire:was_released()   fire:pressed_for(ms)
+
+ld2410.begin({ mode = "wander" })   -- "wander" | "approach" | "empty" | "manual"
+local r = ld2410.read()  -- { connected, moving, still, distance_cm, moving_cm, moving_energy, still_cm, still_energy, out }
+```
+
+Driver events arrive in `on_event` with `e.channel == "driver"`: `dial` `{ name, value, delta }` when a
+dial moves, `trigger` `{ name, pressed }` on each edge, `presence` `{ moving, still, distance_cm }` when
+the radar's state changes. Poll in `on_tick` or react to events, whichever reads better. These
+modules exist only on Bench (or a board whose firmware provides them); guard with `if dial then`
+for apps that should also run on a plain M5Stick.
+
 Plus every universal module from Resident's `prompts/sandbox.md`: `log`, `events`, `store`,
 `time`, `datetime` (local zone = the browser's), `screens`. LVGL is not available.
 
@@ -111,5 +139,12 @@ imu = setmetatable({
   temp = function() return 0 end,
 }, { __index = function() return function() end end })
 button = setmetatable({ press_count = function() return 0 end }, { __index = function() return function() end end })
+local handle = setmetatable({}, { __index = function() return function() return 0 end end })
+dial = { new = function() return handle end }
+trigger = { new = function() return setmetatable({}, { __index = function() return function() return false end end }) end }
+ld2410 = { begin = function() end, read = function()
+  return { connected = true, moving = false, still = false, distance_cm = 0, moving_cm = 0, moving_energy = 0,
+           still_cm = 0, still_energy = 0, out = false }
+end }
 buzzer = setmetatable({}, { __index = function() return function() end end })
 ```

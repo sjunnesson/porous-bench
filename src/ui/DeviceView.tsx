@@ -133,7 +133,7 @@ export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
         )}
         {error && (
           <div className="error-overlay">
-            <strong>Sketch crashed</strong>
+            <strong>App crashed</strong>
             <pre>{error}</pre>
             <span>Fix the code and save; it restarts automatically.</span>
           </div>

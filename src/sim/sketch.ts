@@ -13,6 +13,11 @@ export interface SketchContext<I = Record<string, SimInput>> {
   millis(): number;
   /** Arduino delay(): `await delay(16)`. */
   delay(ms: number): Promise<void>;
+  /**
+   * Add hardware while running (a Lua app declaring a dial, say). Returns the existing input when
+   * `name` is already declared with the same kind.
+   */
+  declare<T extends SimInput>(name: string, spec: InputSpec<T>): T;
   /** Shows up in the console panel. */
   log(...args: unknown[]): void;
   warn(...args: unknown[]): void;

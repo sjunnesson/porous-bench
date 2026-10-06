@@ -286,6 +286,9 @@ export class Trigger extends SimInput {
   private pressed = false;
   private released = false;
   private since = 0;
+  /** Press and release edges so far: a host can turn them into events without consuming them. */
+  presses = 0;
+  releases = 0;
 
   constructor(
     opts: TriggerOptions,
@@ -391,9 +394,13 @@ export class Trigger extends SimInput {
       // Buttons keep their own edge flags, so even a tap shorter than the sketch's loop counts.
       if (p.wasPressed()) {
         this.pressed = true;
+        this.presses++;
         this.since = this.bench.clock.now();
       }
-      if (p.wasReleased()) this.released = true;
+      if (p.wasReleased()) {
+        this.released = true;
+        this.releases++;
+      }
       this.prev = p.isPressed();
       return;
     }
@@ -403,9 +410,13 @@ export class Trigger extends SimInput {
     if (this.source === 'presence') down ||= !!this.hw.radar?.outPin();
     if (down && !this.prev) {
       this.pressed = true;
+      this.presses++;
       this.since = this.bench.clock.now();
     }
-    if (!down && this.prev) this.released = true;
+    if (!down && this.prev) {
+      this.released = true;
+      this.releases++;
+    }
     this.prev = down;
   }
 }

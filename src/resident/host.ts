@@ -1,10 +1,13 @@
 // Runs one Resident Lua app: a fresh Lua 5.4 VM (wasmoon), the sandbox prelude, and the JS half of
-// every module (lgfx, screen, imu, buzzer, button, screens, events, store, time, datetime).
+// every module (lgfx, screen, imu, buzzer, button, screens, events, store, time, datetime), plus
+// Bench's own drivers for the hardware on the desk (dial, trigger, ld2410).
 // Mirrors the device's dispatch: init once, on_tick every 100 ms, on_event from an 8-slot ring.
 
 import qrcode from 'qrcode-generator';
 import type { LuaEngine, LuaFactory } from 'wasmoon';
 import { color565, colors } from '../sim/color';
+import { DIAL_SOURCES, type Dial, type DialOptions, TRIGGER_SOURCES, type Trigger, type TriggerOptions } from '../sim/controls/controls';
+import type { LD2410, LD2410Options } from '../sim/inputs/ld2410';
 import type { Display } from '../sim/display';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
@@ -43,6 +46,10 @@ export interface ResidentBoard {
   imu?: Imu;
   buzzer?: Buzzer;
   store: AppStore;
+  /** Bench drivers: hardware the app declares, which appears on the desk. */
+  dial?(name: string, opts: DialOptions): Dial;
+  trigger?(name: string, opts: TriggerOptions): Trigger;
+  radar?(opts: LD2410Options): LD2410;
   log(level: 'info' | 'warn' | 'error', text: string): void;
   telemetry(name: string, data?: Record<string, unknown>): void;
   publish(name: string, dataJson: string, keep: boolean): SendResult;
@@ -81,6 +88,10 @@ export class ResidentHost {
   private lastTickErrorReport = -Infinity;
   private taps = 0;
   private gestures: { downAt: number; held: boolean }[] = [];
+  // Bench drivers the app declared, with what their events last reported.
+  private dials = new Map<string, { dial: Dial; last: number }>();
+  private triggers = new Map<string, { trigger: Trigger; presses: number; releases: number }>();
+  private radar: { r: LD2410; state: number } | null = null;
   closed = false;
 
   private constructor(
@@ -138,6 +149,7 @@ export class ResidentHost {
   step(): void {
     if (this.closed) return;
     this.pollButtons();
+    this.pollDrivers();
     while (this.ring.length) {
       const e = this.ring.shift()!;
       const err = this.api.call('on_event', this.timeMs, e);
@@ -206,6 +218,35 @@ export class ResidentHost {
     });
   }
 
+  /** Driver events for the declared hardware: a dial that moved, a trigger edge, a radar state change. */
+  private pollDrivers() {
+    for (const [name, d] of this.dials) {
+      const value = d.dial.value;
+      if (value !== d.last) {
+        this.queue({ name: 'dial', channel: 'driver', data: { name, value, delta: value - d.last } });
+        d.last = value;
+      }
+    }
+    for (const [name, t] of this.triggers) {
+      t.trigger.isPressed(); // brings its edge counts up to date
+      while (t.presses < t.trigger.presses || t.releases < t.trigger.releases) {
+        const press = t.presses <= t.releases && t.presses < t.trigger.presses;
+        if (press) t.presses++;
+        else t.releases++;
+        this.queue({ name: 'trigger', channel: 'driver', data: { name, pressed: press } });
+      }
+    }
+    if (this.radar) {
+      const r = this.radar.r;
+      r.read();
+      const state = (r.movingTargetDetected() ? 1 : 0) | (r.stationaryTargetDetected() ? 2 : 0);
+      if (state !== this.radar.state) {
+        this.radar.state = state;
+        this.queue({ name: 'presence', channel: 'driver', data: { moving: !!(state & 1), still: !!(state & 2), distance_cm: r.detectionDistance() } });
+      }
+    }
+  }
+
   private present() {
     const d = this.board.display;
     d.invalidate(); // a flip blits the whole frame buffer
@@ -238,6 +279,10 @@ export class ResidentHost {
       depth: d.isColor() ? 16 : 1,
       scheme: p.tech === 'epaper' ? 'light' : 'dark',
       ...(dpi ? { dpi } : {}),
+      // Bench extras: which module this is.
+      model: p.name,
+      controller: p.controller,
+      tech: p.tech,
     };
   }
 
@@ -247,6 +292,8 @@ export class ResidentHost {
     return breakDown(secs, z.gmtoff, z.abbr);
   }
 
+  // Bridge functions return undefined, never null, for "nothing": this wasmoon throws on a returned
+  // null. Lua sees no value, so the prelude wraps any that an app reads directly.
   private bridge() {
     const b = this.board;
     const d = b.display;
@@ -330,10 +377,74 @@ export class ResidentHost {
       bz_stop: () => b.buzzer?.stop(),
       btn_press_count: () => this.taps,
 
+      // Bench drivers. Each returns an error message, or undefined (nil in Lua; wasmoon chokes on a returned null).
+      dial_new: (name: string, opts: Record<string, unknown>) => {
+        if (!b.dial) return 'dial: this board has no dial driver';
+        if (this.dials.has(name)) return undefined;
+        const o = checkOpts('dial.new', opts, { label: 'string', min: 'number', max: 'number', step: 'number', start: 'number', wrap: 'boolean', via: 'string', keys: 'object' });
+        if (typeof o === 'string') return o;
+        if (o.via !== undefined && !DIAL_SOURCES.some((s) => s.id === o.via)) return `dial.new: via must be one of ${DIAL_SOURCES.map((s) => `"${s.id}"`).join(', ')}`;
+        try {
+          const dial = b.dial(name, { label: titleCase(name), ...o } as DialOptions);
+          this.dials.set(name, { dial, last: dial.value });
+          return undefined;
+        } catch (e) {
+          return `dial.new: ${e instanceof Error ? e.message : e}`;
+        }
+      },
+      dial_value: (name: string) => this.dials.get(name)?.dial.value ?? 0,
+      dial_delta: (name: string) => this.dials.get(name)?.dial.delta() ?? 0,
+      dial_fraction: (name: string) => this.dials.get(name)?.dial.fraction ?? 0,
+      trig_new: (name: string, opts: Record<string, unknown>) => {
+        if (!b.trigger) return 'trigger: this board has no trigger driver';
+        if (this.triggers.has(name)) return undefined;
+        const o = checkOpts('trigger.new', opts, { label: 'string', key: 'string', via: 'string' });
+        if (typeof o === 'string') return o;
+        if (o.via !== undefined && !TRIGGER_SOURCES.some((s) => s.id === o.via)) return `trigger.new: via must be one of ${TRIGGER_SOURCES.map((s) => `"${s.id}"`).join(', ')}`;
+        try {
+          const trigger = b.trigger(name, { label: titleCase(name), ...o } as TriggerOptions);
+          this.triggers.set(name, { trigger, presses: trigger.presses, releases: trigger.releases });
+          return undefined;
+        } catch (e) {
+          return `trigger.new: ${e instanceof Error ? e.message : e}`;
+        }
+      },
+      trig_is_pressed: (name: string) => !!this.triggers.get(name)?.trigger.isPressed(),
+      trig_was_pressed: (name: string) => !!this.triggers.get(name)?.trigger.wasPressed(),
+      trig_was_released: (name: string) => !!this.triggers.get(name)?.trigger.wasReleased(),
+      trig_pressed_for: (name: string, ms: number) => !!this.triggers.get(name)?.trigger.pressedFor(ms),
+      ld_begin: (opts: Record<string, unknown>) => {
+        if (!b.radar) return 'ld2410: this board has no radar driver';
+        if (this.radar) return undefined;
+        const o = checkOpts('ld2410.begin', opts, { mode: 'string' });
+        if (typeof o === 'string') return o;
+        if (o.mode !== undefined && !['wander', 'approach', 'empty', 'manual'].includes(o.mode as string)) {
+          return 'ld2410.begin: mode must be "wander", "approach", "empty" or "manual"';
+        }
+        this.radar = { r: b.radar(o as LD2410Options), state: -1 };
+        return undefined;
+      },
+      ld_read: () => {
+        const r = this.radar?.r;
+        if (!r) return undefined;
+        r.read();
+        return {
+          connected: r.isConnected(),
+          moving: r.movingTargetDetected(),
+          still: r.stationaryTargetDetected(),
+          distance_cm: r.detectionDistance(),
+          moving_cm: r.movingTargetDistance(),
+          moving_energy: r.movingTargetEnergy(),
+          still_cm: r.stationaryTargetDistance(),
+          still_energy: r.stationaryTargetEnergy(),
+          out: r.outPin(),
+        };
+      },
+
       // screens
       screens_list: () => [this.screenInfo()],
       screens_get: (name: string) => {
-        if (name !== 'main') return null;
+        if (name !== 'main') return undefined;
         const info: Record<string, unknown> = { ...this.screenInfo(), brightness: d.getBrightness() / 100 };
         if (d.tech === 'epaper') {
           info.busy = this.presents.length > 0;
@@ -349,7 +460,7 @@ export class ResidentHost {
           if (typeof v !== 'number') return `screens.set: '${k}' must be a number`;
           d.setBrightness(Math.min(1, Math.max(0, v)) * 100);
         }
-        return null;
+        return undefined;
       },
       screens_refresh: (name: string) => {
         if (name !== 'main' || d.tech !== 'epaper') return false;
@@ -363,7 +474,7 @@ export class ResidentHost {
         if (!name || new TextEncoder().encode(json).length > EVENT_JSON_MAX) return 'dropped';
         return b.publish(name, json, keep);
       },
-      store_get: (k: string) => b.store.get(k) ?? null,
+      store_get: (k: string) => b.store.get(k) ?? undefined,
       store_set: (k: string, v: Scalar | null) => b.store.set(k, v),
       store_keys: () => b.store.keys(),
       store_clear: () => b.store.clear(),
@@ -371,20 +482,20 @@ export class ResidentHost {
 
       // datetime primitives (see the header of lua/datetime.lua)
       dt_now: now,
-      dt_now32: () => (I32(now()) ? now() : null),
+      dt_now32: () => (I32(now()) ? now() : undefined),
       dt_split: (secs: number, local: boolean) => {
         const t = this.tm(secs, local);
         return [t.year, t.mon, t.mday, t.hour, t.min, t.sec];
       },
       dt_epoch: (year: number, mon: number, mday: number, hour: number, min: number, sec: number) => {
         const s = wallSeconds({ year, mon, mday, hour, min, sec });
-        return I32(s) ? s : null;
+        return I32(s) ? s : undefined;
       },
       dt_resolve: (year: number, mon: number, mday: number, hour: number, min: number, sec: number) => {
         const wall = wallSeconds({ year, mon, mday, hour, min, sec });
-        if (!I32(wall < 0 ? wall + 86400 : wall - 86400)) return null;
+        if (!I32(wall < 0 ? wall + 86400 : wall - 86400)) return undefined;
         const r = b.zone().resolve(wall);
-        return I32(r.utc) ? [r.utc, r.gmtoff, r.abbr] : null;
+        return I32(r.utc) ? [r.utc, r.gmtoff, r.abbr] : undefined;
       },
       dt_ord: (y: number, m: number, dd: number) => daysFromCivil(y, m, dd) + ORDINAL_OFFSET,
       dt_civil: (n: number) => civilFromDays(n - ORDINAL_OFFSET),
@@ -399,7 +510,7 @@ export class ResidentHost {
         const carry = Math.floor(ss / 86400);
         dd += carry;
         ss -= carry * 86400;
-        return dd < -999999999 || dd > 999999999 ? null : [dd, ss];
+        return dd < -999999999 || dd > 999999999 ? undefined : [dd, ss];
       },
 
       // the deprecated half of `time`
@@ -426,6 +537,20 @@ export class ResidentHost {
     };
   }
 }
+
+/** Option-table checks for the Bench drivers: only known keys, each of the right type. */
+function checkOpts(fname: string, opts: Record<string, unknown> | null | undefined, schema: Record<string, string>): Record<string, unknown> | string {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(opts ?? {})) {
+    if (!(k in schema)) return `${fname}: unknown option '${k}'`;
+    if (v === null || v === undefined) continue;
+    if (typeof v !== schema[k]) return `${fname}: option '${k}' must be a ${schema[k] === 'object' ? 'table' : schema[k]}`;
+    out[k] = v;
+  }
+  return out;
+}
+
+const titleCase = (s: string) => s.replace(/[_-]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
 /** Clear the glass the way the board does on app reset. */
 export function resetScreen(display: Display): Promise<void> {

@@ -227,12 +227,12 @@ export function RadarWidget({ input }: { input: LD2410 }) {
           </tr>
           <tr>
             <th>UART frame</th>
-            <td className="hex">{bytes ? Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ') : 'waiting for sketch to read…'}</td>
+            <td className="hex">{bytes ? Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ') : 'waiting for the app to read…'}</td>
           </tr>
           {overflowed > 0 && (
             <tr>
               <th>overflow</th>
-              <td className="warn">{overflowed} bytes dropped: the sketch isn't reading fast enough</td>
+              <td className="warn">{overflowed} bytes dropped: the app isn't reading fast enough</td>
             </tr>
           )}
         </tbody>

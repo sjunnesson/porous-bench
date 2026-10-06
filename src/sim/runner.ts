@@ -5,6 +5,7 @@ import { type Control, isControl } from './controls/controls';
 import { Display } from './display';
 import type { Button } from './inputs/button';
 import type { SimInput } from './inputs/input';
+import type { InputSpec } from './inputs/input';
 import type { InputSpecs, Sketch, SketchContext } from './sketch';
 
 export interface LogLine {
@@ -16,6 +17,8 @@ export interface LogLine {
 export interface RunCallbacks {
   onLog?(line: LogLine): void;
   onError?(err: unknown): void;
+  /** The hardware the user last picked for a control, applied as the control appears. */
+  bindingFor?(control: string): string | null;
 }
 
 /** One boot of a sketch on a device: fresh display, fresh inputs, millis() from 0. */
@@ -42,26 +45,43 @@ export class SketchRun {
     this.display = new Display(device, clock, this.abort.signal);
     this.inputs = {};
     this.bench = new Bench(clock);
-    for (const [name, spec] of Object.entries(sketch.inputs ?? {})) {
-      const input = spec.create({ clock, bench: this.bench });
-      input.name = name;
-      this.inputs[name] = input;
-      if (isControl(input)) this.controls.push(input);
-      else {
-        this.declared.push(input);
-        this.bench.addDeclared(input);
-      }
-    }
+    for (const [name, spec] of Object.entries(sketch.inputs ?? {})) this.addInput(name, spec);
     this.ctx = {
       display: this.display,
       inputs: this.inputs,
       device,
       millis: () => Math.floor(this.clock.now() - this.startMs),
       delay: (ms) => this.clock.sleep(ms, this.abort.signal),
+      declare: (name, spec) => this.addInput(name, spec),
       log: (...args) => this.log('log', args),
       warn: (...args) => this.log('warn', args),
       error: (...args) => this.log('error', args),
     };
+  }
+
+  /** Create an input and put it on the bench; a control picks up the user's saved hardware. */
+  addInput<T extends SimInput>(name: string, spec: InputSpec<T>): T {
+    const existing = this.inputs[name];
+    const input = spec.create({ clock: this.clock, bench: this.bench });
+    if (existing) {
+      if (existing.kind === input.kind) {
+        if (isControl(input)) input.detach();
+        return existing as T;
+      }
+      if (isControl(input)) input.detach();
+      throw new Error(`'${name}' is already declared as a ${existing.kind}`);
+    }
+    input.name = name;
+    this.inputs[name] = input;
+    if (isControl(input)) {
+      this.controls.push(input);
+      const saved = this.cb.bindingFor?.(name);
+      if (saved) input.bind(saved);
+    } else {
+      this.declared.push(input);
+      this.bench.addDeclared(input);
+    }
+    return input;
   }
 
   /**

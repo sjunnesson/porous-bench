@@ -166,13 +166,64 @@ button = {
   press_count = function() return H.btn_press_count() end,
 }
 
+-- dial, trigger, ld2410: Bench's drivers for the hardware on the desk. Declaring one puts the
+-- part on the desk; which hardware drives a dial or trigger is the user's choice (Controls).
+-- An optional options table, checked from the module function itself (so errors point at the app).
+local function opts_arg(v, i, fname)
+  if v == nil then return {} end
+  if type(v) ~= "table" then argerr(i, fname, "table expected, got " .. type(v), 4) end
+  return v
+end
+
+local DIAL = {}
+DIAL.__index = DIAL
+function DIAL:value() return H.dial_value(self.name) end
+function DIAL:delta() return H.dial_delta(self.name) end
+function DIAL:fraction() return H.dial_fraction(self.name) end
+dial = {
+  new = function(name, opts)
+    name = ck_str(name, 1, "new", select("#", name, opts))
+    local err = H.dial_new(name, opts_arg(opts, 2, "new"))
+    if err then error(err, 2) end
+    return setmetatable({ name = name }, DIAL)
+  end,
+}
+
+local TRIGGER = {}
+TRIGGER.__index = TRIGGER
+function TRIGGER:is_pressed() return H.trig_is_pressed(self.name) end
+function TRIGGER:was_pressed() return H.trig_was_pressed(self.name) end
+function TRIGGER:was_released() return H.trig_was_released(self.name) end
+function TRIGGER:pressed_for(ms) return H.trig_pressed_for(self.name, ck_num(ms, 1, "pressed_for", select("#", ms))) end
+trigger = {
+  new = function(name, opts)
+    name = ck_str(name, 1, "new", select("#", name, opts))
+    local err = H.trig_new(name, opts_arg(opts, 2, "new"))
+    if err then error(err, 2) end
+    return setmetatable({ name = name }, TRIGGER)
+  end,
+}
+
+ld2410 = {
+  begin = function(opts)
+    local err = H.ld_begin(opts_arg(opts, 1, "begin"))
+    if err then error(err, 2) end
+  end,
+  read = function()
+    local r = H.ld_read()
+    if not r then error("ld2410.read: call ld2410.begin() first", 2) end
+    return r
+  end,
+}
+
 -- screens
 local SCREEN_KEYS = { name = 1, w = 1, h = 1, shape = 1, depth = 1, scheme = 1, dpi = 1, group = 1 }
 screens = {
   list = function() return H.screens_list() end,
   get = function(name)
     name = ck_str(name, 1, "get", select("#", name))
-    return H.screens_get(name)
+    local info = H.screens_get(name)
+    return info
   end,
   set = function(name, settings)
     name = ck_str(name, 1, "set", 2)
@@ -229,7 +280,7 @@ events = {
 -- store
 local function scalar(v) local t = type(v) return t == "string" or t == "number" or t == "boolean" end
 store = {
-  get = function(key) return H.store_get(ck_str(key, 1, "get", select("#", key))) end,
+  get = function(key) local v = H.store_get(ck_str(key, 1, "get", select("#", key))) return v end,
   set = function(key, value)
     key = ck_str(key, 1, "set", 2)
     if value ~= nil and not scalar(value) then return false end

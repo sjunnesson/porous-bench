@@ -42,7 +42,7 @@ export function InputPanel({ run, display, onBind }: Props) {
         <h2>Hardware</h2>
         {display}
         <h3>Parts</h3>
-        {parts.length === 0 && <p className="dim">This sketch uses no inputs.</p>}
+        {parts.length === 0 && <p className="dim">This app uses no inputs.</p>}
         {parts.map((input, i) => (
           <Widget key={`${input.kind}-${i}-${input.label}`} input={input} />
         ))}
