@@ -181,9 +181,17 @@ kbd {
   color: var(--ink);
   margin-right: 8px;
 }
+a.brand {
+  text-decoration: none;
+}
 .brand span {
   color: var(--muted);
   margin-right: 0.4em;
+  transition: color 0.15s;
+}
+.brand:hover span,
+.brand:focus-visible span {
+  color: var(--blue);
 }
 .toolbar label {
   display: flex;

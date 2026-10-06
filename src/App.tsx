@@ -151,9 +151,9 @@ export default function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <div className="brand">
+        <a className="brand" href="https://porous.systems" title="porous.systems">
           <span>porous.systems</span> Bench
-        </div>
+        </a>
 
         <div className="group">
           <button onClick={() => setRestarts((n) => n + 1)} title="Reboot: run setup() again">
