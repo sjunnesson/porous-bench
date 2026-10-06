@@ -256,10 +256,13 @@ export const dial = (opts: DialOptions = {}): InputSpec<Dial> => ({
 
 // ---- trigger -------------------------------------------------------------------------------
 
-export type TriggerSource = 'button' | 'encoder-push' | 'shake' | 'presence';
+export type TriggerSource = 'button' | 'external-button' | 'encoder-push' | 'shake' | 'presence';
 
 export const TRIGGER_SOURCES: { id: TriggerSource; label: string }[] = [
+  // 'button' uses the device's own button when it has one for this trigger; 'external-button' is
+  // always a separate switch on the desk.
   { id: 'button', label: 'Push button' },
+  { id: 'external-button', label: 'External button' },
   { id: 'encoder-push', label: 'Encoder push' },
   { id: 'shake', label: 'IMU shake' },
   { id: 'presence', label: 'LD2410 presence' },
@@ -336,7 +339,7 @@ export class Trigger extends SimInput {
   parts(): SimInput[] {
     return Object.values(this.hw).filter(Boolean) as SimInput[];
   }
-  /** The push button behind this trigger, when its source is one (to put it on the device). */
+  /** The push button behind this trigger, when it may sit on the device (not an external one). */
   get buttonPart(): Button | undefined {
     return this.source === 'button' ? this.hw.button : undefined;
   }
@@ -363,6 +366,7 @@ export class Trigger extends SimInput {
     const label = this.label;
     switch (this.source) {
       case 'button':
+      case 'external-button':
         this.hw.button = b.claim(this, 'button', 'button', () => new Button({ label, key: this.key }, b.clock));
         break;
       case 'encoder-push':

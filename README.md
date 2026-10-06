@@ -122,8 +122,10 @@ export default defineSketch({
 | Control | Sketch API | Hardware it can run on |
 |---|---|---|
 | `dial({ min, max, step, start, wrap })` | `value`, `delta()` (steps since last read), `fraction` | rotary encoder · slide pot · IMU tilt ←→ or ↑↓ · two buttons − / + · LD2410 distance |
-| `trigger({ key })` | `isPressed() wasPressed() wasReleased() pressedFor(ms)` | push button · encoder push · IMU shake · LD2410 presence |
+| `trigger({ key })` | `isPressed() wasPressed() wasReleased() pressedFor(ms)` | push button (built-in or external) · encoder push · IMU shake · LD2410 presence |
 
+A trigger's **push button** uses the device's own button when the device has one for it (the
+M5StickC's A and B, say); pick **External button** to put a separate switch on the desk instead.
 Relative hardware (encoder, buttons) steps a dial; absolute hardware (pot, tilt, distance) sets it,
 and on a swap the new hardware takes over at the current value, so nothing jumps. `delta()` works
 the same either way, so menu code doesn't care what's turning it. Parts are shared the way a real

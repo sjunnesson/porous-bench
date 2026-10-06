@@ -34,7 +34,7 @@ export function InputPanel({ run, display, onBind }: Props) {
         <div className="panel">
           <h2>Controls</h2>
           {run.controls.map((c) => (
-            <ControlRow key={c.name} control={c} onBind={onBind} />
+            <ControlRow key={c.name} control={c} onBind={onBind} builtIn={hasBuiltInButton(run, c)} />
           ))}
         </div>
       )}
@@ -70,8 +70,15 @@ function Widget({ input }: { input: SimInput }) {
   }
 }
 
+/** Whether the device has a physical button of its own for this control (its n-th button-like input). */
+function hasBuiltInButton(run: SketchRun, control: Control): boolean {
+  if (control.kind !== 'trigger') return false;
+  const n = run.pressables().findIndex((p) => p.input === control);
+  return n >= 0 && !!run.device.enclosure?.parts?.some((p) => p.kind === 'button' && p.input === n);
+}
+
 /** One abstract control: its live value and the hardware driving it. */
-function ControlRow({ control, onBind }: { control: Control; onBind: Props['onBind'] }) {
+function ControlRow({ control, onBind, builtIn }: { control: Control; onBind: Props['onBind']; builtIn: boolean }) {
   useInput(control);
   const [reading, setReading] = useState('');
   // Absolute sources (pot, tilt, distance) change without telling the control, so poll it.
@@ -110,7 +117,7 @@ function ControlRow({ control, onBind }: { control: Control; onBind: Props['onBi
         >
           {sources.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.label}
+              {s.id === 'button' && builtIn ? 'Built-in button' : s.label}
             </option>
           ))}
         </select>

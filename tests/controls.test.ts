@@ -87,6 +87,21 @@ describe('Trigger', () => {
     expect(t.wasPressed()).toBe(false);
   });
 
+  it("can use an external button that never takes over the device's own", () => {
+    const { bench } = setup();
+    const t = new Trigger({ label: 'A', key: 'KeyA' }, bench);
+    expect(t.buttonPart).toBeDefined(); // a plain push button may sit on the device
+    t.bind('external-button');
+    expect(t.buttonPart).toBeUndefined();
+    const b = t.parts()[0] as Button;
+    expect(b.kind).toBe('button');
+    b.setDown(true);
+    expect(t.wasPressed()).toBe(true);
+    t.handleKey('KeyA', false); // the key still drives it
+    expect(t.isPressed()).toBe(false);
+    expect(t.wasReleased()).toBe(true);
+  });
+
   it('fires on an IMU shake and from its key whatever the source', () => {
     const { clock, bench } = setup();
     const t = new Trigger({ label: 'Jump', key: 'Space', via: 'shake' }, bench);
