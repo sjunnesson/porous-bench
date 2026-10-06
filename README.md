@@ -175,8 +175,47 @@ sandbox:
 - **Buttons** produce `tap`, `hold` (500 ms) and `button` events (keys **A** and **B**).
 
 Apps that only use Resident's modules run unchanged on a real device. The Bench drivers (`dial`,
-`trigger`, `ld2410`) need a board whose firmware provides them. Not supported yet: LVGL, 32-bit
-integer wrap-around (the VM is 64-bit), the boot countdown.
+`trigger`, `ld2410`) need a board whose firmware provides them. Not supported yet: 32-bit integer
+wrap-around (the VM is 64-bit), the boot countdown.
+
+### LVGL: smooth animation
+
+Resident boards can offer an optional `lvgl` module (LVGL 9 through luavgl) instead of drawing with
+`lgfx`, and Bench simulates it. The difference that matters is **who drives the motion**: `on_tick`
+runs at 10 Hz, but LVGL has its own timer pump. On the reference board it runs every 33 ms
+(`LV_DEF_REFR_PERIOD`), calling `lvgl.Anim` callbacks and `lvgl.Timer`s and redrawing what changed.
+So continuous motion belongs in an `Anim`, never in `on_tick`:
+
+```lua
+local h = lvgl.bind("main")                      -- bind first: it also claims the panel from lgfx
+local dot = h.Object { w = 16, h = 16, radius = lvgl.RADIUS_CIRCLE, bg_color = "#5ac8fa" }
+dot:Anim {
+  start_value = 0, end_value = h.HOR_RES() - 16, duration = 700, playback_time = 700,
+  path = "ease_in_out", repeat_count = lvgl.ANIM_REPEAT_INFINITE,
+  exec_cb = function(obj, v) obj:set { translate_x = v } end, run = true,
+}
+```
+
+**LVGL motion** (in the App menu) runs an `Anim` dot and an `on_tick` dot side by side; measured on
+the simulated glass, the first updates about 25 times a second and the second 10.
+
+- **Anims** follow `lv_anim.c`: integer values, the `linear`, `ease_in`, `ease_out`, `ease_in_out`,
+  `overshoot`, `bounce` and `step` paths, delay, playback, repeat (`lvgl.ANIM_REPEAT_INFINITE`),
+  `early_apply`, `done_cb`, and `start` / `stop` / `set` / `delete`. An Anim whose object was deleted
+  drops itself.
+- **Widgets**: `Object`, `Label`, `Button`, `Arc`, `Line`, `Led` and `Checkbox` are drawn in LVGL 9's
+  light default theme with Montserrat, at the reference board's DPI. `Roller` is simplified;
+  `Image`, `Dropdown`, `Textarea`, `Scale`, `List`, `Keyboard` and `Calendar` are placeholder boxes for
+  now. Layout covers sizes, `lvgl.PCT`, `lvgl.SIZE_CONTENT`, `align`, `align_to`, translate, rotation
+  and flex rows and columns.
+- **Styles**: the property vocabulary from Resident's `prompts/lvgl.md`, `h:set_theme{...}`,
+  `lvgl.Style` with `add_style`, and `set_style(props, lvgl.PART.*)` for an arc's track, indicator
+  and knob.
+- **One panel, one library**: once an app calls `lvgl.bind`, `lgfx` flips are dropped, and the other
+  way round.
+- **Bus timing**: each refresh sends only the pixels that changed, like LVGL's partial flushes.
+- Not yet: widget events (an M5Stick has no touchscreen for LVGL either), images, screen-load
+  animations.
 
 ### Push apps from your terminal or Claude Code
 

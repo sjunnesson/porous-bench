@@ -12,10 +12,12 @@ import type { Display } from '../sim/display';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
 import datetimeSrc from './lua/datetime.lua?raw';
+import lvglSrc from './lua/lvgl.lua?raw';
 import preludeSrc from './lua/prelude.lua?raw';
 import type { AppStore, Scalar } from './store';
 import { breakDown, civilFromDays, daysFromCivil, strftime, type Tm, wallSeconds, weekdayAndYearday } from './timecore';
 import type { Zone } from './zone';
+import { LvglScreen } from './lvgl';
 
 export interface ResidentEvent {
   name: string;
@@ -65,10 +67,13 @@ interface Api {
   chunk(code: string): string | null;
   has(name: string): boolean;
   call(name: string, timeMs: number, arg?: unknown): string | null;
+  lv_pump(timeMs: number, period: number): string | null;
 }
 
 const RING = 8;
 const TICK_MS = 100;
+/** LV_DEF_REFR_PERIOD on the reference board: LVGL's anim timer and display refresh run this often. */
+const LV_PERIOD_MS = 33;
 const EVENT_JSON_MAX = 1024;
 const ORDINAL_OFFSET = 719163;
 const I32 = (v: number) => v >= -2147483648 && v <= 2147483647;
@@ -92,6 +97,10 @@ export class ResidentHost {
   private dials = new Map<string, { dial: Dial; last: number }>();
   private triggers = new Map<string, { trigger: Trigger; presses: number; releases: number }>();
   private radar: { r: LD2410; state: number } | null = null;
+  // One panel, one library: whoever bound last presents; the other's frames are dropped.
+  private owner: 'lgfx' | 'lvgl' | null = null;
+  private lv: LvglScreen | null = null;
+  private lastLvRefresh = -Infinity;
   closed = false;
 
   private constructor(
@@ -109,6 +118,7 @@ export class ResidentHost {
     const host = new ResidentHost(engine, board);
     engine.global.set('__ss_host', host.bridge());
     engine.global.set('__ss_datetime_src', datetimeSrc);
+    engine.global.set('__ss_lvgl_src', lvglSrc);
     host.api = engine.doStringSync(preludeSrc) as Api;
     board.telemetry('app_received');
     const loadErr = host.api.load(app.code, app.generationId);
@@ -161,6 +171,24 @@ export class ResidentHost {
       this.lastTick = now;
       const err = this.api.call('on_tick', this.timeMs, dt);
       if (err) this.reportError(err, true);
+    }
+    if (this.lv) this.pumpLvgl(now);
+  }
+
+  /**
+   * LVGL's own timer handler: animations and lvgl.Timers every LV_DEF_REFR_PERIOD, then a refresh
+   * of whatever changed. It runs between ticks, so Anim motion is ~30 fps while on_tick stays at 10.
+   */
+  private pumpLvgl(now: number) {
+    const err = this.api.lv_pump(this.timeMs, LV_PERIOD_MS);
+    if (err) this.reportError(err, true);
+    const lv = this.lv!;
+    if (this.owner !== 'lvgl' || !lv.dirty || now - this.lastLvRefresh < LV_PERIOD_MS) return;
+    this.lastLvRefresh = now;
+    if (lv.refresh()) {
+      const shown = this.board.display.show();
+      shown.catch(() => {});
+      this.presents.push(shown);
     }
   }
 
@@ -248,6 +276,7 @@ export class ResidentHost {
   }
 
   private present() {
+    if (this.owner === 'lvgl') return; // LVGL owns the panel: an lgfx flip stands down silently
     const d = this.board.display;
     d.invalidate(); // a flip blits the whole frame buffer
     const shown = d.show();
@@ -310,7 +339,11 @@ export class ResidentHost {
       flip: () => this.present(),
 
       // lgfx
-      lgfx_bind: (name: string) => name === 'main',
+      lgfx_bind: (name: string) => {
+        if (name !== 'main') return false;
+        this.owner = 'lgfx';
+        return true;
+      },
       lg_fillScreen: (c: number) => d.fillScreen(c24(c)),
       lg_drawPixel: (x: number, y: number, c: number) => d.drawPixel(x, y, c24(c)),
       lg_drawLine: (x0: number, y0: number, x1: number, y1: number, c: number) => d.drawLine(x0, y0, x1, y1, c24(c)),
@@ -443,6 +476,43 @@ export class ResidentHost {
           out: r.outPin(),
         };
       },
+
+      // lvgl: the widget tree (lvgl.ts); handles, animations and timers live in lua/lvgl.lua.
+      lv_claim: (name: string) => {
+        if (name !== 'main') return false;
+        if (!this.lv) {
+          this.lv = new LvglScreen(d, (this.screenInfo().dpi as number | undefined) ?? 160, (text) => b.log('warn', text));
+        }
+        if (this.owner !== 'lvgl') this.lv.invalidateAll(); // take over: repaint every pixel
+        this.owner = 'lvgl';
+        return true;
+      },
+      lv_now: () => this.timeMs,
+      lv_screen: () => this.lv!.screen.id,
+      lv_res: () => [d.width(), d.height()],
+      lv_create: (kind: string, parent?: number | null) => this.lv!.create(kind, parent ?? null),
+      lv_set: (id: number, props: Record<string, unknown>) => this.lv!.set(id, props ?? {}),
+      lv_get: (id: number, key: string) => this.lv!.getProp(id, key) ?? undefined,
+      lv_align_to: (id: number, base: number | null | undefined, type: number, x: number, y: number) => this.lv!.alignTo(id, base ?? null, type, x, y),
+      lv_delete: (id: number) => this.lv!.delete(id),
+      lv_clean: (id: number) => this.lv!.clean(id),
+      lv_flag: (id: number, f: number, on: boolean) => this.lv!.flag(id, f, on),
+      lv_has_flag: (id: number, f: number) => this.lv!.hasFlag(id, f),
+      lv_state: (id: number, st: number, on: boolean) => this.lv!.state(id, st, on),
+      lv_has_state: (id: number, st: number) => this.lv!.hasState(id, st),
+      lv_get_state: (id: number) => this.lv!.getState(id),
+      lv_add_style: (id: number, props: Record<string, unknown>, selector?: number) => this.lv!.addStyle(id, props ?? {}, selector ?? 0),
+      lv_remove_styles: (id: number) => this.lv!.removeStyles(id),
+      lv_coords: (id: number) => this.lv!.coords(id),
+      lv_parent: (id: number) => this.lv!.parentOf(id),
+      lv_child_count: (id: number) => this.lv!.childCount(id),
+      lv_invalidate: () => {
+        this.lv!.dirty = true;
+      },
+      lv_style_changed: () => {
+        this.lv!.dirty = true;
+      },
+      lv_theme: (theme: Record<string, Record<string, unknown>> | null | undefined) => this.lv!.setTheme(theme ?? null),
 
       // screens
       screens_list: () => [this.screenInfo()],

@@ -8,6 +8,9 @@ import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans-condensed/500.css';
 import '@fontsource/ibm-plex-sans-condensed/600.css';
+// LVGL's built-in fonts are Montserrat Medium; Bench's lvgl renders with the same face.
+import '@fontsource/montserrat/500.css';
+import '@fontsource/montserrat/700.css';
 import './styles.css';
 
 migrateStorage();

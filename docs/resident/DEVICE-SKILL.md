@@ -102,7 +102,18 @@ modules exist only on Bench (or a board whose firmware provides them); guard wit
 for apps that should also run on a plain M5Stick.
 
 Plus every universal module from Resident's `prompts/sandbox.md`: `log`, `events`, `store`,
-`time`, `datetime` (local zone = the browser's), `screens`. LVGL is not available.
+`time`, `datetime` (local zone = the browser's), `screens`.
+
+### lvgl (optional)
+
+LVGL 9 through luavgl, per Resident's `prompts/lvgl.md`. `lvgl.bind("main")` returns the display
+handle and claims the panel (`lgfx` flips are then dropped: one library per panel). Fonts: the
+`montserrat` family at 8, 14, 16, 20, 24, 28, 32, 36, 40 and 48 px (`lvgl.Font("montserrat", 20)`;
+other sizes snap to the nearest). Put continuous motion in `lvgl.Anim`: LVGL's timer pump runs every
+33 ms, `on_tick` only every 100. Bench draws `Object`, `Label`, `Button`, `Arc`, `Line`, `Led` and
+`Checkbox` faithfully. `Roller` is simplified, and `Image`, `Dropdown`, `Textarea`, `Scale`, `List`,
+`Keyboard` and `Calendar` are placeholder boxes, so prefer the first set. No widget receives input
+events.
 
 ## Example
 

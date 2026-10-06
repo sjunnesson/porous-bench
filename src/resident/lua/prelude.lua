@@ -8,7 +8,8 @@
 
 local H = __ss_host
 local DT_SRC = __ss_datetime_src
-__ss_host, __ss_datetime_src = nil, nil
+local LV_SRC = __ss_lvgl_src
+__ss_host, __ss_datetime_src, __ss_lvgl_src = nil, nil, nil
 
 local sethook, getinfo = debug.sethook, debug.getinfo
 local load, xpcall, error, type, tostring, tonumber, select, pairs, next =
@@ -126,9 +127,24 @@ function lgfx.bind(name)
   return g
 end
 
-lvgl = setmetatable({}, { __index = function(_, k)
-  error("lvgl." .. tostring(k) .. ": LVGL isn't available in Bench yet; draw with lgfx", 2)
-end })
+-- lvgl (Resident's optional module): `lvgl` is Resident's table (just `bind`) whose missing keys
+-- fall through to luavgl's module once the first bind has loaded it, so lvgl.Font / lvgl.Anim /
+-- lvgl.ALIGN are nil before then, as on the device. Binding claims the panel from lgfx.
+local LVM = nil
+local LVP = setmetatable({
+  log = function(level, text) H.log(level, text) end,
+}, { __index = function(_, k) return H["lv_" .. k] end })
+lvgl = setmetatable({
+  bind = function(name)
+    name = ck_str(name, 1, "bind", select("#", name))
+    if not H.lv_claim(name) then error(fmt("lvgl.bind: no display named '%s'", name), 2) end
+    if not LVM then
+      LVM = {}
+      assert(load(LV_SRC, "=lvgl", "t"))(LVP, LVM)
+    end
+    return LVM._bind(name)
+  end,
+}, { __index = function(_, k) if LVM then return LVM[k] end return nil end })
 
 -- screen (the M5StickC Plus2 board's DisplayDriver: legacy verbs, 0..255 channels)
 local sc_clear = wrap("clear", "III", fn("sc_clear"))
@@ -415,6 +431,15 @@ function api.chunk(code)
 end
 
 function api.has(name) return type(rawget(_G, name)) == "function" end
+
+-- LVGL's timer pump, called on every pass of the host loop (not on_tick's 10 Hz).
+function api.lv_pump(time_ms, period)
+  if not LVM then return nil end
+  ctx.time_ms = time_ms
+  local ok, err = run(LVM._pump, time_ms, period)
+  if ok then return nil end
+  return err
+end
 
 function api.call(name, time_ms, arg)
   local f = rawget(_G, name)

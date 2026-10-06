@@ -28,6 +28,6 @@ export const residentApps: BundledApp[] = Object.entries(files)
 
 /** Bench's own examples in a deliberate order (simplest first); the rest alphabetically. */
 function order(id: string) {
-  const i = ['hello-display', 'patterns', 'characters', 'knob-menu', 'ld2410-radar', 'devil'].indexOf(id);
+  const i = ['hello-display', 'patterns', 'characters', 'knob-menu', 'ld2410-radar', 'devil', 'lvgl-motion'].indexOf(id);
   return i < 0 ? 99 : i;
 }

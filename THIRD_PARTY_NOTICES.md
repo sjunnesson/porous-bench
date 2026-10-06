@@ -31,3 +31,15 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## LVGL and luavgl
+
+`src/resident/lua/lvgl.lua` and `src/resident/lvgl.ts` reimplement, without copying source, the Lua API of
+[luavgl](https://github.com/inanimate-tech/luavgl) (MIT) and follow [LVGL](https://github.com/lvgl/lvgl) (MIT)
+for its constants, default-theme values and animation paths (the `overshoot` and `bounce` curves use the
+control points from LVGL's `lv_anim.c`).
+
+## Montserrat
+
+The Montserrat font (via `@fontsource/montserrat`) is bundled into the build to draw LVGL text. Copyright 2011
+The Montserrat Project Authors, licensed under the [SIL Open Font License 1.1](https://openfontlicense.org).
