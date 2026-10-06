@@ -55,8 +55,12 @@ Pick a **Sketch** and a **Display** in the toolbar. Everything runs locally in t
   shake, a buzzer you can hear, and an HLK-LD2410 presence radar. Each has a widget and keyboard keys.
 - **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
   sensor data all follow the simulated clock.
-- **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it (drag to
-  orbit, click its buttons), or the bare glass, flat and pixel-exact, with zoom and a pixel grid.
+- **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it, or the bare
+  glass, flat and pixel-exact, with zoom and a pixel grid.
+- **The whole bench in 3D.** Inputs the device doesn't have sit on the desk beside it as parts you
+  can use: a rotary encoder (drag the ring, press the centre, scroll), tactile buttons, a slide pot,
+  a piezo that pulses while it sounds, and the LD2410 with its detection fan and a person you drag
+  around. Each is wired back to the device. With an IMU the device itself tilts and shakes.
 - **Hot reload.** Saving a sketch file restarts it in place.
 
 ## Displays
@@ -204,8 +208,8 @@ connected. Use **new** in the Resident panel to rotate it.
 | ← / → / Enter | turn / push the rotary encoder |
 | Esc | "back" button in the knob menu |
 
-Dragging in the 3D view orbits the device and double-clicking resets it. Clicking a button on the
-model presses it.
+In the 3D view: drag to orbit, double-click to reset, click buttons on the device or the desk to
+press them, and shift-drag the device to tilt it when the sketch has an IMU.
 
 ## Add a display
 
