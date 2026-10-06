@@ -39,7 +39,7 @@ export function RadarWidget({ input }: { input: LD2410 }) {
     const end = -Math.PI / 2 + half;
 
     // Field of view
-    ctx.fillStyle = 'rgba(80,140,255,0.08)';
+    ctx.fillStyle = 'rgba(27,75,122,0.06)';
     ctx.beginPath();
     ctx.moveTo(ORIGIN.x, ORIGIN.y);
     ctx.arc(ORIGIN.x, ORIGIN.y, MAX_RANGE_M * SCALE, start, end);
@@ -49,25 +49,26 @@ export function RadarWidget({ input }: { input: LD2410 }) {
     // Range gates (0.75 m each)
     ctx.lineWidth = 1;
     for (let g = 1; g <= 8; g++) {
-      ctx.strokeStyle = g % 4 === 0 ? 'rgba(160,180,220,0.45)' : 'rgba(160,180,220,0.16)';
+      ctx.strokeStyle = g % 4 === 0 ? 'rgba(27,75,122,0.4)' : 'rgba(27,75,122,0.14)';
       ctx.beginPath();
       ctx.arc(ORIGIN.x, ORIGIN.y, g * 0.75 * SCALE, start, end);
       ctx.stroke();
     }
-    ctx.fillStyle = 'rgba(200,210,230,0.55)';
-    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillStyle = '#5a666d';
+    ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
     for (const m of [1, 2, 3, 4, 5, 6]) ctx.fillText(`${m} m`, ORIGIN.x + 3, ORIGIN.y - m * SCALE + 11);
 
     // Sensor
-    ctx.fillStyle = '#9aa4b8';
+    ctx.fillStyle = '#11181c';
     ctx.fillRect(ORIGIN.x - 9, ORIGIN.y, 18, 6);
 
     // Target
     const t = input.target();
     const p = toCanvas(t.x, t.y);
     const st = input.latest().report.state;
-    const fill = !t.present ? 'rgba(150,150,160,0.35)' : st & 1 ? '#ff9f43' : st & 2 ? '#3ddc84' : '#c9ccd6';
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    // Rust is "now": a target moving this instant. Blue: present and still. Muted: nobody.
+    const fill = !t.present ? 'rgba(90,102,109,0.35)' : st & 1 ? '#8c3b1e' : st & 2 ? '#1b4b7a' : '#93aec6';
+    ctx.strokeStyle = 'rgba(17,24,28,0.25)';
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
     ctx.moveTo(ORIGIN.x, ORIGIN.y);

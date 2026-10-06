@@ -271,5 +271,6 @@ npm run build      # typecheck + static build into dist/
 
 MIT, see [LICENSE](LICENSE). Resident's `datetime` module and example apps are included under
 Resident's MIT license, and the Waveshare panel init values come from Waveshare's demo; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The ghosted wireframe look is inspired by the
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The visual design follows [duscha.nu](https://duscha.nu)
+(IBM Plex, paper ground, one blue, rust for "now"), and the wireframe device view is inspired by the
 simulator on [resident.inanimate.tech](https://resident.inanimate.tech).

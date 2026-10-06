@@ -5,8 +5,8 @@
 import * as THREE from 'three';
 import type { DeviceProfile, Enclosure, EnclosurePart, Face } from '../../sim/devices/types';
 
-export const GHOST = new THREE.LineBasicMaterial({ color: 0xe4e9f4, transparent: true, opacity: 0.78, depthWrite: false });
-const GHOST_DIM = new THREE.LineBasicMaterial({ color: 0xe4e9f4, transparent: true, opacity: 0.4, depthWrite: false });
+export const GHOST = new THREE.LineBasicMaterial({ color: 0x1b4b7a, transparent: true, opacity: 0.72, depthWrite: false });
+const GHOST_DIM = new THREE.LineBasicMaterial({ color: 0x1b4b7a, transparent: true, opacity: 0.3, depthWrite: false });
 
 export interface ModelButton {
   mesh: THREE.Mesh;
