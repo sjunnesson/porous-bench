@@ -82,6 +82,8 @@ export interface LD2410Options {
 }
 
 export const MAX_RANGE_M = 6; // 8 gates × 0.75 m
+/** Walking pace when sent somewhere, m/s. */
+export const WALK_SPEED = 1.2;
 export const FOV_DEG = 120;
 const UART_CAPACITY = 1024;
 
@@ -103,6 +105,9 @@ export class LD2410 extends SimInput {
   private lastFrameAt = -Infinity;
   private lastFrameBytes: Uint8Array | null = null;
   private history: { t: number; x: number; y: number }[] = [];
+  /** Where the person is walking to (manual mode), and when they last took a step. */
+  private goal: { x: number; y: number } | null = null;
+  private lastStep = 0;
   private current: LD2410Report = emptyReport();
 
   constructor(
@@ -124,18 +129,36 @@ export class LD2410 extends SimInput {
     this.changed();
   }
 
-  /** Drag the target (switches to manual mode). */
+  /** Put the target somewhere directly, e.g. while dragging or carrying it (switches to manual). */
   movePerson(x: number, y: number): void {
     if (this.mode !== 'manual') this.mode = 'manual';
+    this.goal = null;
     this.person = { x, y };
     this.history.push({ t: this.clock.now(), x, y });
     this.changed();
+  }
+
+  /** Send the person walking to a spot at walking pace (switches to manual). */
+  walkTo(x: number, y: number): void {
+    if (this.mode !== 'manual') {
+      this.target(); // settle where a scripted mode left them
+      this.mode = 'manual';
+    }
+    this.goal = { x, y };
+    this.lastStep = this.clock.now();
+    this.changed();
+  }
+
+  /** Where the person is heading, if they're walking somewhere. */
+  walkGoal(): { x: number; y: number } | null {
+    return this.goal;
   }
 
   /** Target position, presence and speed right now (for drawing). */
   target(now = this.clock.now()): { x: number; y: number; present: boolean; speed: number } {
     if (this.mode === 'empty') return { ...this.person, present: false, speed: 0 };
     if (this.mode === 'manual') {
+      this.step(now);
       this.history = this.history.filter((h) => now - h.t < 400);
       const old = this.history[0];
       const speed = old && now - old.t > 30 ? Math.hypot(this.person.x - old.x, this.person.y - old.y) / ((now - old.t) / 1000) : 0;
@@ -145,6 +168,23 @@ export class LD2410 extends SimInput {
     const p1 = scripted(this.mode, now);
     this.person = { x: p1.x, y: p1.y };
     return { ...p1, speed: Math.hypot(p1.x - p0.x, p1.y - p0.y) / 0.15 };
+  }
+
+  /** Advance a walk towards the goal by the sim time since the last step. */
+  private step(now: number) {
+    if (!this.goal) return;
+    const dt = (now - this.lastStep) / 1000;
+    if (dt <= 0) return; // time asked about is in the past (backfilling frames): no step
+    this.lastStep = now;
+    const dx = this.goal.x - this.person.x;
+    const dy = this.goal.y - this.person.y;
+    const d = Math.hypot(dx, dy);
+    const stride = WALK_SPEED * dt;
+    if (d <= stride) {
+      this.person = { ...this.goal };
+      this.goal = null;
+    } else this.person = { x: this.person.x + (dx / d) * stride, y: this.person.y + (dy / d) * stride };
+    this.history.push({ t: now, x: this.person.x, y: this.person.y });
   }
 
   /** Latest report the sensor produced, and the raw bytes of that frame. */

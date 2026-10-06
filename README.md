@@ -60,7 +60,7 @@ Pick a **Sketch** and a **Display** in the toolbar. Everything runs locally in t
 - **The whole bench in 3D.** Inputs the device doesn't have sit on the desk beside it as parts you
   can use: a rotary encoder (drag the ring, press the centre, scroll), tactile buttons, a slide pot,
   a piezo that pulses while it sounds, and the LD2410 with its detection fan and a little character
-  who walks, blinks and looks around; pick it up by the head to carry it somewhere else. Each part is wired back
+  who walks, blinks and looks around; click anywhere to send it walking there, or pick it up by the head to carry it. Each part is wired back
   to the device. With an IMU the device itself tilts and shakes.
 - **Hot reload.** Saving a sketch file restarts it in place.
 

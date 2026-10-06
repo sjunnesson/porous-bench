@@ -368,13 +368,25 @@ function radar(input: LD2410): Peripheral {
 
   withLabel(root, input.label, -10.5);
   let held: { ray: THREE.Ray; offset: THREE.Vector2 } | null = null;
-  const move = (ray: THREE.Ray) => {
+  /** Send it walking to where the ray meets the floor. */
+  const walkTo = (ray: THREE.Ray) => {
     const p = onPlane(root, ray, 0);
     if (!p) return;
     const x = Math.max(-limits.x, Math.min(limits.x, p.x / scale));
     const y = Math.max(0.15, Math.min(limits.y, p.y / scale));
-    input.movePerson(x, y);
+    input.walkTo(x, y);
   };
+
+  // Where it's walking to: a small cross on the floor.
+  const goalMark = new THREE.Group();
+  for (const a of [Math.PI / 4, -Math.PI / 4]) {
+    const bar = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.6), new THREE.MeshBasicMaterial({ color: NOW, transparent: true, opacity: 0.7 }));
+    bar.rotation.z = a;
+    goalMark.add(bar);
+  }
+  goalMark.position.z = 0.1;
+  goalMark.visible = false;
+  root.add(goalMark);
   return {
     root,
     w: floorW,
@@ -401,10 +413,11 @@ function radar(input: LD2410): Peripheral {
           },
         };
       }
-      move(ray); // a click on the floor fetches it there
-      return { move, up() {} };
+      // A click on the floor sends it walking there; hold and drag and it follows the cursor.
+      walkTo(ray);
+      return { move: walkTo, up() {} };
     },
-    title: (hit) => (hit === critter.hit ? 'Pick me up by the head and put me somewhere' : `${input.label}: click to fetch the character here · ${input.mode}`),
+    title: (hit) => (hit === critter.hit ? 'Pick me up by the head and put me somewhere' : `${input.label}: click to send the character walking here · ${input.mode}`),
     update() {
       if (held) {
         // The head is the pivot it hangs from: put it where the cursor ray crosses the head's
@@ -418,6 +431,9 @@ function radar(input: LD2410): Peripheral {
       }
       const t = input.target();
       const st = input.latest().report.state;
+      const goal = input.walkGoal();
+      goalMark.visible = !!goal;
+      if (goal) goalMark.position.set(goal.x * scale, goal.y * scale, 0.1);
       critter.update(t.x * scale, t.y * scale, t.present, st & 1 ? NOW : st & 2 ? BLUE : MUTED);
       setFill(out, st ? NOW : BLUE, st ? 0.9 : 0.15);
     },

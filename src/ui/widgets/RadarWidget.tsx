@@ -7,7 +7,7 @@ const H = 200;
 const ORIGIN = { x: W / 2, y: H - 12 };
 const SCALE = (H - 22) / 6.3; // px per metre
 const MODES: { id: RadarMode; label: string; hint: string }[] = [
-  { id: 'manual', label: 'Drag', hint: 'Drag the person around; speed decides moving vs. still' },
+  { id: 'manual', label: 'Drag', hint: 'Click to send the person walking there, or drag to carry them' },
   { id: 'wander', label: 'Wander', hint: 'Walks 4 s, stands 3 s, repeat' },
   { id: 'approach', label: 'Approach', hint: 'Walks in, waits, walks out of range, gone for a while' },
   { id: 'empty', label: 'Empty', hint: 'Nobody in the room' },
@@ -72,7 +72,6 @@ function drawCharacter(ctx: CanvasRenderingContext2D, x: number, y: number, verd
 export function RadarWidget({ input }: { input: LD2410 }) {
   useInput(input);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dragging = useRef(false);
   const motion = useRef({ x: 0, y: 0, speed: 0, facing: 1 });
   const { report, bytes, overflowed } = input.latest();
 
@@ -136,14 +135,48 @@ export function RadarWidget({ input }: { input: LD2410 }) {
     m.speed += (Math.hypot(dx, p.y - m.y) - m.speed) * 0.2;
     m.x = p.x;
     m.y = p.y;
+    const goal = input.walkGoal();
+    if (goal) {
+      const g = toCanvas(goal.x, goal.y);
+      ctx.strokeStyle = '#8c3b1e';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(g.x - 4, g.y - 4);
+      ctx.lineTo(g.x + 4, g.y + 4);
+      ctx.moveTo(g.x + 4, g.y - 4);
+      ctx.lineTo(g.x - 4, g.y + 4);
+      ctx.stroke();
+    }
     if (t.present) drawCharacter(ctx, p.x, p.y, fill, m.speed > 0.15, m.facing, now);
   }, [input]);
   useAnimationFrame(draw);
 
-  const onPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const toPerson = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    const w = toWorld(((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H);
-    input.movePerson(w.x, w.y);
+    return toWorld(((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H);
+  };
+  // A click sends the person walking there; a drag carries them directly.
+  const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
+  const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    press.current = { x: e.clientX, y: e.clientY, dragging: false };
+  };
+  const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = press.current;
+    if (!p) return;
+    if (!p.dragging && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4) p.dragging = true;
+    if (p.dragging) {
+      const w = toPerson(e);
+      input.movePerson(w.x, w.y);
+    }
+  };
+  const onUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = press.current;
+    press.current = null;
+    if (p && !p.dragging) {
+      const w = toPerson(e);
+      input.walkTo(w.x, w.y);
+    }
   };
 
   const stateText = report.state === 0 ? 'none' : ['', 'moving', 'stationary', 'moving + stationary'][report.state];
@@ -162,14 +195,10 @@ export function RadarWidget({ input }: { input: LD2410 }) {
         ref={canvasRef}
         className="radar-canvas"
         style={{ width: W, height: H }}
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          dragging.current = true;
-          onPointer(e);
-        }}
-        onPointerMove={(e) => dragging.current && onPointer(e)}
-        onPointerUp={() => (dragging.current = false)}
-        onPointerCancel={() => (dragging.current = false)}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={() => (press.current = null)}
       />
       <table className="readout">
         <tbody>

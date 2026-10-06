@@ -172,6 +172,26 @@ describe('LD2410', () => {
     expect(out).toEqual([report, { ...report, state: 0 }]);
   });
 
+  it('walks to a clicked spot at walking pace, and the radar sees it moving', () => {
+    const clock = pausedClock();
+    const radar = new LD2410({ mode: 'manual' }, clock);
+    radar.movePerson(0, 1);
+    radar.walkTo(0, 4);
+    for (let i = 0; i < 10; i++) {
+      clock.advance(100);
+      radar.target();
+    }
+    expect(radar.target().y).toBeCloseTo(2.2, 1); // 1.2 m/s for 1 s
+    radar.read();
+    expect(radar.movingTargetDetected()).toBe(true);
+    for (let i = 0; i < 30; i++) {
+      clock.advance(100);
+      radar.target();
+    }
+    expect(radar.target().y).toBeCloseTo(4, 5);
+    expect(radar.walkGoal()).toBeNull(); // arrived
+  });
+
   it('streams ~10 frames/s and holds presence after the target leaves', () => {
     const clock = pausedClock();
     const radar = new LD2410({ mode: 'manual', holdMs: 5000 }, clock);
