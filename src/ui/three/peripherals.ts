@@ -30,8 +30,12 @@ export interface Peripheral {
   h: number;
   /** Where the wire leaves the part, in root-local coordinates. */
   anchor: THREE.Vector3;
-  /** Raycast targets. */
+  /** Raycast targets that operate the part (press, turn, slide…). */
   targets: THREE.Object3D[];
+  /** The part's body: press and drag these to move the part around the desk. */
+  handles: THREE.Object3D[];
+  /** The bench input this part stands for (set by buildPeripherals). */
+  input?: SimInput;
   grab(hit: THREE.Object3D, ray: THREE.Ray): Grab | null;
   wheel?(hit: THREE.Object3D, dy: number): void;
   title(hit: THREE.Object3D): string;
@@ -120,6 +124,20 @@ function onPlane(obj: THREE.Object3D, ray: THREE.Ray, zLocal: number): THREE.Vec
   return hit ? obj.worldToLocal(hit) : null;
 }
 
+/** A handle added to `root`. */
+function handleOf(root: THREE.Group, w: number, h: number, d: number, z0 = 0, y = 0): THREE.Mesh {
+  const m = handle(w, h, d, z0, 0, y);
+  root.add(m);
+  return m;
+}
+
+/** An invisible box over a part's body, to grab it by. Transparent, since the raycaster skips invisible meshes. */
+function handle(w: number, h: number, d: number, z0 = 0, x = 0, y = 0): THREE.Mesh {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  m.position.set(x, y, z0 + d / 2);
+  return m;
+}
+
 function place<T extends THREE.Object3D>(obj: T, x: number, y: number, z: number): T {
   obj.position.set(x, y, z);
   return obj;
@@ -153,12 +171,15 @@ function tactile(input: Button): Peripheral {
   root.add(cap);
   for (const [x, y] of [[-6.5, 6.5], [6.5, 6.5], [-6.5, -6.5], [6.5, -6.5]]) root.add(place(cylinder(0.7, 0.2, 0, false, LINE_DIM), x, y, 1.7));
   withLabel(root, input.label, -12.5);
+  const body = handle(18, 18, 5, 0);
+  root.add(body);
   return {
     root,
     w: 22,
     h: 26,
     anchor: new THREE.Vector3(-9, 0, 0.8),
     targets: [fill],
+    handles: [body],
     grab: () => {
       input.setDown(true);
       return { move: () => {}, up: () => input.setDown(false) };
@@ -202,6 +223,7 @@ function encoder(input: Knob): Peripheral {
     h: 30,
     anchor: new THREE.Vector3(-13, 0, 0.8),
     targets: [push, ring],
+    handles: [handleOf(root, 26, 19, 8)],
     grab(hit, ray) {
       if (hit === push) {
         input.button.setDown(true);
@@ -271,6 +293,7 @@ function slidePot(input: Pot): Peripheral {
     h: 22,
     anchor: new THREE.Vector3(-(L + 6) / 2, 0, 0.8),
     targets: [fill, track],
+    handles: [handleOf(root, L + 6, 12, 8.6)],
     grab(_hit, ray) {
       setFrom(ray);
       return { move: setFrom, up() {} };
@@ -303,6 +326,7 @@ function piezo(input: Buzzer): Peripheral {
     h: 26,
     anchor: new THREE.Vector3(-8, 0, 0.8),
     targets: [top],
+    handles: [handleOf(root, 16, 16, 5)],
     grab: () => null,
     title: () => (input.isSounding() ? `${input.label}: ${input.freq} Hz` : `${input.label}: silent`),
     update() {
@@ -393,6 +417,7 @@ function radar(input: LD2410): Peripheral {
     h: R + 18,
     anchor: new THREE.Vector3(-17.5, -4, 0.5),
     targets: [critter.hit, area, floor],
+    handles: [handleOf(root, 37, 9, 1.4, 0, -4)],
     grab(hit, ray) {
       if (hit === critter.hit) {
         // Pick it up by the head: it rises and hangs from your hand, follows the pointer and is
@@ -643,22 +668,23 @@ function character() {
  */
 export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>): Peripheral[] {
   const parts: Peripheral[] = [];
+  const add = (p: Peripheral, input: SimInput) => parts.push({ ...p, input });
   for (const input of hardware) {
     switch (input.kind) {
       case 'button':
-        if (!onDevice.has(input)) parts.push(tactile(input as Button));
+        if (!onDevice.has(input)) add(tactile(input as Button), input);
         break;
       case 'knob':
-        parts.push(encoder(input as Knob));
+        add(encoder(input as Knob), input);
         break;
       case 'pot':
-        parts.push(slidePot(input as Pot));
+        add(slidePot(input as Pot), input);
         break;
       case 'buzzer':
-        parts.push(piezo(input as Buzzer));
+        add(piezo(input as Buzzer), input);
         break;
       case 'ld2410':
-        parts.push(radar(input as LD2410));
+        add(radar(input as LD2410), input);
         break;
     }
   }

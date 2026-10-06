@@ -21,10 +21,43 @@ const BASE_DIORAMA = { pitch: -0.85, yaw: 0.3 };
 const PRESS_MM = 0.7;
 const GAP = 16; // mm between the device and its parts, and between parts
 
+type Pos = { x: number; y: number };
+
+/** Where the user put things on the desk, per device and sketch. */
+function loadDesk(key: string): Record<string, Pos> {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, Pos>;
+  } catch {
+    return {};
+  }
+}
+function saveDesk(key: string, desk: Record<string, Pos>) {
+  try {
+    localStorage.setItem(key, JSON.stringify(desk));
+  } catch {
+    /* not persisted */
+  }
+}
+
+/** Nearest point on the outline of an axis-aligned rectangle (xy) to p. */
+function nearestOnRect(p: THREE.Vector3, box: THREE.Box3): THREE.Vector3 {
+  const x = Math.max(box.min.x, Math.min(box.max.x, p.x));
+  const y = Math.max(box.min.y, Math.min(box.max.y, p.y));
+  if (x !== p.x || y !== p.y) return new THREE.Vector3(x, y, p.z);
+  // Inside the rectangle: go to the closest edge.
+  const d = [p.x - box.min.x, box.max.x - p.x, p.y - box.min.y, box.max.y - p.y];
+  const i = d.indexOf(Math.min(...d));
+  return new THREE.Vector3(i === 0 ? box.min.x : i === 1 ? box.max.x : p.x, i === 2 ? box.min.y : i === 3 ? box.max.y : p.y, p.z);
+}
+
 /**
  * The device as a ghosted 3D wireframe with the live screen on it, plus the sketch's external
- * hardware (encoder, buttons, pot, buzzer, radar) on the desk beside it. Drag to orbit, double-click
- * to reset, shift-drag the device to tilt it when the sketch has an IMU.
+ * hardware on the desk beside it, wired back with dashed lines. Everything sits on one desk plane.
+ *
+ * Mouse: drag empty space to orbit (double-click to reset); press a button, knob, pot or the radar
+ * to use it; drag the body of the device or of a part to slide it across the desk (⌥ Option-drag
+ * moves anything; double-click it to put it back); shift-drag the device to tilt it when the sketch
+ * has an IMU.
  */
 export function Device3D({ run, clock, mount, onCanvas }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -53,13 +86,29 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     const camera = new THREE.PerspectiveCamera(26, 1, 1, 8000);
     const model = buildModel(device, native);
 
-    // pivot (orbit) → content (centred on everything) → tilt (IMU) → mount (setRotation) → model
+    // The device's body, to grab it by: everything but its buttons (those get pressed).
+    const bodyBox = new THREE.Box3();
+    model.group.updateMatrixWorld(true);
+    for (const child of model.group.children) {
+      if (!model.buttons.some((b) => b.mesh === child)) bodyBox.expandByObject(child);
+    }
+    const deviceHandle = new THREE.Mesh(
+      new THREE.BoxGeometry(...bodyBox.getSize(new THREE.Vector3()).toArray()),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+    );
+    bodyBox.getCenter(deviceHandle.position);
+    model.group.add(deviceHandle);
+
+    // pivot (orbit) → content (centred on the desk) → deskGroup (where the device sits on the desk)
+    // → tilt (IMU) → mount (setRotation) → model
     const mountGroup = new THREE.Group();
     mountGroup.add(model.group);
     const tiltGroup = new THREE.Group();
     tiltGroup.add(mountGroup);
+    const deskGroup = new THREE.Group();
+    deskGroup.add(tiltGroup);
     const content = new THREE.Group();
-    content.add(tiltGroup);
+    content.add(deskGroup);
     const pivot = new THREE.Group();
     pivot.add(content);
     scene.add(pivot);
@@ -74,22 +123,34 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
 
     // External parts on the desk, plus wires back to the device.
     const parts: Peripheral[] = buildPeripherals(hardware, onDevice);
-    const base = hardware.some((h) => h.kind === 'ld2410') ? BASE_DIORAMA : BASE;
+    const partKeys = parts.map((p, i) => {
+      const key = `${p.input?.kind ?? 'part'}:${p.input?.label ?? i}`;
+      return parts.slice(0, i).some((q) => `${q.input?.kind ?? 'part'}:${q.input?.label}` === key) ? `${key}:${i}` : key;
+    });
     const desk = new THREE.Group();
     content.add(desk);
     for (const p of parts) desk.add(p.root);
     const wires = new THREE.Group();
     content.add(wires);
+    const base = hardware.some((h) => h.kind === 'ld2410') ? BASE_DIORAMA : BASE;
+
+    const deskKey = `screensim:desk:${device.id}:${run.sketch.name}`;
+    const placed = loadDesk(deskKey);
 
     const orbit = orbitRef.current;
     let grab: Grab | null = null;
     let orbiting: { x: number; y: number } | null = null;
     let tilting: { x: number; y: number } | null = null;
+    let moving: { key: string; obj: THREE.Object3D; start: THREE.Vector3; from: THREE.Vector3 } | null = null;
     let pressed: ModelButton | null = null;
     let laidOutFor = -1;
+    let framed = false;
     const fitSize = new THREE.Vector3(model.radius * 2, model.radius * 2, 0);
+    const devBox = new THREE.Box3(); // device footprint relative to deskGroup, as currently mounted
+    let deskZ = 0; // the desk plane everything stands on and slides along
     const ray = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
+    const el = renderer.domElement;
 
     const fit = () => {
       const w = host.clientWidth;
@@ -106,83 +167,135 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       camera.updateProjectionMatrix();
     };
 
-    /** Put the parts in columns to the right of the device as it is mounted, then centre it all. */
+    /** Redraw every wire, from its part to the nearest edge of the device. */
+    const updateWires = () => {
+      wires.children.forEach((w) => (w as THREE.Line).geometry.dispose());
+      wires.clear();
+      content.updateMatrixWorld(true);
+      const dev = devBox.clone().translate(deskGroup.position);
+      for (const p of parts) {
+        const from = content.worldToLocal(p.root.localToWorld(p.anchor.clone()));
+        from.z = deskZ;
+        wires.add(wire(from, nearestOnRect(from, dev)));
+      }
+    };
+
+    /**
+     * Place the device and parts: where the user put them, otherwise the device at the origin and
+     * the parts flowing in columns to its right. Frames the camera the first time.
+     */
     const layout = (quarterTurns: number) => {
-      const saved = mountGroup.rotation.z;
-      mountGroup.rotation.z = (-quarterTurns * Math.PI) / 2;
+      // Measure in desk coordinates: level the orbit pivot while measuring, then restore it.
+      const savedPivot = pivot.rotation.clone();
+      pivot.rotation.set(0, 0, 0);
+      const savedRot = mountGroup.rotation.z;
       const savedTilt = tiltGroup.rotation.clone();
+      mountGroup.rotation.z = (-quarterTurns * Math.PI) / 2;
       tiltGroup.rotation.set(0, 0, 0);
+      deskGroup.position.set(0, 0, 0);
+      const savedContent = content.position.clone();
       content.position.set(0, 0, 0);
       content.updateMatrixWorld(true);
-      const dev = new THREE.Box3().setFromObject(model.group);
-      mountGroup.rotation.z = saved;
+      devBox.setFromObject(model.group);
+      mountGroup.rotation.z = savedRot;
       tiltGroup.rotation.copy(savedTilt);
+      content.position.copy(savedContent);
+      deskZ = devBox.min.z;
 
-      const colTop = dev.max.y;
-      const colLimit = dev.min.y - (dev.max.y - dev.min.y) * 0.6;
-      let x = dev.max.x + GAP + 10;
+      const dp = placed.device ?? { x: 0, y: 0 };
+      deskGroup.position.set(dp.x, dp.y, 0);
+
+      // Auto flow, relative to wherever the device is.
+      const colTop = devBox.max.y + dp.y;
+      const colLimit = devBox.min.y + dp.y - (devBox.max.y - devBox.min.y) * 0.6;
+      let x = devBox.max.x + dp.x + GAP + 10;
       let y = colTop;
       let colWidth = 0;
-      for (const p of parts) {
+      parts.forEach((p, i) => {
+        const manual = placed[partKeys[i]];
+        if (manual) {
+          p.root.position.set(manual.x, manual.y, deskZ);
+          return;
+        }
         if (y - p.h < colLimit && y !== colTop) {
           x += colWidth + GAP;
           y = colTop;
           colWidth = 0;
         }
-        p.root.position.set(x + p.w / 2, y - p.h / 2, dev.min.z);
+        p.root.position.set(x + p.w / 2, y - p.h / 2, deskZ);
         y -= p.h + GAP;
         colWidth = Math.max(colWidth, p.w);
-      }
-
-      wires.clear();
-      const deskZ = dev.min.z + 0.4;
-      content.updateMatrixWorld(true);
-      parts.forEach((p, i) => {
-        const from = content.worldToLocal(p.root.localToWorld(p.anchor.clone()));
-        const to = new THREE.Vector3(dev.max.x - 1, dev.max.y - (dev.max.y - dev.min.y) * (0.3 + (0.4 * (i + 0.5)) / parts.length), deskZ);
-        from.z = deskZ;
-        wires.add(wire(from, to));
       });
+      updateWires();
 
-      // Centre everything, so orbiting turns around the whole desk.
-      content.updateMatrixWorld(true);
-      const all = new THREE.Box3().setFromObject(content);
-      const centre = all.getCenter(new THREE.Vector3());
-      content.position.copy(centre).multiplyScalar(-1);
-      all.getSize(fitSize);
-      fit();
+      if (!framed) {
+        // Centre everything once, so orbiting turns around the whole desk; later moves don't jump it.
+        framed = true;
+        content.position.set(0, 0, 0);
+        content.updateMatrixWorld(true);
+        const all = new THREE.Box3().setFromObject(content);
+        content.position.copy(all.getCenter(new THREE.Vector3())).multiplyScalar(-1);
+        all.getSize(fitSize);
+        fit();
+      }
+      pivot.rotation.copy(savedPivot);
     };
 
     const ro = new ResizeObserver(fit);
     ro.observe(host);
 
     const setRay = (e: { clientX: number; clientY: number }) => {
-      const r = renderer.domElement.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, camera);
     };
 
-    type Hit = { kind: 'button'; button: ModelButton } | { kind: 'part'; part: Peripheral; object: THREE.Object3D };
-    const pick = (e: { clientX: number; clientY: number }): Hit | null => {
-      setRay(e);
-      const targets: THREE.Object3D[] = [...model.buttons.map((b) => b.mesh), ...parts.flatMap((p) => p.targets)];
-      const [first] = ray.intersectObjects(targets, false);
-      if (!first) return null;
-      const button = model.buttons.find((b) => b.mesh === first.object);
-      if (button) return { kind: 'button', button };
-      const part = parts.find((p) => p.targets.includes(first.object));
-      return part ? { kind: 'part', part, object: first.object } : null;
-    };
-    const overDevice = (e: { clientX: number; clientY: number }) => {
-      setRay(e);
-      const box = new THREE.Box3().setFromObject(model.group);
-      return ray.ray.intersectsBox(box);
+    /** Where the pointer ray meets the desk plane, in content coordinates. */
+    const onDesk = (): THREE.Vector3 | null => {
+      content.updateMatrixWorld(true);
+      const n = new THREE.Vector3(0, 0, 1).transformDirection(content.matrixWorld);
+      const p = content.localToWorld(new THREE.Vector3(0, 0, deskZ));
+      const hit = ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, p), new THREE.Vector3());
+      return hit ? content.worldToLocal(hit) : null;
     };
 
-    const el = renderer.domElement;
+    type Hit =
+      | { kind: 'button'; button: ModelButton }
+      | { kind: 'part'; part: Peripheral; object: THREE.Object3D }
+      | { kind: 'move'; key: string; obj: THREE.Object3D };
+    /** What's under the pointer. With `moveAnything`, whatever is hit resolves to moving its owner. */
+    const pick = (e: { clientX: number; clientY: number }, moveAnything = false): Hit | null => {
+      setRay(e);
+      const targets: THREE.Object3D[] = [
+        ...model.buttons.map((b) => b.mesh),
+        ...parts.flatMap((p) => [...p.targets, ...p.handles]),
+        deviceHandle,
+      ];
+      const [first] = ray.intersectObjects(targets, false);
+      if (!first) return null;
+      const o = first.object;
+      const button = model.buttons.find((b) => b.mesh === o);
+      if (button || o === deviceHandle) {
+        if (moveAnything || !button) return { kind: 'move', key: 'device', obj: deskGroup };
+        return { kind: 'button', button };
+      }
+      const i = parts.findIndex((p) => p.targets.includes(o) || p.handles.includes(o));
+      if (i < 0) return null;
+      if (moveAnything || parts[i].handles.includes(o)) return { kind: 'move', key: partKeys[i], obj: parts[i].root };
+      return { kind: 'part', part: parts[i], object: o };
+    };
+
+    const startMove = (key: string, obj: THREE.Object3D): boolean => {
+      const start = onDesk();
+      if (!start) return false;
+      moving = { key, obj, start, from: obj.position.clone() };
+      el.style.cursor = 'grabbing';
+      return true;
+    };
+
     const onDown = (e: PointerEvent) => {
       el.setPointerCapture(e.pointerId);
-      const hit = pick(e);
+      const hit = pick(e, e.altKey);
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
         if (input) {
@@ -190,6 +303,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
           input.setDown(true);
           return;
         }
+        // A button the sketch doesn't use is just part of the body.
+        if (startMove('device', deskGroup)) return;
       }
       if (hit?.kind === 'part') {
         grab = hit.part.grab(hit.object, ray.ray);
@@ -197,11 +312,28 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
           el.style.cursor = 'grabbing';
           return;
         }
+        // Nothing to operate there (the buzzer's disc): move the part instead.
+        const i = parts.indexOf(hit.part);
+        if (startMove(partKeys[i], hit.part.root)) return;
       }
-      if (e.shiftKey && imu && overDevice(e)) tilting = { x: e.clientX, y: e.clientY };
-      else orbiting = { x: e.clientX, y: e.clientY };
+      if (hit?.kind === 'move') {
+        if (e.shiftKey && imu && hit.key === 'device') tilting = { x: e.clientX, y: e.clientY };
+        else startMove(hit.key, hit.obj);
+        return;
+      }
+      orbiting = { x: e.clientX, y: e.clientY };
     };
     const onMove = (e: PointerEvent) => {
+      if (moving) {
+        setRay(e);
+        const p = onDesk();
+        if (p) {
+          moving.obj.position.x = moving.from.x + (p.x - moving.start.x);
+          moving.obj.position.y = moving.from.y + (p.y - moving.start.y);
+          updateWires();
+        }
+        return;
+      }
       if (grab) {
         setRay(e);
         grab.move(ray.ray);
@@ -219,11 +351,11 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
         orbiting = { x: e.clientX, y: e.clientY };
         return;
       }
-      const hit = pick(e);
+      const hit = pick(e, e.altKey);
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
         const mapped = hit.button.input === undefined ? undefined : pressables[hit.button.input]?.input;
-        el.style.cursor = input ? 'pointer' : 'grab';
+        el.style.cursor = input ? 'pointer' : 'move';
         el.title = input
           ? `${hit.button.label}${input.key ? ` (${input.key.replace(/^Key/, '')})` : ''}`
           : mapped
@@ -232,12 +364,23 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       } else if (hit?.kind === 'part') {
         el.style.cursor = 'pointer';
         el.title = hit.part.title(hit.object);
+      } else if (hit?.kind === 'move') {
+        el.style.cursor = 'move';
+        el.title =
+          hit.key === 'device'
+            ? `Drag to slide the device across the desk${imu ? ' · shift-drag to tilt it' : ''} · double-click to put it back`
+            : 'Drag to slide it across the desk · double-click to put it back';
       } else {
         el.style.cursor = 'grab';
-        el.title = imu ? 'Drag to orbit · shift-drag the device to tilt it · double-click to reset' : 'Drag to orbit · double-click to reset';
+        el.title = 'Drag to orbit · double-click to reset the view · ⌥ Option-drag moves anything';
       }
     };
     const onUp = () => {
+      if (moving) {
+        placed[moving.key] = { x: moving.obj.position.x, y: moving.obj.position.y };
+        saveDesk(deskKey, placed);
+        moving = null;
+      }
       if (pressed) inputFor(pressed)?.setDown(false);
       grab?.up();
       pressed = null;
@@ -245,7 +388,15 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       orbiting = null;
       tilting = null;
     };
-    const onDbl = () => {
+    const onDbl = (e: MouseEvent) => {
+      const hit = pick(e, true);
+      if (hit?.kind === 'move' && placed[hit.key]) {
+        // Put it back where the automatic layout wants it.
+        delete placed[hit.key];
+        saveDesk(deskKey, placed);
+        laidOutFor = -1;
+        return;
+      }
       orbit.tYaw = 0;
       orbit.tPitch = 0;
     };
@@ -320,6 +471,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       el.removeEventListener('wheel', onWheel);
       onUp();
       model.dispose();
+      deviceHandle.geometry.dispose();
       desk.traverse((o) => {
         if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
           o.geometry.dispose();
