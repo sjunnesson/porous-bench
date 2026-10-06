@@ -9,3 +9,5 @@ export { button, type Button } from './inputs/button';
 export { knob, type Knob } from './inputs/knob';
 export { pot, type Pot } from './inputs/pot';
 export { ld2410, type LD2410 } from './inputs/ld2410';
+export { imu, type Imu } from './inputs/imu';
+export { buzzer, type Buzzer } from './inputs/buzzer';

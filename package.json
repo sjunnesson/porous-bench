@@ -4,6 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Browser playground for ESP32-style displays (LCD, OLED, e-paper) and inputs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sjunnesson/screenSim.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

@@ -1,99 +1,85 @@
 # screenSim
 
-A browser playground for small displays of the kind you wire to an ESP32 (LCD, OLED, e-paper), plus
-the inputs that drive them (buttons, rotary encoders, pots, an LD2410 presence radar).
+**A browser simulator for the small displays you wire to an ESP32: LCD, OLED and e-paper, plus the
+buttons, knobs and sensors that drive them.** Try animations, fonts, sprites and UI ideas without
+flashing hardware, and switch the display under your code with one click. It also runs
+[Resident](https://github.com/inanimate-tech/resident) Lua apps unmodified, and can join the Resident
+relay as a device.
 
-Two kinds of program run on it:
+![screenSim running Resident's water-sim app on an M5StickC Plus2](docs/images/app.png)
 
-- **TypeScript sketches** in an Arduino shape (`setup()` / `loop()`), using a drawing API modelled on
-  Adafruit_GFX/TFT_eSPI, so porting to C++ is mostly a matter of removing `await`.
-- **[Resident](https://github.com/inanimate-tech/resident) Lua apps**, unmodified, in a real Lua 5.4
-  VM. screenSim can also join the Resident relay as a device, so apps pushed with `/resident:push-app`
-  or `curl` land in the browser.
+<table>
+  <tr>
+    <td><img src="docs/images/lcd-waveshare.png" alt="Plasma pattern on the Waveshare ESP32-C6-LCD-1.47"></td>
+    <td><img src="docs/images/oled.png" alt="Fonts and a walking sprite on a yellow/blue SSD1306 OLED"></td>
+  </tr>
+  <tr>
+    <td align="center">Waveshare ESP32-C6-LCD-1.47 · 172×320 ST7789</td>
+    <td align="center">0.96″ SSD1306 OLED, yellow/blue glass</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/epaper.png" alt="LD2410 presence dashboard on a 2.13 inch e-paper"></td>
+    <td align="center"><img src="docs/images/ld2410.png" alt="The simulated LD2410 radar panel with its raw UART frame" width="300"></td>
+  </tr>
+  <tr>
+    <td align="center">2.13″ e-paper, partial refreshes and all</td>
+    <td align="center">Simulated LD2410 radar, down to the UART bytes</td>
+  </tr>
+</table>
 
-Devices are drawn as a ghosted 3D wireframe of the real part (drag to orbit, click its buttons), or
-flat and pixel-exact with zoom and a pixel grid.
+## Quick start
+
+Requires Node.js 22 or newer.
 
 ```sh
+git clone https://github.com/sjunnesson/screenSim.git
+cd screenSim
 npm install
-npm run dev        # http://localhost:5199
-npm test           # unit tests for the simulator core
-npm run build      # static site in dist/, hostable anywhere
+npm run dev        # → http://localhost:5199
 ```
 
-## What gets simulated
+Pick a **Sketch** and a **Display** in the toolbar. Everything runs locally in the browser;
+`npm run build` produces a static site you can host anywhere.
 
-| | LCD | OLED | E-paper |
+## What it does
+
+- **Displays as data.** Each display is one profile file: resolution, technology, controller, bus
+  speed, wiring, porting notes and its physical enclosure. Add a file and it appears in the menu.
+- **Real constraints.** `show()` takes as long as pushing the changed pixels over the real SPI or
+  I2C bus, so frame rates are honest (≈40 fps ceiling on a 400 kHz I2C OLED). E-paper refreshes take
+  their real 2 s / 0.3 s, flash on a full refresh and leave ghosting after partial ones.
+- **Two kinds of program.** TypeScript sketches written in an Arduino shape, and Resident Lua apps.
+- **Inputs you can poke.** Push buttons, a rotary encoder, a potentiometer, an IMU you tilt and
+  shake, a buzzer you can hear, and an HLK-LD2410 presence radar. Each has a widget and keyboard keys.
+- **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
+  sensor data all follow the simulated clock.
+- **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it (drag to
+  orbit, click its buttons), or the bare glass, flat and pixel-exact, with zoom and a pixel grid.
+- **Hot reload.** Saving a sketch file restarts it in place.
+
+## Displays
+
+| Display | Technology | Resolution | Bus |
 |---|---|---|---|
-| Pixel format | RGB565 | 1-bit (lit/unlit) | 1-bit (ink/paper) |
-| Look | backlight × IPS black level, rounded glass | glass tint incl. yellow/blue split, pixel gaps | paper/ink colours |
-| Timing | `show()` waits for the SPI transfer of the changed rectangle | I2C transfer of whole 8-row pages (≈40 fps ceiling at 400 kHz) | RAM write + 2 s full / 0.3 s partial refresh |
-| Quirks | power-on RAM noise until the first frame | brightness = contrast | full refresh flashes; partial refresh leaves ghosting until the next full one |
+| Waveshare ESP32-C6-LCD-1.47 | IPS LCD, ST7789V3, rounded corners | 172×320 | SPI 80 MHz |
+| M5StickC Plus2 | LCD, ST7789V2 | 135×240 | SPI 40 MHz |
+| M5StickS3 | LCD, ST7789P3 | 135×240 | SPI 40 MHz |
+| Generic 1.3″ IPS | LCD, ST7789 | 240×240 | SPI 40 MHz |
+| 0.96″ OLED (white, or yellow/blue) | OLED, SSD1306 | 128×64 | I2C 400 kHz |
+| 0.91″ OLED | OLED, SSD1306 | 128×32 | I2C 400 kHz |
+| Waveshare 2.13″ e-Paper V4 | E-paper, SSD1680, black/white | 122×250 | SPI 10 MHz |
 
-Everything runs on a simulated clock: **Pause**, **Step** and **0.1×–4× speed** apply to delays, bus
-transfers, e-paper refreshes and sensor data alike.
+The Device panel shows each one's controller, RAM offsets, wiring and the things a driver must get
+right on hardware (the Waveshare's 34-pixel column offset and INVON, the SSD1306 charge pump, …).
 
-The **LD2410** is simulated at the UART level. The virtual sensor emits real 23-byte report frames
-at 10 Hz into a serial buffer, and the sketch parses them. Drag the person around the radar panel
-(speed decides "moving" vs "stationary"), or let them wander or approach. Presence is held for the
-5 s "no-one duration" like the real module. The panel shows the raw frame bytes.
+## TypeScript sketches
 
-Not simulated (yet): controller command protocols byte-for-byte, MCU CPU speed, touch, colour e-paper.
-
-## Resident apps
-
-Pick one under **Resident apps (Lua)** in the Sketch menu, drop a `.lua` file on the device, or edit
-the source in the Resident panel and press Run (⌘↵). Every display works: the app sees the selected
-display as screen `"main"`, M5Stick boards run landscape like the firmware.
-
-What's implemented, matching the firmware (`src/resident/`):
-
-- Lifecycle: `init`, `on_tick` every 100 ms with real `dt_ms`, `on_event` from an 8-slot ring;
-  `ctx.time_ms`, `generation_id`. Apps must define one callback or they're rejected.
-- Sandbox: no `os`/`io`/`load`/`require`/`debug`; a 2,000,000-instruction budget per callback (a
-  runaway loop aborts that dispatch, not the app); errors are contained and `on_tick` errors are
-  rate-limited like the device.
-- `lgfx` (LovyanGFX bindings, `flip()` presents the whole frame), `screen`/`imu`/`buzzer`/`button`
-  (the M5StickC Plus2 board drivers), `screens`, `log`, `events` (Resident's JSON rules, 5/s token
-  bucket, 16-deep queue), `store` (2048-byte budget, kept in localStorage), `time` (wrapping ticks
-  + the deprecated calendar half), `datetime` (Resident's own Lua source, vendored, over ported
-  calendar/strftime primitives).
-- Argument checks behave like `luaL_checkinteger`/`luaL_checknumber`, so `g:fillRect(1.5, …)`
-  raises the same error it would on the device.
-- Buttons produce `tap`/`hold` (500 ms)/`button` events; IMU is a tilt pad with a shake; the buzzer
-  plays through Web Audio.
-
-Not there: LVGL (`lvgl.bind` raises), 32-bit numbers (the VM is 64-bit, so integer wrap-around
-differs), the boot countdown, Wi-Fi/captive portal.
-
-### Push from a terminal or Claude Code
-
-In the Resident panel press **Connect to relay**. screenSim opens
-`wss://resident.inanimate.tech/devices/<sim-xxxxxxxx>` like the firmware does and shows its device
-ID. Then:
-
-```sh
-# Resident's Claude Code plugin
-/plugin marketplace add inanimate-tech/agent-plugins
-/plugin install resident@inanimate
-RESIDENT_DEVICE_ID=sim-xxxxxxxx  /resident:push-app give me a lil guy
-
-# or plain curl
-curl -X POST https://resident.inanimate.tech/devices/sim-xxxxxxxx/send \
-  -H 'Content-Type: application/json' -d '{"type":"app","code":"function init(ctx) screen.text(10,10,\"hi\") screen.flip() end"}'
-```
-
-Pushed apps, `chunk` patches, `channel:"app"` events, `forget` and the host `hello` time zone are all
-handled. The last app that boots is saved and restored on reload. `sim-` IDs make the plugin use its
-bundled M5Stick surface; for the full screenSim surface pass
-`--device-skill docs/resident/DEVICE-SKILL.md`.
-
-## Writing a sketch
-
-Drop a file in `src/sketches/`; it shows up in the Sketch menu. Saving it hot-restarts it.
+Drop a file in `src/sketches/` and it appears in the Sketch menu. The drawing API follows
+Adafruit_GFX / TFT_eSPI names and colours are RGB565 numbers, so a port to C++ is mostly a matter of
+deleting `await`.
 
 ```ts
-import { button, colors, defineSketch, hsv565, knob, ld2410 } from '../sim';
+import { button, colors, defineSketch, hsv565, knob } from '../sim';
 
 let x = 0;
 
@@ -102,72 +88,186 @@ export default defineSketch({
   inputs: {
     fire: button({ label: 'Fire', key: 'Space', gpio: 9 }),
     speed: knob({ label: 'Speed', min: 1, max: 10, start: 3 }),
-    radar: ld2410(),
   },
   setup({ display }) {
     display.fillScreen(colors.BLACK);
     x = 0;
   },
   async loop({ display, inputs, millis, delay, log }) {
-    inputs.radar.read();
     if (inputs.fire.wasPressed()) log('fire!');
     display.fillCircle(x, 40, 6, hsv565(millis() / 10, 1, 1));
     x = (x + inputs.speed.getPosition()) % display.width();
-    await display.show();   // takes as long as the real bus transfer
+    await display.show(); // as long as the real bus transfer takes
     await delay(16);
   },
 });
 ```
 
-**Display**: `width() height() setRotation(0-3) fillScreen drawPixel getPixel drawLine drawFastHLine
+Included: **Hello display** (adapts to every display type), **Patterns** (plasma, starfield, Game
+of Life, test card …), **Characters** (fonts and a walking sprite), **LD2410 radar** (presence
+dashboard) and **Knob menu** (an encoder-driven settings UI).
+
+<details>
+<summary>Drawing API</summary>
+
+`width() height() setRotation(0–3) fillScreen drawPixel getPixel drawLine drawFastHLine
 drawFastVLine drawRect fillRect drawRoundRect fillRoundRect drawCircle fillCircle drawTriangle
 fillTriangle drawBitmap drawRGBBitmap drawSprite setCursor setTextColor(fg, bg?) setTextSize
 setTextWrap setFont(null | 'bold 16px monospace') print println drawString(text, x, y, align)
-textWidth fontHeight setDither show('auto'|'full'|'partial') setBrightness(0-100) isColor() tech`
+textWidth fontHeight setDither show('auto' | 'full' | 'partial') setBrightness(0–100) isColor() tech`
 
-**Colours** are RGB565 numbers: `colors.*` (TFT_eSPI names), `color565(r,g,b)`, `hsv565(h,s,v)`,
-`hex565('#ff8800')`. On 1-bit panels a colour lights a pixel when its brightness is ≥ 50%; call
-`setDither(true)` for ordered dithering.
+- **Colours**: `colors.*` (TFT_eSPI names), `color565(r, g, b)`, `hsv565(h, s, v)`, `hex565('#ff8800')`.
+  On 1-bit panels a colour lights a pixel at ≥ 50% brightness; `setDither(true)` dithers instead.
+- **Fonts**: the classic 5×7 font at any integer size, or any browser font rasterised to 1 bit.
+- **Sprites**: `sprite({ palette: { '#': colors.WHITE }, frames: [['.##.', '####']] })`, then
+  `display.drawSprite(s, x, y, { frame, scale, flipX })`.
 
-**Sprites**: `sprite({ palette: { '#': colors.WHITE }, frames: [['.##.', '####']] })`, then
-`display.drawSprite(s, x, y, { frame, scale, flipX })`.
+</details>
 
-**Inputs** (declare them in `inputs`; widgets and keyboard bindings appear automatically):
+<details>
+<summary>Inputs API</summary>
 
 | Input | Sketch API |
 |---|---|
 | `button()` | `isPressed() wasPressed() wasReleased() pressedFor(ms) digitalRead()` |
-| `knob()` (EC11 encoder + push) | `getPosition() setPosition() delta() isPressed() wasPressed()` |
-| `pot()` | `read()` (0–4095, like ESP32 `analogRead`, with ADC noise) `readFloat() readMilliVolts()` |
+| `knob()`: EC11 encoder with push | `getPosition() setPosition() delta() isPressed() wasPressed()` |
+| `pot()` | `read()`: 0–4095 like ESP32 `analogRead`, with ADC noise · `readFloat() readMilliVolts()` |
 | `ld2410()` | `read() isConnected() presenceDetected() movingTargetDetected() stationaryTargetDetected() movingTargetDistance() movingTargetEnergy() stationaryTargetDistance() stationaryTargetEnergy() detectionDistance() outPin()`, raw `available() readByte()` |
+| `imu()` | `accel() gyro()` |
+| `buzzer()` | `beep(hz, ms) tone(hz) stop()` |
 
-The LD2410 method names match the Arduino `ld2410` library.
+The LD2410 is simulated at the UART level: the virtual sensor sends real 23-byte report frames at
+10 Hz into a serial buffer and your code parses them, with method names from the Arduino `ld2410`
+library. Drag the person around the radar panel (speed decides "moving" vs "stationary"), or let
+them wander or approach. Presence is held for the module's 5 s "no-one duration".
 
-## Adding a display
+</details>
 
-Drop a file in `src/sim/devices/` exporting a `DeviceProfile` (see `types.ts`); it appears in the
-Display menu. Give it an `enclosure` (body size in mm, screen position, buttons/ports/headers per
-face) and the 3D view draws it; buttons with an `input` index are clickable. Resolution, technology, bus speed and look are simulated. Controller, RAM offsets,
-wiring and porting notes are shown in the Device panel so the facts you need on hardware live with
-the profile. Example: `waveshare-esp32-c6-lcd-1.47.ts`.
+## Resident apps
 
-## Adding an input type
+[Resident](https://github.com/inanimate-tech/resident) is a sandboxed Lua runtime for ESP32 devices
+with hot-reloadable apps. screenSim runs those apps unmodified in a real Lua 5.4 VM
+([wasmoon](https://github.com/ceifa/wasmoon)), on whichever display is selected.
 
-Subclass `SimInput` in `src/sim/inputs/` (sketch-facing methods + UI-facing setters), export a
-factory like `button()`, and add a widget in `src/ui/widgets/` plus a case in `InputPanel.tsx`.
+Pick an app under **Resident apps (Lua)** in the Sketch menu, **drop a `.lua` file on the device**,
+or edit the source in the Resident panel and press Run (⌘↵). Included are Resident's own examples
+(Swiss railway clock, water-sim, daisy, accelerometer, …) and two that adapt to any screen.
 
-## Layout
+What matches the firmware:
+
+- **Lifecycle**: `init`, `on_tick` every 100 ms with real `dt_ms`, `on_event` from an 8-slot ring,
+  `ctx.time_ms`. Apps that define no callback are rejected.
+- **Sandbox**: no `os`, `io`, `load`, `require` or `debug`. A 2,000,000-instruction budget per callback
+  aborts a runaway loop without killing the app; `on_tick` errors are rate-limited like the device.
+- **Modules**: `lgfx` (LovyanGFX bindings; nothing shows until `flip()`), the M5StickC Plus2 board
+  surface (`screen`, `imu`, `buzzer`, `button`), `screens`, `log`, `events`, `store` (2048-byte budget,
+  kept across reloads), `time` and `datetime` (Resident's own Lua source over a ported strftime).
+- **Argument checks** behave like `luaL_checkinteger`: `g:fillRect(1.5, …)` raises the same error here
+  as on the device.
+- **Buttons** produce `tap`, `hold` (500 ms) and `button` events (keys **A** and **B**).
+
+Not supported yet: LVGL, 32-bit integer wrap-around (the VM is 64-bit), the boot countdown.
+
+### Push apps from your terminal or Claude Code
+
+Press **Connect to relay** in the Resident panel. screenSim connects to
+`wss://resident.inanimate.tech/devices/sim-xxxxxxxx` the way the firmware does and shows its device ID.
+Anything that can push to a Resident device can now push to the browser:
+
+```sh
+# Resident's Claude Code plugin
+/plugin marketplace add inanimate-tech/agent-plugins
+/plugin install resident@inanimate
+RESIDENT_DEVICE_ID=sim-xxxxxxxx  /resident:push-app give me a lil guy
+
+# or curl
+curl -X POST https://resident.inanimate.tech/devices/sim-xxxxxxxx/send \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"app","code":"function init(ctx) screen.text(10,10,\"hi\") screen.flip() end"}'
+```
+
+Pushed apps, `chunk` patches, `channel:"app"` events, `forget` and the host time zone are handled.
+The last app that boots is restored on reload. To have agents write apps for screenSim's full surface
+(any display, plus `lgfx` and `screens`), pass `--device-skill docs/resident/DEVICE-SKILL.md`.
+
+The device ID is a random secret: anyone who knows it can push apps to your browser while you're
+connected. Use **new** in the Resident panel to rotate it.
+
+## Keyboard
+
+| Key | Does |
+|---|---|
+| Space | the sketch's main button (e.g. BOOT) |
+| A / B | Resident buttons 0 and 1 |
+| ← / → / Enter | turn / push the rotary encoder |
+| Esc | "back" button in the knob menu |
+
+Dragging in the 3D view orbits the device and double-clicking resets it. Clicking a button on the
+model presses it.
+
+## Add a display
+
+Create `src/sim/devices/<id>.ts` exporting a `DeviceProfile`. `waveshare-esp32-c6-lcd-1.47.ts` is a
+complete example.
+
+```ts
+import type { DeviceProfile } from './types';
+
+export default {
+  id: 'my-oled',
+  name: '1.3" OLED 128×64 (SH1106)',
+  tech: 'oled',                       // 'lcd' | 'oled' | 'epaper'
+  width: 128,
+  height: 64,
+  controller: 'SH1106',
+  bus: { kind: 'i2c', hz: 400_000, i2cAddress: 0x3c },
+  porting: ['SH1106 RAM is 132 columns wide: start at column 2.'],
+  enclosure: {                        // optional: drawn in the 3D view (mm)
+    style: 'pcb',
+    body: { w: 35.4, h: 33.5, d: 1.2, r: 1 },
+    module: { w: 35.4, h: 24, d: 1.4, r: 0.4, x: 0, y: -2 },
+    screen: { x: 0, y: -1 },
+    parts: [{ kind: 'header', face: 'front', u: 0, v: 14.5, pins: 4, along: 'u' }],
+  },
+  look: { activeWidthMm: 29.4, activeHeightMm: 14.7, light: '#eaf4ff', dark: '#000000' },
+} satisfies DeviceProfile;
+```
+
+Enclosure `parts` can be buttons (`input: n` makes one clickable as the sketch's n-th button),
+ports, pin headers, mounting holes and LEDs, placed on any face of the body.
+
+To add an input type, subclass `SimInput` in `src/sim/inputs/`, export a factory like `button()`, and
+add a widget in `src/ui/widgets/` with a case in `InputPanel.tsx`.
+
+## Project layout
 
 ```
-src/sim/            simulator core, no React (unit-tested in tests/)
-  clock.ts          simulated time: pause / step / speed
-  gfx.ts            drawing API      framebuffer.ts  MCU-side buffer + dirty rect
-  display.ts        show(): bus timing → panel        panels/  lcd, oled, epaper physics
-  devices/          one file per display              inputs/  button, knob, pot, ld2410
-  runner.ts         runs setup()/loop()               renderer.ts  draws the panel on a <canvas>
-src/resident/       Resident runtime: wasmoon host, Lua prelude (sandbox + modules), relay, datetime
-src/resident-apps/  bundled Lua apps (Resident's examples, MIT, plus a couple of lgfx ones)
-src/sketches/       example TypeScript sketches (one file each)
-src/ui/three/       ghosted wireframe models built from each profile's enclosure
-src/ui/             React UI: device view, input widgets, device info, console
+src/sim/            simulator core, framework-free
+  clock.ts            simulated time: pause, step, speed
+  gfx.ts              drawing API          framebuffer.ts   MCU-side buffer + dirty rect
+  display.ts          show(): bus timing   panels/          LCD, OLED, e-paper physics
+  devices/            one file per display inputs/          button, knob, pot, LD2410, IMU, buzzer
+  runner.ts           runs setup()/loop()  renderer.ts      flat canvas view
+src/resident/       Resident runtime: wasmoon host, Lua sandbox prelude, relay client, datetime
+src/resident-apps/  bundled Lua apps
+src/sketches/       bundled TypeScript sketches
+src/ui/             React UI; ui/three/ builds the wireframe models from each enclosure
+tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol, Resident sandbox
+docs/resident/      DEVICE-SKILL.md for Resident's agent skills
 ```
+
+## Development
+
+```sh
+npm run dev        # dev server with hot reload
+npm test           # unit tests
+npm run typecheck  # TypeScript
+npm run build      # typecheck + static build into dist/
+```
+
+## Credits and license
+
+MIT, see [LICENSE](LICENSE). Resident's `datetime` module and example apps are included under
+Resident's MIT license, and the Waveshare panel init values come from Waveshare's demo; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The ghosted wireframe look is inspired by the
+simulator on [resident.inanimate.tech](https://resident.inanimate.tech).
