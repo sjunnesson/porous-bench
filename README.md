@@ -115,7 +115,9 @@ Coordinates are checked like `luaL_checkinteger`, so `math.floor` anything compu
 
 Included, from Bench: **Hello display** (adapts to every display type), **Patterns** (plasma,
 starfield, Game of Life, test card …), **Characters** (text sizes and a walking robot), **Knob menu**
-(an encoder-driven settings UI) and **LD2410 radar** (a presence dashboard). From Resident: the Swiss
+(an encoder-driven settings UI), **LD2410 radar** (a presence dashboard) and **Little devil** (a cute
+chibi devil whose mood follows the radar: it naps when nobody's there, gets curious, schemes, pops up
+with a "boo!" when you come close and gets cozy if you stay). From Resident: the Swiss
 railway clock, water-sim, daisy, accelerometer and the rest of its M5Stick examples.
 
 ### Controls: swap the hardware, keep the code
