@@ -566,7 +566,13 @@ function character() {
   let liftZ = 0;
   let liftV = 0;
   let squash = 0;
-  const sway = new THREE.Vector2();
+  // Held, the body is a lightly damped pendulum under the head: angles about x and y, their rates,
+  // and a slow twist on the "rope". The hand's acceleration drives it.
+  const swing = { x: 0, vx: 0, y: 0, vy: 0, twist: 0, vTwist: 0 };
+  const handV = new THREE.Vector2();
+  // Every so often a dangling character has a little wriggle: legs kick, arms flail.
+  let kickUntil = 0;
+  let nextKick = 0;
   const last = new THREE.Vector2(NaN, NaN);
   let speed = 0;
   let heading = 0;
@@ -583,7 +589,14 @@ function character() {
     headZ: () => HEAD_Z + carry.position.z,
     setHeld(h: boolean) {
       held = h;
-      if (h) liftV = 40; // a little hop as it's picked up
+      if (h) {
+        liftV = 40; // a little hop as it's picked up
+        // …and the jolt sets it swinging.
+        swing.vx += (Math.random() - 0.5) * 3;
+        swing.vy += (Math.random() - 0.5) * 3;
+        swing.vTwist += (Math.random() - 0.5) * 2;
+        nextKick = performance.now() + 600 + Math.random() * 800;
+      }
     },
     update(x: number, y: number, present: boolean, verdict: number) {
       const now = performance.now();
@@ -617,28 +630,59 @@ function character() {
       carry.position.z = liftZ;
       const airborne = liftZ > 0.6;
 
-      // Swinging below the hand: lean against the direction it's being carried.
-      const vx = dx / Math.max(dt, 1e-3);
-      const vy = dy / Math.max(dt, 1e-3);
-      const idleSwing = airborne ? Math.sin(now / 420) * 0.08 : 0; // a gentle swing even when still
-      sway.x += ((airborne ? Math.max(-0.8, Math.min(0.8, vy * 0.018)) : 0) + idleSwing - sway.x) * Math.min(1, dt * 5);
-      sway.y += ((airborne ? Math.max(-0.8, Math.min(0.8, -vx * 0.018)) : 0) - sway.y) * Math.min(1, dt * 5);
-      hang.rotation.x = sway.x;
-      hang.rotation.y = sway.y;
+      // Swinging below the hand. The body (below the pivot) lags when the hand speeds up and swings
+      // through when it stops: about x, a positive angle moves it towards +y; about y, towards −x.
+      const vNow = new THREE.Vector2(dx, dy).divideScalar(Math.max(dt, 1e-3));
+      const prevV = handV.clone();
+      handV.lerp(vNow, Math.min(1, dt * 18)); // pointer moves come in steps; smooth before differentiating
+      const ax = (handV.x - prevV.x) / Math.max(dt, 1e-3);
+      const ay = (handV.y - prevV.y) / Math.max(dt, 1e-3);
+      const kicking = airborne && now < kickUntil;
+      if (airborne) {
+        if (now > nextKick) {
+          kickUntil = now + 500 + Math.random() * 500;
+          nextKick = kickUntil + 1200 + Math.random() * 2200;
+        }
+        const W2 = 52; // ω² — a swing about every 0.9 s
+        const DAMP = 1.5; // light: it sways a few times before settling
+        const DRIVE = 0.07;
+        const fidget = Math.sin(now / 430) * 0.6 + (kicking ? Math.sin(now / 70) * 4 : 0); // never quite still
+        swing.vx += (-W2 * Math.sin(swing.x) - DAMP * swing.vx - ay * DRIVE + fidget) * dt;
+        swing.vy += (-W2 * Math.sin(swing.y) - DAMP * swing.vy + ax * DRIVE + (kicking ? Math.cos(now / 90) * 3 : 0)) * dt;
+        swing.vTwist += (-9 * swing.twist - 0.9 * swing.vTwist + (kicking ? Math.sin(now / 160) * 6 : 0)) * dt;
+        swing.x = Math.max(-1.15, Math.min(1.15, swing.x + swing.vx * dt));
+        swing.y = Math.max(-1.15, Math.min(1.15, swing.y + swing.vy * dt));
+        swing.twist += swing.vTwist * dt;
+      } else {
+        // On its feet: straighten up.
+        const k = Math.min(1, dt * 10);
+        swing.x -= swing.x * k;
+        swing.y -= swing.y * k;
+        swing.twist -= swing.twist * k;
+        swing.vx = swing.vy = swing.vTwist = 0;
+      }
+      hang.rotation.set(swing.x, swing.y, swing.twist);
       carry.scale.set(1 + squash * 0.12, 1 + squash * 0.12, 1 - squash * 0.22);
 
       const walking = !airborne && speed > 3; // mm/s on the desk
       phase += dt * (walking ? Math.min(14, 4 + speed * 0.25) : 0);
-      const swing = walking ? Math.sin(phase) * 0.7 : 0;
-      // Dangling: limbs hang loose and swing lazily, out of step with each other.
+      const stride = walking ? Math.sin(phase) * 0.7 : 0;
+      // Dangling: limbs hang loose, trail the swing and overshoot it (follow-through), drift out of
+      // step with each other, and kick and flail during a wriggle.
       const dangle = airborne ? Math.min(1, liftZ / 6) : 0;
       const k = now / 1000;
-      legs[0].rotation.x = swing + dangle * (Math.sin(k * 5.1) * 0.35 - sway.x * 0.8);
-      legs[1].rotation.x = -swing + dangle * (Math.sin(k * 4.3 + 1.7) * 0.35 - sway.x * 0.8);
-      arms[0].rotation.x = -swing * 0.8 + dangle * (Math.sin(k * 3.7 + 0.6) * 0.3);
-      arms[1].rotation.x = swing * 0.8 + dangle * (Math.sin(k * 4.1 + 2.4) * 0.3);
-      arms[0].rotation.y = -dangle * (0.5 + Math.sin(k * 2.3) * 0.15); // arms out a little, like a held kitten
-      arms[1].rotation.y = dangle * (0.5 + Math.sin(k * 2.9 + 1) * 0.15);
+      const kick = kicking ? 1 : 0;
+      const trailX = -swing.vx * 0.16;
+      const trailY = -swing.vy * 0.16;
+      legs[0].rotation.x = stride + dangle * (Math.sin(k * 5.1) * 0.45 + trailX + kick * Math.sin(k * 15) * 0.75);
+      legs[1].rotation.x = -stride + dangle * (Math.sin(k * 4.3 + 1.7) * 0.45 + trailX - kick * Math.sin(k * 15) * 0.75);
+      legs[0].rotation.y = dangle * (-0.16 + trailY + Math.sin(k * 3.3) * 0.12); // splayed a little
+      legs[1].rotation.y = dangle * (0.16 + trailY + Math.sin(k * 3.7 + 2) * 0.12);
+      arms[0].rotation.x = -stride * 0.8 + dangle * (Math.sin(k * 3.7 + 0.6) * 0.45 + trailX * 1.3 + kick * Math.sin(k * 13 + 1) * 0.6);
+      arms[1].rotation.x = stride * 0.8 + dangle * (Math.sin(k * 4.1 + 2.4) * 0.45 + trailX * 1.3 - kick * Math.sin(k * 13 + 1) * 0.6);
+      // Arms out, like a held kitten, flapping wider during a wriggle.
+      arms[0].rotation.y = -dangle * (0.65 + Math.sin(k * 2.3) * 0.2 + kick * (0.35 + Math.sin(k * 17) * 0.3) - trailY);
+      arms[1].rotation.y = dangle * (0.65 + Math.sin(k * 2.9 + 1) * 0.2 + kick * (0.35 + Math.sin(k * 17 + 1.5) * 0.3) + trailY);
       torso.position.z = 4.3 + (walking ? Math.abs(Math.sin(phase)) * 0.7 : airborne ? 0 : Math.sin(now / 600) * 0.12);
       torso.scale.z = walking ? 1 : 1 + Math.sin(now / 600) * 0.025; // breathing
 
@@ -646,7 +690,8 @@ function character() {
       if (!walking && Math.random() < dt * 0.3) lookAt = (Math.random() - 0.5) * 1.2;
       if (walking) lookAt = 0;
       head.rotation.z += (lookAt - head.rotation.z) * Math.min(1, dt * 4);
-      head.rotation.x = walking ? Math.sin(phase * 2) * 0.05 : 0;
+      // Held, it peers down at the floor; walking, it bobs.
+      head.rotation.x = walking ? Math.sin(phase * 2) * 0.05 : -dangle * 0.22;
       if (now > nextBlink) {
         blinkUntil = now + 130;
         nextBlink = now + 2000 + Math.random() * 3000;
