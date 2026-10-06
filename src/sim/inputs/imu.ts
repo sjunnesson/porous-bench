@@ -50,6 +50,10 @@ export class Imu extends SimInput {
   isShaking(): boolean {
     return this.clock.now() - this.shakeAt < 700;
   }
+  /** ms since the last shake started (Infinity if never). */
+  shakeAge(): number {
+    return this.clock.now() - this.shakeAt;
+  }
 
   // Sketch side
   accel(): [number, number, number] {

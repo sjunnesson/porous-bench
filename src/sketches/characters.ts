@@ -1,4 +1,4 @@
-import { button, colors, defineSketch, hsv565, knob, sprite, type Sprite } from '../sim';
+import { colors, defineSketch, dial, hsv565, sprite, trigger, type Sprite } from '../sim';
 
 // Two-frame walking robot. One letter per colour; '.' is transparent.
 const ROBOT_ROWS = {
@@ -48,10 +48,11 @@ let lastLine = 0;
 
 export default defineSketch({
   name: 'Characters',
-  description: 'Fonts (built-in 5x7 at several sizes, browser fonts) and a walking pixel-art sprite. Space = jump, knob = walk speed.',
+  description: 'Fonts (built-in 5x7 at several sizes, browser fonts) and a walking pixel-art sprite. Space = jump; Walk speed can be the encoder, the pot or IMU tilt (Controls).',
   inputs: {
-    jump: button({ label: 'Jump', key: 'Space' }),
-    speed: knob({ label: 'Walk speed', min: -6, max: 6, start: 2 }),
+    jump: trigger({ label: 'Jump', key: 'Space' }),
+    // Try it on the IMU (tilt ←→) or the pot from the Controls panel.
+    speed: dial({ label: 'Walk speed', min: -6, max: 6, start: 2 }),
   },
 
   setup({ display, device }) {
@@ -103,7 +104,7 @@ export default defineSketch({
     const now = millis();
 
     if (inputs.jump.wasPressed() && jumpT < 0) jumpT = now;
-    const speed = inputs.speed.getPosition();
+    const speed = inputs.speed.value;
     if (speed) dir = Math.sign(speed);
 
     // Erase the area the robot can occupy (between text and ground).

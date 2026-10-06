@@ -1,4 +1,4 @@
-import { button, colors, defineSketch, hsv565, knob, pot, type Display } from '../sim';
+import { colors, defineSketch, dial, hsv565, trigger, type Display } from '../sim';
 
 interface Item {
   label: string;
@@ -18,7 +18,7 @@ const items: Item[] = [
   { label: 'Accent', value: () => `${settings.hue}°`, adjust: (c) => (settings.hue = (settings.hue + c * 10 + 360) % 360) },
   { label: 'Animate', value: () => (settings.animate ? 'on' : 'off'), adjust: () => (settings.animate = !settings.animate) },
   { label: 'Invert', value: () => (settings.invert ? 'on' : 'off'), adjust: () => (settings.invert = !settings.invert) },
-  { label: 'Pot (ADC)', value: () => `${potValue}` },
+  { label: 'Gauge', value: () => `${potValue}` },
 ];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -82,11 +82,12 @@ function draw(d: Display) {
 
 export default defineSketch({
   name: 'Knob menu',
-  description: 'Settings menu on a rotary encoder: turn to move, push to edit, Esc to back out. The pot drives the gauge; Brightness changes the real backlight/contrast.',
+  description: 'Settings menu: turn to move, push to edit, Esc to back out. A second dial drives the gauge; Brightness changes the real backlight/contrast. Swap any of them in Controls.',
   inputs: {
-    enc: knob({ label: 'Encoder' }),
-    back: button({ label: 'Back', key: 'Escape' }),
-    dial: pot({ label: 'Pot', start: 0.4 }),
+    move: dial({ label: 'Move' }), // open range: only its steps matter
+    select: trigger({ label: 'Select', key: 'Enter', via: 'encoder-push' }),
+    back: trigger({ label: 'Back', key: 'Escape' }),
+    gauge: dial({ label: 'Gauge', min: 0, max: 4095, step: 1, start: 1640, via: 'pot', keys: { down: 'BracketLeft', up: 'BracketRight' } }),
   },
 
   setup({ device, display }) {
@@ -98,9 +99,9 @@ export default defineSketch({
   },
 
   async loop({ display, inputs, delay, device }) {
-    const { enc, back, dial } = inputs;
-    const clicks = enc.delta();
-    if (enc.wasPressed()) {
+    const { move, select, back, gauge } = inputs;
+    const clicks = move.delta();
+    if (select.wasPressed()) {
       if (items[cursor].adjust) editing = !editing;
     }
     if (back.wasPressed()) editing = false;
@@ -108,7 +109,7 @@ export default defineSketch({
       if (editing) items[cursor].adjust?.(clicks);
       else cursor = clamp(cursor + clicks, 0, items.length - 1);
     }
-    potValue = dial.read();
+    potValue = gauge.value;
     phase += 0.08;
 
     display.setBrightness(settings.brightness);

@@ -1,7 +1,10 @@
 import type { SimClock } from '../clock';
+import type { Bench } from '../controls/bench';
 
 export interface InputContext {
   clock: SimClock;
+  /** Where abstract controls find (and share) their hardware. */
+  bench: Bench;
 }
 
 /** Declared by a sketch (`inputs: { fire: button() }`); the runner creates one instance per run. */
@@ -9,7 +12,7 @@ export interface InputSpec<T extends SimInput = SimInput> {
   create(ctx: InputContext): T;
 }
 
-export type InputKind = 'button' | 'knob' | 'pot' | 'ld2410' | 'imu' | 'buzzer';
+export type InputKind = 'button' | 'knob' | 'pot' | 'ld2410' | 'imu' | 'buzzer' | 'dial' | 'trigger';
 
 /** Shared by the sketch (reads it) and the UI widget (drives it). */
 export abstract class SimInput {

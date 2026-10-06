@@ -727,3 +727,37 @@ textarea.code {
     padding-right: 16px;
   }
 }
+
+/* ---- controls ------------------------------------------------------------------------------ */
+
+.control-row {
+  padding: 12px 0;
+}
+.control-row + .control-row {
+  border-top: 1px solid var(--rule);
+}
+.control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.control-value {
+  font: 500 22px/1 var(--display);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.control-via {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.control-via .dim {
+  font: 400 10px/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.control-via select {
+  flex: 1;
+  min-width: 0;
+}

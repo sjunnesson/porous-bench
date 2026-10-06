@@ -59,8 +59,9 @@ Pick a **Sketch** and a **Display** in the toolbar. Everything runs locally in t
   glass, flat and pixel-exact, with zoom and a pixel grid.
 - **The whole bench in 3D.** Inputs the device doesn't have sit on the desk beside it as parts you
   can use: a rotary encoder (drag the ring, press the centre, scroll), tactile buttons, a slide pot,
-  a piezo that pulses while it sounds, and the LD2410 with its detection fan and a person you drag
-  around. Each is wired back to the device. With an IMU the device itself tilts and shakes.
+  a piezo that pulses while it sounds, and the LD2410 with its detection fan and a little character
+  who walks, blinks and looks around; pick it up by the head to carry it somewhere else. Each part is wired back
+  to the device. With an IMU the device itself tilts and shakes.
 - **Hot reload.** Saving a sketch file restarts it in place.
 
 ## Displays
@@ -85,15 +86,16 @@ Adafruit_GFX / TFT_eSPI names and colours are RGB565 numbers, so a port to C++ i
 deleting `await`.
 
 ```ts
-import { button, colors, defineSketch, hsv565, knob } from '../sim';
+import { colors, defineSketch, dial, hsv565, trigger } from '../sim';
 
 let x = 0;
 
 export default defineSketch({
   name: 'My sketch',
   inputs: {
-    fire: button({ label: 'Fire', key: 'Space', gpio: 9 }),
-    speed: knob({ label: 'Speed', min: 1, max: 10, start: 3 }),
+    // What the sketch needs, not which part provides it. Pick the hardware in the Controls panel.
+    fire: trigger({ label: 'Fire', key: 'Space' }),                  // push button by default
+    speed: dial({ label: 'Speed', min: 1, max: 10, start: 3 }),       // rotary encoder by default
   },
   setup({ display }) {
     display.fillScreen(colors.BLACK);
@@ -102,12 +104,30 @@ export default defineSketch({
   async loop({ display, inputs, millis, delay, log }) {
     if (inputs.fire.wasPressed()) log('fire!');
     display.fillCircle(x, 40, 6, hsv565(millis() / 10, 1, 1));
-    x = (x + inputs.speed.getPosition()) % display.width();
+    x = (x + inputs.speed.value) % display.width();
     await display.show(); // as long as the real bus transfer takes
     await delay(16);
   },
 });
 ```
+
+### Controls: swap the hardware, keep the code
+
+`dial()` and `trigger()` describe what a sketch needs. In the **Controls** panel each one has a
+**via** menu, and you can change it while the sketch runs:
+
+| Control | Sketch API | Hardware it can run on |
+|---|---|---|
+| `dial({ min, max, step, start, wrap })` | `value`, `delta()` (steps since last read), `fraction` | rotary encoder · slide pot · IMU tilt ←→ or ↑↓ · two buttons − / + · LD2410 distance |
+| `trigger({ key })` | `isPressed() wasPressed() wasReleased() pressedFor(ms)` | push button · encoder push · IMU shake · LD2410 presence |
+
+Relative hardware (encoder, buttons) steps a dial; absolute hardware (pot, tilt, distance) sets it,
+and on a swap the new hardware takes over at the current value, so nothing jumps. `delta()` works
+the same either way, so menu code doesn't care what's turning it. Parts are shared the way a real
+bench would: one IMU and one radar per board, and one encoder can turn one control while its push
+fires another. The choice is remembered per sketch, and the keyboard keys work whatever the
+hardware. Concrete parts (`button()`, `knob()`, `pot()`, `ld2410()`, `imu()`, `buzzer()`) are still
+there for sketches that need a specific device, like the radar dashboard parsing UART frames.
 
 Included: **Hello display** (adapts to every display type), **Patterns** (plasma, starfield, Game
 of Life, test card …), **Characters** (fonts and a walking sprite), **LD2410 radar** (presence
@@ -170,7 +190,8 @@ What matches the firmware:
   kept across reloads), `time` and `datetime` (Resident's own Lua source over a ported strftime).
 - **Argument checks** behave like `luaL_checkinteger`: `g:fillRect(1.5, …)` raises the same error here
   as on the device.
-- **Buttons** produce `tap`, `hold` (500 ms) and `button` events (keys **A** and **B**).
+- **Buttons** produce `tap`, `hold` (500 ms) and `button` events (keys **A** and **B**). They're
+  triggers, so you can swap a button for an encoder push, an IMU shake or the radar.
 
 Not supported yet: LVGL, 32-bit integer wrap-around (the VM is 64-bit), the boot countdown.
 

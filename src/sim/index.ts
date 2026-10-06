@@ -11,3 +11,4 @@ export { pot, type Pot } from './inputs/pot';
 export { ld2410, type LD2410 } from './inputs/ld2410';
 export { imu, type Imu } from './inputs/imu';
 export { buzzer, type Buzzer } from './inputs/buzzer';
+export { dial, trigger, type Dial, type Trigger, type DialSource, type TriggerSource } from './controls/controls';

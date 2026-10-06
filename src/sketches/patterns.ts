@@ -1,4 +1,4 @@
-import { button, colors, defineSketch, hsv565, knob, type Display } from '../sim';
+import { colors, defineSketch, dial, hsv565, trigger, type Display } from '../sim';
 
 type Pattern = { name: string; init?: (W: number, H: number) => void; draw: (d: Display, t: number, W: number, H: number) => void };
 
@@ -126,10 +126,10 @@ let t = 0;
 
 export default defineSketch({
   name: 'Patterns',
-  description: 'Full-screen generative patterns. Space / knob push = next pattern, knob = speed. 1-bit panels get ordered dithering.',
+  description: 'Full-screen generative patterns. Next and Speed can be driven by any hardware (Controls). 1-bit panels get ordered dithering.',
   inputs: {
-    next: button({ label: 'Next', key: 'Space' }),
-    speed: knob({ label: 'Speed', min: 1, max: 20, start: 6 }),
+    next: trigger({ label: 'Next', key: 'Space' }),
+    speed: dial({ label: 'Speed', min: 1, max: 20, start: 6 }),
   },
 
   setup({ display, device }) {
@@ -141,12 +141,12 @@ export default defineSketch({
   },
 
   async loop({ display, inputs, log, delay }) {
-    if (inputs.next.wasPressed() || inputs.speed.wasPressed()) {
+    if (inputs.next.wasPressed()) {
       index = (index + 1) % patterns.length;
       patterns[index].init?.(display.width(), display.height());
       log(`pattern: ${patterns[index].name}`);
     }
-    t += inputs.speed.getPosition() / 300;
+    t += inputs.speed.value / 300;
     patterns[index].draw(display, t, display.width(), display.height());
     await display.show();
     await delay(10);

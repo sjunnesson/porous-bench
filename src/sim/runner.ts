@@ -1,6 +1,9 @@
 import { type SimClock, SketchStopped, yieldToBrowser } from './clock';
 import type { DeviceProfile } from './devices/types';
+import { Bench } from './controls/bench';
+import { type Control, isControl } from './controls/controls';
 import { Display } from './display';
+import type { Button } from './inputs/button';
 import type { SimInput } from './inputs/input';
 import type { InputSpecs, Sketch, SketchContext } from './sketch';
 
@@ -19,6 +22,12 @@ export interface RunCallbacks {
 export class SketchRun {
   readonly display: Display;
   readonly inputs: Record<string, SimInput>;
+  /** Every physical part on the desk (declared hardware + whatever the controls use). */
+  readonly bench: Bench;
+  /** Abstract controls (dial, trigger), whose hardware the user can swap. */
+  readonly controls: Control[] = [];
+  /** Concrete hardware the sketch declared itself. */
+  readonly declared: SimInput[] = [];
   private abort = new AbortController();
   private startMs: number;
   private ctx: SketchContext;
@@ -32,10 +41,16 @@ export class SketchRun {
     this.startMs = clock.now();
     this.display = new Display(device, clock, this.abort.signal);
     this.inputs = {};
+    this.bench = new Bench(clock);
     for (const [name, spec] of Object.entries(sketch.inputs ?? {})) {
-      const input = spec.create({ clock });
+      const input = spec.create({ clock, bench: this.bench });
       input.name = name;
       this.inputs[name] = input;
+      if (isControl(input)) this.controls.push(input);
+      else {
+        this.declared.push(input);
+        this.bench.addDeclared(input);
+      }
     }
     this.ctx = {
       display: this.display,
@@ -47,6 +62,16 @@ export class SketchRun {
       warn: (...args) => this.log('warn', args),
       error: (...args) => this.log('error', args),
     };
+  }
+
+  /**
+   * Button-like inputs in declaration order, each with the push button behind it (if any). The
+   * n-th one is what a device's n-th physical button presses.
+   */
+  pressables(): { input: SimInput; button?: Button }[] {
+    return Object.values(this.inputs)
+      .filter((i) => i.kind === 'button' || i.kind === 'trigger')
+      .map((i) => ({ input: i, button: i.kind === 'button' ? (i as Button) : (i as Control & { buttonPart?: Button }).buttonPart }));
   }
 
   get stopped(): boolean {

@@ -1,4 +1,4 @@
-import { button, color565, colors, defineSketch, hsv565 } from '../sim';
+import { color565, colors, defineSketch, hsv565, trigger } from '../sim';
 
 // Module-level state is (re)initialised in setup(), so restarting the sketch starts fresh.
 let ball = { x: 0, y: 0, vx: 0, vy: 0, r: 0 };
@@ -12,7 +12,7 @@ export default defineSketch({
   name: 'Hello display',
   description: 'Device info, colour bars and a bouncing ball. Adapts itself to LCD, OLED and e-paper. BOOT changes colour.',
   inputs: {
-    boot: button({ label: 'BOOT', key: 'Space', gpio: 9 }),
+    boot: trigger({ label: 'BOOT', key: 'Space' }),
   },
 
   setup({ display, device, log }) {

@@ -16,10 +16,64 @@ const MODES: { id: RadarMode; label: string; hint: string }[] = [
 const toCanvas = (x: number, y: number) => ({ x: ORIGIN.x + x * SCALE, y: ORIGIN.y - y * SCALE });
 const toWorld = (px: number, py: number) => ({ x: (px - ORIGIN.x) / SCALE, y: Math.max(0.15, (ORIGIN.y - py) / SCALE) });
 
+/** The same little character as in the 3D view, in 2D: walks when it moves, blinks when it doesn't. */
+function drawCharacter(ctx: CanvasRenderingContext2D, x: number, y: number, verdict: string, walking: boolean, facing: number, now: number) {
+  const phase = now / 110;
+  const bob = walking ? Math.abs(Math.sin(phase)) * 1.5 : Math.sin(now / 600) * 0.4;
+  const swing = walking ? Math.sin(phase) * 3 : 0;
+  ctx.save();
+  ctx.translate(x, y - bob);
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = '#1b4b7a';
+  ctx.fillStyle = '#f4f7f9';
+  // Ground ring: the radar's verdict.
+  ctx.strokeStyle = verdict;
+  ctx.beginPath();
+  ctx.ellipse(0, bob, 9, 3, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = '#1b4b7a';
+  // Legs
+  for (const [lx, s] of [[-2.5, 1], [2.5, -1]] as const) {
+    ctx.beginPath();
+    ctx.moveTo(lx, -6);
+    ctx.lineTo(lx + swing * s, 0);
+    ctx.stroke();
+  }
+  // Body
+  ctx.beginPath();
+  ctx.ellipse(0, -9, 4.5, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Head
+  ctx.beginPath();
+  ctx.arc(0, -18, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Antenna with the verdict bulb
+  ctx.beginPath();
+  ctx.moveTo(0.5, -24.5);
+  ctx.lineTo(1.5, -29);
+  ctx.stroke();
+  ctx.fillStyle = verdict;
+  ctx.beginPath();
+  ctx.arc(1.5, -30, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  // Eyes look the way it's walking; a blink every few seconds.
+  ctx.fillStyle = '#11181c';
+  const blink = now % 3600 < 120;
+  for (const ex of [-2.2, 2.2]) {
+    ctx.beginPath();
+    ctx.ellipse(ex + facing * 1.6, -18.5, 1.1, blink ? 0.2 : 1.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export function RadarWidget({ input }: { input: LD2410 }) {
   useInput(input);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragging = useRef(false);
+  const motion = useRef({ x: 0, y: 0, speed: 0, facing: 1 });
   const { report, bytes, overflowed } = input.latest();
 
   const draw = useCallback(() => {
@@ -75,13 +129,14 @@ export function RadarWidget({ input }: { input: LD2410 }) {
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = fill;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(p.x, p.y - 13, 4.5, 0, Math.PI * 2);
-    ctx.fill();
+    const now = performance.now();
+    const m = motion.current;
+    const dx = p.x - m.x;
+    if (Math.abs(dx) > 0.3) m.facing = Math.sign(dx);
+    m.speed += (Math.hypot(dx, p.y - m.y) - m.speed) * 0.2;
+    m.x = p.x;
+    m.y = p.y;
+    if (t.present) drawCharacter(ctx, p.x, p.y, fill, m.speed > 0.15, m.facing, now);
   }, [input]);
   useAnimationFrame(draw);
 

@@ -28,6 +28,22 @@ interface Entry {
   code?: string;
 }
 
+/** Which hardware the user picked for a sketch's control, kept across reloads. */
+function loadBinding(sketchId: string, control: string): string | null {
+  try {
+    return localStorage.getItem(`screensim:binding:${sketchId}:${control}`);
+  } catch {
+    return null;
+  }
+}
+function saveBinding(sketchId: string, control: string, source: string) {
+  try {
+    localStorage.setItem(`screensim:binding:${sketchId}:${control}`, source);
+  } catch {
+    /* not persisted */
+  }
+}
+
 const bundledResident: Entry[] = residentApps.map((a) => ({
   id: `resident:${a.id}`,
   name: a.name,
@@ -81,6 +97,10 @@ export default function App() {
       onLog: (line) => setLogs((l) => [...l.slice(-299), line]),
       onError: (err) => setError(err instanceof Error ? (err.stack ?? err.message) : String(err)),
     });
+    for (const control of r.controls) {
+      const saved = loadBinding(entry.id, control.name);
+      if (saved) control.bind(saved);
+    }
     setRun(r);
     setLogs([]);
     setError(null);
@@ -95,7 +115,8 @@ export default function App() {
     const handler = (down: boolean) => (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest?.('input, select, textarea')) return;
       let handled = false;
-      for (const input of Object.values(run.inputs)) {
+      for (const control of run.controls) if (control.handleKey(e.code, down)) handled = true;
+      for (const input of run.declared) {
         if (input.kind === 'button') {
           const b = input as Button;
           if (b.key === e.code) {
@@ -232,7 +253,15 @@ export default function App() {
           />
         )}
         <aside className="sidebar">
-          {run && <InputPanel inputs={run.inputs} />}
+          {run && (
+            <InputPanel
+              run={run}
+              onBind={(control, source) => {
+                control.bind(source);
+                saveBinding(entry.id, control.name, source);
+              }}
+            />
+          )}
           <ResidentPanel code={entry.code ?? null} appName={entry.code ? entry.name.replace(/^▶ /, '') : null} />
           <DeviceInfo device={device} />
           <Console lines={logs} onClear={() => setLogs([])} />

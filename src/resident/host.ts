@@ -6,7 +6,6 @@ import qrcode from 'qrcode-generator';
 import type { LuaEngine, LuaFactory } from 'wasmoon';
 import { color565, colors } from '../sim/color';
 import type { Display } from '../sim/display';
-import type { Button } from '../sim/inputs/button';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
 import datetimeSrc from './lua/datetime.lua?raw';
@@ -27,13 +26,20 @@ export interface ResidentEvent {
 
 export type SendResult = 'sent' | 'queued' | 'dropped';
 
+/** Anything with a button's edges: a push button, or a trigger driven by other hardware. */
+export interface Pressable {
+  isPressed(): boolean;
+  wasPressed(): boolean;
+  wasReleased(): boolean;
+}
+
 /** What the board gives the runtime. */
 export interface ResidentBoard {
   display: Display;
   /** Sim time in ms. */
   now(): number;
   zone(): Zone;
-  buttons: Button[];
+  buttons: Pressable[];
   imu?: Imu;
   buzzer?: Buzzer;
   store: AppStore;

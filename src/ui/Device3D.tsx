@@ -1,7 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import type { SimClock } from '../sim/clock';
-import type { Button } from '../sim/inputs/button';
 import type { Imu } from '../sim/inputs/imu';
 import type { SketchRun } from '../sim/runner';
 import { buildModel, type ModelButton } from './three/model';
@@ -16,6 +15,9 @@ interface Props {
 }
 
 const BASE = { pitch: -0.32, yaw: 0.42 };
+// With the radar's character on the desk, look across the desk rather than down on it, so it's
+// seen standing up.
+const BASE_DIORAMA = { pitch: -0.85, yaw: 0.3 };
 const PRESS_MM = 0.7;
 const GAP = 16; // mm between the device and its parts, and between parts
 
@@ -28,6 +30,9 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef(mount);
   mountRef.current = mount;
+  // Swapping hardware rebuilds the scene; the orbit survives it.
+  const benchVersion = useSyncExternalStore(run.bench.subscribe, run.bench.getVersion);
+  const orbitRef = useRef({ yaw: 0, pitch: 0, tYaw: 0, tPitch: 0 });
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -59,21 +64,24 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     pivot.add(content);
     scene.add(pivot);
 
-    const inputs = Object.values(run.inputs);
-    const buttonInputs = inputs.filter((i) => i.kind === 'button') as Button[];
-    const imu = inputs.find((i) => i.kind === 'imu') as Imu | undefined;
-    const onDevice = new Set(model.buttons.map((b) => b.input).filter((i): i is number => i !== undefined));
-    const inputFor = (b: ModelButton) => (b.input === undefined ? undefined : buttonInputs[b.input]);
+    const hardware = run.bench.parts();
+    const imu = hardware.find((i) => i.kind === 'imu') as Imu | undefined;
+    // The device's n-th physical button presses the sketch's n-th button-like input (a button, or a
+    // trigger whose hardware is a push button).
+    const pressables = run.pressables();
+    const inputFor = (b: ModelButton) => (b.input === undefined ? undefined : pressables[b.input]?.button);
+    const onDevice = new Set(model.buttons.map(inputFor).filter((b) => b !== undefined));
 
     // External parts on the desk, plus wires back to the device.
-    const parts: Peripheral[] = buildPeripherals(inputs, onDevice);
+    const parts: Peripheral[] = buildPeripherals(hardware, onDevice);
+    const base = hardware.some((h) => h.kind === 'ld2410') ? BASE_DIORAMA : BASE;
     const desk = new THREE.Group();
     content.add(desk);
     for (const p of parts) desk.add(p.root);
     const wires = new THREE.Group();
     content.add(wires);
 
-    const orbit = { yaw: 0, pitch: 0, tYaw: 0, tPitch: 0 };
+    const orbit = orbitRef.current;
     let grab: Grab | null = null;
     let orbiting: { x: number; y: number } | null = null;
     let tilting: { x: number; y: number } | null = null;
@@ -185,7 +193,10 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       }
       if (hit?.kind === 'part') {
         grab = hit.part.grab(hit.object, ray.ray);
-        if (grab) return;
+        if (grab) {
+          el.style.cursor = 'grabbing';
+          return;
+        }
       }
       if (e.shiftKey && imu && overDevice(e)) tilting = { x: e.clientX, y: e.clientY };
       else orbiting = { x: e.clientX, y: e.clientY };
@@ -211,8 +222,13 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       const hit = pick(e);
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
+        const mapped = hit.button.input === undefined ? undefined : pressables[hit.button.input]?.input;
         el.style.cursor = input ? 'pointer' : 'grab';
-        el.title = input ? `${hit.button.label}${input.key ? ` (${input.key.replace(/^Key/, '')})` : ''}` : `${hit.button.label} (not used by this sketch)`;
+        el.title = input
+          ? `${hit.button.label}${input.key ? ` (${input.key.replace(/^Key/, '')})` : ''}`
+          : mapped
+            ? `${hit.button.label}: "${mapped.label}" is on other hardware right now`
+            : `${hit.button.label} (not used by this sketch)`;
       } else if (hit?.kind === 'part') {
         el.style.cursor = 'pointer';
         el.title = hit.part.title(hit.object);
@@ -283,7 +299,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
 
       orbit.yaw += (orbit.tYaw - orbit.yaw) * 0.18;
       orbit.pitch += (orbit.tPitch - orbit.pitch) * 0.18;
-      pivot.rotation.set(BASE.pitch + orbit.pitch, BASE.yaw + orbit.yaw, 0, 'YXZ');
+      pivot.rotation.set(base.pitch + orbit.pitch, base.yaw + orbit.yaw, 0, 'YXZ');
       const target = (-quarter * Math.PI) / 2;
       let diff = target - mountGroup.rotation.z;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // turn the short way
@@ -315,7 +331,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       el.remove();
       onCanvas?.(null);
     };
-  }, [run, clock, onCanvas]);
+  }, [run, clock, onCanvas, benchVersion]);
 
   return <div ref={hostRef} className="device-3d" />;
 }

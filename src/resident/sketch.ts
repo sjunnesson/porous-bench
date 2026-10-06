@@ -2,7 +2,7 @@
 // whatever display is selected, and the sandbox loop runs inside loop().
 
 import type { Display } from '../sim/display';
-import { button } from '../sim/inputs/button';
+import { trigger } from '../sim/controls/controls';
 import { buzzer } from '../sim/inputs/buzzer';
 import { imu } from '../sim/inputs/imu';
 import { defineSketch, type Sketch } from '../sim/sketch';
@@ -29,8 +29,9 @@ export function residentSketch(app: ResidentAppSource): Sketch {
     description: app.description ?? 'Resident Lua app. Buttons: A / B keys (tap, or hold ½ s). Drag a .lua file onto the device to load another.',
     autoShow: false, // nothing reaches the glass until the app flips
     inputs: {
-      a: button({ label: 'Button 0 (A)', key: 'KeyA' }),
-      b: button({ label: 'Button 1 (B)', key: 'KeyB' }),
+      // Triggers, so you can swap a button for an encoder push, a shake or the radar.
+      a: trigger({ label: 'Button 0 (A)', key: 'KeyA' }),
+      b: trigger({ label: 'Button 1 (B)', key: 'KeyB' }),
       imu: imu(),
       buzzer: buzzer(),
     },

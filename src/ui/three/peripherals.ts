@@ -353,57 +353,284 @@ function radar(input: LD2410): Peripheral {
   module.position.y = -4;
   root.add(module);
 
-  // The person: a little standing figure.
-  const person = new THREE.Group();
-  const body = cylinder(2.2, 13, 0, false);
-  const head = edges(new THREE.SphereGeometry(2.4, 12, 8));
-  head.position.z = 16;
-  const bodyFill = fillMesh(new THREE.CircleGeometry(2.2, 24), NOW, 0.6);
-  bodyFill.position.z = 13.05;
-  person.add(body, head, bodyFill);
-  root.add(person);
+  const critter = character();
+  critter.group.scale.setScalar(1.27); // diorama scale: a bit larger than true size so it reads
+  root.add(critter.group);
+
+  // Pick targets: the fan, an invisible floor around it (so the character can always be fetched
+  // back, even from outside the fan) and the character itself.
+  const floorW = 2 * R * 1.15;
+  const floorH = R * 1.25;
+  const floor = fillMesh(new THREE.PlaneGeometry(floorW, floorH), BLUE, 0);
+  floor.position.set(0, floorH / 2 - 6, -0.02);
+  root.add(floor);
+  const limits = { x: floorW / 2 / scale - 0.2, y: (floorH - 6) / scale - 0.2 };
 
   withLabel(root, input.label, -10.5);
+  let held: { ray: THREE.Ray; offset: THREE.Vector2 } | null = null;
   const move = (ray: THREE.Ray) => {
     const p = onPlane(root, ray, 0);
-    if (p) input.movePerson(p.x / scale, Math.max(0.15, p.y / scale));
+    if (!p) return;
+    const x = Math.max(-limits.x, Math.min(limits.x, p.x / scale));
+    const y = Math.max(0.15, Math.min(limits.y, p.y / scale));
+    input.movePerson(x, y);
   };
   return {
     root,
-    w: 2 * Math.sin(half) * R + 6,
+    w: floorW,
     h: R + 18,
     anchor: new THREE.Vector3(-17.5, -4, 0.5),
-    targets: [area],
-    grab(_hit, ray) {
-      move(ray);
+    targets: [critter.hit, area, floor],
+    grab(hit, ray) {
+      if (hit === critter.hit) {
+        // Pick it up by the head: it rises and hangs from your hand, follows the pointer and is
+        // put down where you let go. The pointer is tracked at carrying height, so the head stays
+        // under it, and relative to where you grabbed, so nothing jumps.
+        critter.setHeld(true);
+        const t = input.target();
+        input.movePerson(t.x, t.y); // stop wandering: it's in your hand now
+        // Where on the head you grabbed, relative to its centre line.
+        const start = onPlane(root, ray, critter.headZ() * critter.group.scale.z);
+        const offset = start ? new THREE.Vector2(start.x - t.x * scale, start.y - t.y * scale) : new THREE.Vector2();
+        held = { ray: ray.clone(), offset };
+        return {
+          move: (r) => held?.ray.copy(r),
+          up: () => {
+            held = null;
+            critter.setHeld(false);
+          },
+        };
+      }
+      move(ray); // a click on the floor fetches it there
       return { move, up() {} };
     },
-    title: () => `${input.label}: drag the person · ${input.mode}`,
+    title: (hit) => (hit === critter.hit ? 'Pick me up by the head and put me somewhere' : `${input.label}: click to fetch the character here · ${input.mode}`),
     update() {
+      if (held) {
+        // The head is the pivot it hangs from: put it where the cursor ray crosses the head's
+        // current height, so it stays in your hand while it lifts and while you carry it.
+        const p = onPlane(root, held.ray, critter.headZ() * critter.group.scale.z);
+        if (p) {
+          const x = Math.max(-limits.x, Math.min(limits.x, (p.x - held.offset.x) / scale));
+          const y = Math.max(0.15, Math.min(limits.y, (p.y - held.offset.y) / scale));
+          input.movePerson(x, y);
+        }
+      }
       const t = input.target();
       const st = input.latest().report.state;
-      person.position.set(t.x * scale, t.y * scale, 0);
-      person.visible = t.present;
-      const color = st & 1 ? NOW : st & 2 ? BLUE : MUTED;
-      setFill(bodyFill, color, 0.75);
-      body.material = st ? LINE : LINE_DIM;
+      critter.update(t.x * scale, t.y * scale, t.present, st & 1 ? NOW : st & 2 ? BLUE : MUTED);
       setFill(out, st ? NOW : BLUE, st ? 0.9 : 0.15);
     },
   };
 }
 
 /**
- * Parts for every input the device itself doesn't provide. Buttons the enclosure already has
- * (by index) stay on the device; the IMU is shown by tilting the device rather than as a part.
+ * The radar's target: a small round-headed character with an antenna. Walks (legs and arms swing,
+ * body bobs) when it moves, turns to face where it's going, breathes, blinks and looks around when
+ * it stands still. The antenna bulb and the ring at its feet show what the radar makes of it.
  */
-export function buildPeripherals(inputs: SimInput[], onDeviceButtons: Set<number>): Peripheral[] {
+function character() {
+  const group = new THREE.Group();
+  const PAPER = 0xf4f7f9;
+  const INK = 0x11181c;
+  const fill = (color = PAPER) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.96 });
+  // Cartoon outline: a slightly larger back-face shell in blue around each solid piece.
+  const outlined = (geo: THREE.BufferGeometry, scale = 1.12, material = fill()) => {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(geo, material));
+    const shell = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: BLUE, side: THREE.BackSide }));
+    shell.scale.setScalar(scale);
+    g.add(shell);
+    return g;
+  };
+  const upright = (geo: THREE.BufferGeometry) => geo.rotateX(Math.PI / 2); // capsule axis → +z
+
+  const HEAD_Z = 11.9; // torso 4.3 + head 7.6: where you hold it
+  const LIFT = 9; // how high it's carried
+  const carry = new THREE.Group(); // lifted while held
+  group.add(carry);
+  const hang = new THREE.Group(); // pivot at the head: held, the body swings beneath it
+  hang.position.z = HEAD_Z;
+  carry.add(hang);
+  const body = new THREE.Group(); // everything that turns to face the walking direction
+  body.position.z = -HEAD_Z;
+  hang.add(body);
+
+  const legs = [-1, 1].map((side) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 1.35, 0, 4.2);
+    const leg = outlined(upright(new THREE.CapsuleGeometry(0.85, 2.2, 4, 10)), 1.18);
+    leg.position.z = -2;
+    pivot.add(leg);
+    body.add(pivot);
+    return pivot;
+  });
+
+  const torso = new THREE.Group();
+  torso.position.z = 4.3;
+  body.add(torso);
+  const belly = outlined(upright(new THREE.CapsuleGeometry(2.4, 2.2, 6, 14)), 1.08);
+  belly.position.z = 2.2;
+  torso.add(belly);
+
+  const arms = [-1, 1].map((side) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 2.6, 0, 3.6);
+    const arm = outlined(upright(new THREE.CapsuleGeometry(0.6, 1.8, 4, 8)), 1.2);
+    arm.position.z = -1.4;
+    arm.rotation.y = side * 0.25;
+    pivot.add(arm);
+    torso.add(pivot);
+    return pivot;
+  });
+
+  const head = new THREE.Group();
+  head.position.z = 7.6;
+  torso.add(head);
+  head.add(outlined(new THREE.SphereGeometry(3.4, 20, 14), 1.07));
+  // Eyes on the front (+y is "forward"), and two little cheeks.
+  const eyes = [-1, 1].map((side) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.62, 10, 8), new THREE.MeshBasicMaterial({ color: INK }));
+    eye.position.set(side * 1.25, 3.05, 0.5);
+    head.add(eye);
+    const cheek = new THREE.Mesh(new THREE.CircleGeometry(0.55, 12), new THREE.MeshBasicMaterial({ color: NOW, transparent: true, opacity: 0.35 }));
+    cheek.position.set(side * 2.1, 2.75, -0.55);
+    cheek.lookAt(cheek.position.clone().multiplyScalar(2));
+    head.add(cheek);
+    return eye;
+  });
+  const antenna = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 3.2), new THREE.Vector3(0.4, -0.3, 5.6)]),
+    new THREE.LineBasicMaterial({ color: BLUE }),
+  );
+  head.add(antenna);
+  const bulbMaterial = new THREE.MeshBasicMaterial({ color: NOW });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 8), bulbMaterial);
+  bulb.position.set(0.4, -0.3, 5.9);
+  head.add(bulb);
+
+  // Ring at its feet: the radar's verdict.
+  const ringMaterial = new THREE.LineBasicMaterial({ color: NOW, transparent: true, opacity: 0.8 });
+  const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(new THREE.EllipseCurve(0, 0, 4.2, 4.2).getPoints(40)), ringMaterial);
+  ring.position.z = 0.05;
+  group.add(ring);
+
+  // Generous invisible hit volume so it's easy to grab.
+  // The handle: its head (a little larger than the head, so it's easy to catch). Transparent rather
+  // than visible: false, which the raycaster would skip.
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(4.4, 12, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  head.add(hit);
+
+  let held = false;
+  let liftZ = 0;
+  let liftV = 0;
+  let squash = 0;
+  const sway = new THREE.Vector2();
+  const last = new THREE.Vector2(NaN, NaN);
+  let speed = 0;
+  let heading = 0;
+  let phase = 0;
+  let lastT = performance.now();
+  let nextBlink = lastT + 2000;
+  let blinkUntil = 0;
+  let lookAt = 0;
+
+  return {
+    group,
+    hit,
+    /** Where its head is right now, above the floor, in the character's own units (lift included). */
+    headZ: () => HEAD_Z + carry.position.z,
+    setHeld(h: boolean) {
+      held = h;
+      if (h) liftV = 40; // a little hop as it's picked up
+    },
+    update(x: number, y: number, present: boolean, verdict: number) {
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - lastT) / 1000);
+      lastT = now;
+      group.visible = present;
+      if (Number.isNaN(last.x)) last.set(x, y);
+      const dx = x - last.x;
+      const dy = y - last.y;
+      const v = Math.hypot(dx, dy) / Math.max(dt, 1e-3);
+      speed += (v - speed) * Math.min(1, dt * 8);
+      if (Math.hypot(dx, dy) > 0.05 && liftZ < 0.6) heading = Math.atan2(-dx, dy); // face the way it's walking
+      last.set(x, y);
+      group.position.set(x, y, 0);
+
+      // Turn the short way towards the heading.
+      let turn = heading - body.rotation.z;
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+      body.rotation.z += turn * Math.min(1, dt * 10);
+
+      // Lift: a damped spring towards carrying height (or the floor), bouncing when dropped.
+      const target = held ? LIFT : 0;
+      liftV += ((target - liftZ) * 90 - liftV * (held ? 14 : 7)) * dt;
+      liftZ += liftV * dt;
+      if (!held && liftZ < 0) {
+        if (liftV < -25) squash = Math.min(1, -liftV / 80); // landed with a thump
+        liftZ = 0;
+        liftV = -liftV * 0.35; // small bounce
+      }
+      squash = Math.max(0, squash - dt * 5);
+      carry.position.z = liftZ;
+      const airborne = liftZ > 0.6;
+
+      // Swinging below the hand: lean against the direction it's being carried.
+      const vx = dx / Math.max(dt, 1e-3);
+      const vy = dy / Math.max(dt, 1e-3);
+      const idleSwing = airborne ? Math.sin(now / 420) * 0.08 : 0; // a gentle swing even when still
+      sway.x += ((airborne ? Math.max(-0.8, Math.min(0.8, vy * 0.018)) : 0) + idleSwing - sway.x) * Math.min(1, dt * 5);
+      sway.y += ((airborne ? Math.max(-0.8, Math.min(0.8, -vx * 0.018)) : 0) - sway.y) * Math.min(1, dt * 5);
+      hang.rotation.x = sway.x;
+      hang.rotation.y = sway.y;
+      carry.scale.set(1 + squash * 0.12, 1 + squash * 0.12, 1 - squash * 0.22);
+
+      const walking = !airborne && speed > 3; // mm/s on the desk
+      phase += dt * (walking ? Math.min(14, 4 + speed * 0.25) : 0);
+      const swing = walking ? Math.sin(phase) * 0.7 : 0;
+      // Dangling: limbs hang loose and swing lazily, out of step with each other.
+      const dangle = airborne ? Math.min(1, liftZ / 6) : 0;
+      const k = now / 1000;
+      legs[0].rotation.x = swing + dangle * (Math.sin(k * 5.1) * 0.35 - sway.x * 0.8);
+      legs[1].rotation.x = -swing + dangle * (Math.sin(k * 4.3 + 1.7) * 0.35 - sway.x * 0.8);
+      arms[0].rotation.x = -swing * 0.8 + dangle * (Math.sin(k * 3.7 + 0.6) * 0.3);
+      arms[1].rotation.x = swing * 0.8 + dangle * (Math.sin(k * 4.1 + 2.4) * 0.3);
+      arms[0].rotation.y = -dangle * (0.5 + Math.sin(k * 2.3) * 0.15); // arms out a little, like a held kitten
+      arms[1].rotation.y = dangle * (0.5 + Math.sin(k * 2.9 + 1) * 0.15);
+      torso.position.z = 4.3 + (walking ? Math.abs(Math.sin(phase)) * 0.7 : airborne ? 0 : Math.sin(now / 600) * 0.12);
+      torso.scale.z = walking ? 1 : 1 + Math.sin(now / 600) * 0.025; // breathing
+
+      // Idle: glance around now and then. Always: blink.
+      if (!walking && Math.random() < dt * 0.3) lookAt = (Math.random() - 0.5) * 1.2;
+      if (walking) lookAt = 0;
+      head.rotation.z += (lookAt - head.rotation.z) * Math.min(1, dt * 4);
+      head.rotation.x = walking ? Math.sin(phase * 2) * 0.05 : 0;
+      if (now > nextBlink) {
+        blinkUntil = now + 130;
+        nextBlink = now + 2000 + Math.random() * 3000;
+      }
+      for (const e of eyes) e.scale.z = now < blinkUntil ? 0.15 : 1;
+      bulb.position.z = 5.9 + Math.sin(now / 250) * (walking ? 0.25 : 0.08);
+
+      bulbMaterial.color.setHex(verdict);
+      ringMaterial.color.setHex(verdict);
+      ringMaterial.opacity = verdict === MUTED ? 0.35 : 0.8;
+      ring.scale.setScalar((walking ? 1 + Math.abs(Math.sin(phase)) * 0.08 : 1) * (1 - Math.min(0.35, liftZ * 0.03)));
+    },
+  };
+}
+
+/**
+ * A part on the desk for every piece of hardware on the bench, except buttons the device itself
+ * provides (`onDevice`) and the IMU, which is shown by tilting the device.
+ */
+export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>): Peripheral[] {
   const parts: Peripheral[] = [];
-  let buttonIndex = 0;
-  for (const input of inputs) {
+  for (const input of hardware) {
     switch (input.kind) {
       case 'button':
-        if (!onDeviceButtons.has(buttonIndex)) parts.push(tactile(input as Button));
-        buttonIndex++;
+        if (!onDevice.has(input)) parts.push(tactile(input as Button));
         break;
       case 'knob':
         parts.push(encoder(input as Knob));
