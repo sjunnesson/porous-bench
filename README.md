@@ -40,7 +40,10 @@ npm install
 npm run dev        # → http://localhost:5199
 ```
 
-Pick a **Sketch** and a **Display** in the toolbar. Everything runs locally in the browser;
+The page has three columns. The **left** column holds the code: pick a **Sketch**, and see its
+source, the Resident relay and the console. The **desk** is in the middle. The **right** column holds
+the hardware: the controls, the **Display** picker with its specs, and the parts on the desk.
+Everything runs locally in the browser;
 `npm run build` produces a static site you can host anywhere.
 
 ## What it does

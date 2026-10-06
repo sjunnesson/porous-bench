@@ -155,38 +155,6 @@ export default function App() {
           screen<span>Sim</span>
         </div>
 
-        <label>
-          Sketch
-          <select value={entry.id} onChange={(e) => (setSketchId(e.target.value), e.target.blur())}>
-            {(['TypeScript sketches', 'Resident apps (Lua)'] as const).map((group) => (
-              <optgroup key={group} label={group}>
-                {entries
-                  .filter((e) => e.group === group)
-                  .map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Display
-          <select value={device.id} onChange={(e) => (setDeviceId(e.target.value), e.target.blur())}>
-            {byTech.map(({ tech, list }) => (
-              <optgroup key={tech} label={TECH_LABEL[tech]}>
-                {list.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-
         <div className="group">
           <button onClick={() => setRestarts((n) => n + 1)} title="Reboot: run setup() again">
             ↻ Restart
@@ -240,13 +208,27 @@ export default function App() {
         </div>
       </header>
 
-      {entry.sketch.description && <div className="sketch-desc">{entry.sketch.description}</div>}
-
       <main className="main">
-        {/* Left: what's running and what it's running on — code, relay, device facts, logs. */}
-        <aside className="sidebar sidebar-info" aria-label="Information and code">
+        {/* Left: the code — which sketch, its source, the relay, its logs. */}
+        <aside className="sidebar sidebar-info" aria-label="Sketch and code">
+          <div className="panel">
+            <h2>Sketch</h2>
+            <select className="wide" value={entry.id} onChange={(e) => (setSketchId(e.target.value), e.target.blur())} aria-label="Sketch">
+              {(['TypeScript sketches', 'Resident apps (Lua)'] as const).map((group) => (
+                <optgroup key={group} label={group}>
+                  {entries
+                    .filter((e) => e.group === group)
+                    .map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
+            {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
+          </div>
           <ResidentPanel code={entry.code ?? null} appName={entry.code ? entry.name.replace(/^▶ /, '') : null} />
-          <DeviceInfo device={device} />
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>
         {run && (
@@ -258,11 +240,26 @@ export default function App() {
             onDropApp={(name, code) => session.setLive({ name: name.replace(/\.lua$/, ''), code, source: 'file' })}
           />
         )}
-        {/* Right: the things you operate — controls and hardware. */}
+        {/* Right: the hardware — controls, the display, and the parts on the desk. */}
         <aside className="sidebar sidebar-controls" aria-label="Controls and hardware">
           {run && (
             <InputPanel
               run={run}
+              display={
+                <DeviceInfo device={device}>
+                  <select className="wide" value={device.id} onChange={(e) => (setDeviceId(e.target.value), e.target.blur())} aria-label="Display">
+                    {byTech.map(({ tech, list }) => (
+                      <optgroup key={tech} label={TECH_LABEL[tech]}>
+                        {list.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </DeviceInfo>
+              }
               onBind={(control, source) => {
                 control.bind(source);
                 saveBinding(entry.id, control.name, source);

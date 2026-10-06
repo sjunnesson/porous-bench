@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { DeviceProfile } from '../sim/devices/types';
 
 function maxFps(d: DeviceProfile): number {
@@ -6,15 +7,17 @@ function maxFps(d: DeviceProfile): number {
   return d.bus.hz / bits;
 }
 
-export function DeviceInfo({ device }: { device: DeviceProfile }) {
+/** The display module: a picker (children), its specs, and the wiring and porting notes folded away. */
+export function DeviceInfo({ device, children }: { device: DeviceProfile; children?: ReactNode }) {
   const diag = Math.hypot(device.look.activeWidthMm, device.look.activeHeightMm) / 25.4;
   const bus =
     device.bus.kind === 'spi'
       ? `SPI @ ${device.bus.hz / 1e6} MHz`
       : `I2C @ ${device.bus.hz / 1e3} kHz, addr 0x${(device.bus.i2cAddress ?? 0x3c).toString(16)}`;
   return (
-    <div className="panel">
-      <h2>Device</h2>
+    <div className="display-info">
+      <h3>Display</h3>
+      {children}
       <table className="readout">
         <tbody>
           <tr>
@@ -49,32 +52,37 @@ export function DeviceInfo({ device }: { device: DeviceProfile }) {
           </tr>
         </tbody>
       </table>
-      {device.wiring && (
-        <>
-          <h3>Wiring</h3>
-          <div className="pins">
-            {Object.entries(device.wiring).map(([fn, gpio]) => (
-              <span key={fn} className="pin">
-                {fn} <b>GPIO{gpio}</b>
-              </span>
-            ))}
-          </div>
-        </>
-      )}
-      {device.porting && (
-        <>
-          <h3>Porting notes</h3>
-          <ul className="notes">
-            {device.porting.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
-        </>
-      )}
-      {device.url && (
-        <a href={device.url} target="_blank" rel="noreferrer">
-          Manufacturer docs ↗
-        </a>
+      {(device.wiring || device.porting || device.url) && (
+        <details className="display-more">
+          <summary>Wiring and porting notes</summary>
+          {device.wiring && (
+            <>
+              <h3>Wiring</h3>
+              <div className="pins">
+                {Object.entries(device.wiring).map(([fn, gpio]) => (
+                  <span key={fn} className="pin">
+                    {fn} <b>GPIO{gpio}</b>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+          {device.porting && (
+            <>
+              <h3>Porting notes</h3>
+              <ul className="notes">
+                {device.porting.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {device.url && (
+            <a href={device.url} target="_blank" rel="noreferrer">
+              Manufacturer docs ↗
+            </a>
+          )}
+        </details>
       )}
     </div>
   );

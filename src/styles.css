@@ -207,11 +207,40 @@ kbd {
   align-items: center;
 }
 
-.sketch-desc {
-  padding: 10px 28px;
-  border-bottom: 1px solid var(--rule);
+select.wide {
+  width: 100%;
+}
+.panel p.sketch-desc {
+  margin: 12px 0 0;
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The display block heads the Hardware panel; its pinout and notes fold away. */
+.display-info {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.display-info > h3:first-child,
+.panel h2 + h3 {
+  margin-top: 0;
+}
+.display-info .readout {
+  margin-top: 10px;
+}
+.display-more {
+  margin-top: 12px;
+}
+.display-more summary {
+  cursor: pointer;
+  font: 400 10px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.display-more summary:hover {
+  color: var(--blue);
 }
 
 .main {
@@ -756,7 +785,6 @@ textarea.code {
     max-height: none;
   }
   .toolbar,
-  .sketch-desc,
   .statusbar {
     padding-left: 16px;
     padding-right: 16px;

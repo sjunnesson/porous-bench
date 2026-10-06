@@ -1,4 +1,4 @@
-import { useCallback, useState, useSyncExternalStore } from 'react';
+import { type ReactNode, useCallback, useState, useSyncExternalStore } from 'react';
 import { type Control, DIAL_SOURCES, type Dial, TRIGGER_SOURCES, type Trigger } from '../sim/controls/controls';
 import type { Button } from '../sim/inputs/button';
 import type { Buzzer } from '../sim/inputs/buzzer';
@@ -19,11 +19,13 @@ import { RadarWidget } from './widgets/RadarWidget';
 
 interface Props {
   run: SketchRun;
+  /** The display block (picker and specs), shown first under Hardware. */
+  display?: ReactNode;
   /** Remember the hardware the user picked for a control. */
   onBind(control: Control, source: string): void;
 }
 
-export function InputPanel({ run, onBind }: Props) {
+export function InputPanel({ run, display, onBind }: Props) {
   useSyncExternalStore(run.bench.subscribe, run.bench.getVersion);
   const parts = run.bench.parts();
   return (
@@ -38,6 +40,8 @@ export function InputPanel({ run, onBind }: Props) {
       )}
       <div className="panel">
         <h2>Hardware</h2>
+        {display}
+        <h3>Parts</h3>
         {parts.length === 0 && <p className="dim">This sketch uses no inputs.</p>}
         {parts.map((input, i) => (
           <Widget key={`${input.kind}-${i}-${input.label}`} input={input} />
