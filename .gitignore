@@ -12,3 +12,5 @@ dist
 .npmrc
 .vscode/
 .idea/
+.vercel
+.env*

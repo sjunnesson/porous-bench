@@ -1,0 +1,7 @@
+# Never upload local credentials or tooling state
+.env
+.env.*
+.vercel
+.playwright-mcp
+node_modules
+dist
