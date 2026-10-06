@@ -47,7 +47,7 @@ export function ResidentPanel({ code, appName }: Props) {
     try {
       const data = eventData.trim() ? JSON.parse(eventData) : {};
       if (!session.host) return setEventError('No Resident app is running.');
-      const ok = session.host.queue({ name: eventName, data, from: 'screensim', channel: 'app' });
+      const ok = session.host.queue({ name: eventName, data, from: 'bench', channel: 'app' });
       setEventError(ok ? null : 'Dropped: the app defines no on_event, or data is over 1024 bytes.');
     } catch (err) {
       setEventError(`Data isn't valid JSON: ${(err as Error).message}`);

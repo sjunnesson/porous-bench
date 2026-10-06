@@ -28,7 +28,7 @@ export default defineSketch({
     if (headerH) {
       display.fillRect(0, 0, W, headerH, color ? color565(24, 64, 140) : colors.WHITE);
       display.setTextColor(color ? colors.WHITE : colors.BLACK);
-      display.drawString('screenSim', W / 2, (headerH - 8) / 2, 'center');
+      display.drawString('Bench', W / 2, (headerH - 8) / 2, 'center');
     }
 
     display.setTextColor(fg);

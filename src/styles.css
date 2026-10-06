@@ -1,5 +1,5 @@
 /*
- * screenSim wears duscha.nu's design language: a cool paper ground, near-black ink, one blue for
+ * Bench wears duscha.nu's design language: a cool paper ground, near-black ink, one blue for
  * data and controls, and a rust accent reserved for what's live right now (a pressed button, a
  * sounding buzzer, an online relay). Hairline rules instead of boxes, square corners, IBM Plex
  * throughout: Mono for labels and readouts, Sans for prose, Sans Condensed for figures.
@@ -182,7 +182,8 @@ kbd {
   margin-right: 8px;
 }
 .brand span {
-  color: var(--blue);
+  color: var(--muted);
+  margin-right: 0.4em;
 }
 .toolbar label {
   display: flex;

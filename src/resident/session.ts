@@ -13,7 +13,7 @@ export interface LiveApp extends IncomingApp {
 
 type Level = 'info' | 'warn' | 'error';
 
-const KEY = 'screensim:resident';
+const KEY = 'bench:resident';
 
 function load<T>(key: string): T | null {
   try {

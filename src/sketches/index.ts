@@ -17,7 +17,7 @@ function order(id: string) {
   return i < 0 ? 99 : i;
 }
 
-export const SKETCHES_UPDATED = 'screensim:sketches-updated';
+export const SKETCHES_UPDATED = 'bench:sketches-updated';
 
 // Editing a sketch file hot-swaps it: the app restarts that sketch without a page reload.
 if (import.meta.hot) {

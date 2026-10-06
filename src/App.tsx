@@ -31,14 +31,14 @@ interface Entry {
 /** Which hardware the user picked for a sketch's control, kept across reloads. */
 function loadBinding(sketchId: string, control: string): string | null {
   try {
-    return localStorage.getItem(`screensim:binding:${sketchId}:${control}`);
+    return localStorage.getItem(`bench:binding:${sketchId}:${control}`);
   } catch {
     return null;
   }
 }
 function saveBinding(sketchId: string, control: string, source: string) {
   try {
-    localStorage.setItem(`screensim:binding:${sketchId}:${control}`, source);
+    localStorage.setItem(`bench:binding:${sketchId}:${control}`, source);
   } catch {
     /* not persisted */
   }
@@ -152,7 +152,7 @@ export default function App() {
     <div className="app">
       <header className="toolbar">
         <div className="brand">
-          screen<span>Sim</span>
+          <span>porous.systems</span> Bench
         </div>
 
         <div className="group">

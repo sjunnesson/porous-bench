@@ -1,4 +1,4 @@
--- screenSim's Resident sandbox. Runs once in a fresh Lua 5.4 state, with the full standard library,
+-- Bench's Resident sandbox. Runs once in a fresh Lua 5.4 state, with the full standard library,
 -- BEFORE the app: it captures what it needs into locals, installs the Resident modules, then strips
 -- the globals the device's sandbox doesn't have. The JS side (src/resident/host.ts) hands in `H`,
 -- its bridge, and gets back the dispatch API.
@@ -127,7 +127,7 @@ function lgfx.bind(name)
 end
 
 lvgl = setmetatable({}, { __index = function(_, k)
-  error("lvgl." .. tostring(k) .. ": LVGL isn't available in screenSim yet; draw with lgfx", 2)
+  error("lvgl." .. tostring(k) .. ": LVGL isn't available in Bench yet; draw with lgfx", 2)
 end })
 
 -- screen (the M5StickC Plus2 board's DisplayDriver: legacy verbs, 0..255 channels)

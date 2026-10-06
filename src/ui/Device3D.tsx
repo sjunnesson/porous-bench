@@ -135,7 +135,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     content.add(wires);
     const base = hardware.some((h) => h.kind === 'ld2410') ? BASE_DIORAMA : BASE;
 
-    const deskKey = `screensim:desk:${device.id}:${run.sketch.name}`;
+    const deskKey = `bench:desk:${device.id}:${run.sketch.name}`;
     const placed = loadDesk(deskKey);
 
     const orbit = orbitRef.current;

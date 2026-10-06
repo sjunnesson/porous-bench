@@ -1,14 +1,14 @@
-# screenSim
+# porous.systems Bench
 
-**A browser simulator for the small displays you wire to an ESP32: LCD, OLED and e-paper, plus the
-buttons, knobs and sensors that drive them.** Try animations, fonts, sprites and UI ideas without
+**A workbench in the browser for ESP32 hardware: the small displays you wire to it (LCD, OLED and
+e-paper) and the buttons, knobs and sensors that drive them, laid out on a desk.** Try animations, fonts, sprites and UI ideas without
 flashing hardware, and switch the display under your code with one click. It also runs
 [Resident](https://github.com/inanimate-tech/resident) Lua apps unmodified, and can join the Resident
 relay as a device.
 
-**Try it: [screensim.vercel.app](https://screensim.vercel.app)**
+**Try it: [bench.porous.systems](https://bench.porous.systems)**
 
-![screenSim running Resident's water-sim app on an M5StickC Plus2](docs/images/app.png)
+![Bench running Resident's water-sim app on an M5StickC Plus2](docs/images/app.png)
 
 <table>
   <tr>
@@ -34,8 +34,8 @@ relay as a device.
 Requires Node.js 22 or newer.
 
 ```sh
-git clone https://github.com/sjunnesson/screenSim.git
-cd screenSim
+git clone https://github.com/sjunnesson/porous-bench.git
+cd porous-bench
 npm install
 npm run dev        # → http://localhost:5199
 ```
@@ -175,7 +175,7 @@ them wander or approach. Presence is held for the module's 5 s "no-one duration"
 ## Resident apps
 
 [Resident](https://github.com/inanimate-tech/resident) is a sandboxed Lua runtime for ESP32 devices
-with hot-reloadable apps. screenSim runs those apps unmodified in a real Lua 5.4 VM
+with hot-reloadable apps. Bench runs those apps unmodified in a real Lua 5.4 VM
 ([wasmoon](https://github.com/ceifa/wasmoon)), on whichever display is selected.
 
 Pick an app under **Resident apps (Lua)** in the Sketch menu, **drop a `.lua` file on the device**,
@@ -200,7 +200,7 @@ Not supported yet: LVGL, 32-bit integer wrap-around (the VM is 64-bit), the boot
 
 ### Push apps from your terminal or Claude Code
 
-Press **Connect to relay** in the Resident panel. screenSim connects to
+Press **Connect to relay** in the Resident panel. Bench connects to
 `wss://resident.inanimate.tech/devices/sim-xxxxxxxx` the way the firmware does and shows its device ID.
 Anything that can push to a Resident device can now push to the browser:
 
@@ -217,7 +217,7 @@ curl -X POST https://resident.inanimate.tech/devices/sim-xxxxxxxx/send \
 ```
 
 Pushed apps, `chunk` patches, `channel:"app"` events, `forget` and the host time zone are handled.
-The last app that boots is restored on reload. To have agents write apps for screenSim's full surface
+The last app that boots is restored on reload. To have agents write apps for Bench's full surface
 (any display, plus `lgfx` and `screens`), pass `--device-skill docs/resident/DEVICE-SKILL.md`.
 
 The device ID is a random secret: anyone who knows it can push apps to your browser while you're

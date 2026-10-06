@@ -1,4 +1,4 @@
-// A Resident Lua app as a screenSim sketch: the board (display, two buttons, IMU, buzzer) is
+// A Resident Lua app as a Bench sketch: the board (display, two buttons, IMU, buzzer) is
 // whatever display is selected, and the sandbox loop runs inside loop().
 
 import type { Display } from '../sim/display';

@@ -1,4 +1,4 @@
-// screenSim as a Resident device on a relay (default: the public resident.inanimate.tech).
+// Bench as a Resident device on a relay (default: the public resident.inanimate.tech).
 // Same wire as the firmware: a WebSocket at wss://<host>/devices/<deviceId>; the relay forwards
 // whatever is POSTed to https://<host>/devices/<deviceId>/send, so `send-app.sh`, the agent
 // plugin's push-app and curl all work against the simulator.
@@ -135,8 +135,8 @@ export class ResidentRelay {
       this.h.onLog(`relay: connected as ${this.deviceId}`);
       this.sendSystem('hello', {
         protocol: 1,
-        deviceType: 'screensim',
-        firmware: 'screenSim',
+        deviceType: 'porous-bench',
+        firmware: 'porous.systems Bench',
         bootId: this.bootId,
         limits: { eventBytes: 1024, replyBytes: 1024, storeBytes: 2048, storeNsChars: 32, eventsPerSec: RATE },
       });

@@ -4,7 +4,7 @@ import type { SimInput } from '../sim/inputs/input';
 
 /** useState that survives reloads. Storage may be unavailable (private mode), so failures are ignored. */
 export function usePersisted<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T)) => void] {
-  const storageKey = `screensim:${key}`;
+  const storageKey = `bench:${key}`;
   const [value, setValue] = useState<T>(() => {
     try {
       const raw = localStorage.getItem(storageKey);

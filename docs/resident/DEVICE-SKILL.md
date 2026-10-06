@@ -1,6 +1,6 @@
-# screenSim (Resident simulator board)
+# porous.systems Bench (Resident simulator board)
 
-screenSim is a browser simulator that runs Resident apps on a choice of virtual displays. Its board
+Bench is a browser simulator that runs Resident apps on a choice of virtual displays. Its board
 surface is the M5StickC Plus2's (`screen`, `imu`, `buzzer`, `button`, two buttons) plus `lgfx`, on
 whichever display the user has selected. Apps written for the M5Stick run unchanged; apps that read
 `screens.get("main")` adapt to every display.

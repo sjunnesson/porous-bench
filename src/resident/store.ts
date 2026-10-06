@@ -4,7 +4,7 @@
 export type Scalar = string | number | boolean;
 
 const BUDGET = 2048;
-const KEY = 'screensim:resident-store';
+const KEY = 'bench:resident-store';
 
 interface Slot {
   ns: string;
