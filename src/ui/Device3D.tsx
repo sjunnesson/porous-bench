@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import type { SimClock } from '../sim/clock';
 import type { Imu } from '../sim/inputs/imu';
@@ -20,8 +20,33 @@ const BASE = { pitch: -0.32, yaw: 0.42 };
 const BASE_DIORAMA = { pitch: -0.85, yaw: 0.3 };
 const PRESS_MM = 0.7;
 const GAP = 16; // mm between the device and its parts, and between parts
+const MIN_ZOOM = 0.15;
+const MAX_ZOOM = 12;
+const FIT_MARGIN = 0.86; // fraction of the stage that "fit all" fills
 
 type Pos = { x: number; y: number };
+
+/**
+ * Ways to lay parts out automatically: in columns to the right of the device (each at most `f`
+ * device-heights tall) or in rows under it (each at most `f` device-widths wide). The first is the
+ * default; the layout picks whichever fills the stage best.
+ */
+const FLOWS = [
+  { dir: 'right', f: 1.6 },
+  { dir: 'right', f: 1 },
+  { dir: 'right', f: 2.6 },
+  { dir: 'right', f: 4 },
+  { dir: 'below', f: 1 },
+  { dir: 'below', f: 1.8 },
+  { dir: 'below', f: 3 },
+] as const;
+
+/** Imperative view tools for the overlay buttons. */
+interface ViewTools {
+  fitAll(): void;
+  zoomBy(factor: number): void;
+  tidy(): void;
+}
 
 /** Where the user put things on the desk, per device and sketch. */
 function loadDesk(key: string): Record<string, Pos> {
@@ -54,10 +79,10 @@ function nearestOnRect(p: THREE.Vector3, box: THREE.Box3): THREE.Vector3 {
  * The device as a ghosted 3D wireframe with the live screen on it, plus the sketch's external
  * hardware on the desk beside it, wired back with dashed lines. Everything sits on one desk plane.
  *
- * Mouse: drag empty space to orbit (double-click to reset); press a button, knob, pot or the radar
- * to use it; drag the body of the device or of a part to slide it across the desk (⌥ Option-drag
+ * Mouse: drag empty space to orbit (double-click to reset and fit); press a button, knob, pot or the
+ * radar to use it; drag the body of the device or of a part to slide it across the desk (⌥ Option-drag
  * moves anything; double-click it to put it back); shift-drag the device to tilt it when the sketch
- * has an IMU.
+ * has an IMU. F fits everything in view. Until you zoom or pan, the view keeps everything fitted.
  */
 export function Device3D({ run, clock, mount, onCanvas }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -66,7 +91,10 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
   // Swapping hardware rebuilds the scene; the orbit survives it.
   const benchVersion = useSyncExternalStore(run.bench.subscribe, run.bench.getVersion);
   // The view (orbit, zoom, pan) survives rebuilds.
-  const orbitRef = useRef({ yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, zoom: 1, panX: 0, panY: 0 });
+  // `manual`: the user zoomed or panned, so stop re-fitting on resizes and rebuilds.
+  const orbitRef = useRef({ yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, zoom: 1, panX: 0, panY: 0, manual: false });
+  const toolsRef = useRef<ViewTools | null>(null);
+  const [movedByHand, setMovedByHand] = useState(false);
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -137,6 +165,11 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
 
     const deskKey = `bench:desk:${device.id}:${run.sketch.name}`;
     const placed = loadDesk(deskKey);
+    const savePlaced = () => {
+      saveDesk(deskKey, placed);
+      setMovedByHand(Object.keys(placed).length > 0);
+    };
+    setMovedByHand(Object.keys(placed).length > 0);
 
     const orbit = orbitRef.current;
     let grab: Grab | null = null;
@@ -147,6 +180,9 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     let pressed: ModelButton | null = null;
     let laidOutFor = -1;
     let framed = false;
+    // A camera move in progress (fit, zoom buttons), eased in each frame.
+    let goal: { zoom: number; panX: number; panY: number } | null = null;
+    let fitAfterLayout: 'instant' | 'ease' | null = orbit.manual ? null : 'instant';
     const fitSize = new THREE.Vector3(model.radius * 2, model.radius * 2, 0);
     const devBox = new THREE.Box3(); // device footprint relative to deskGroup, as currently mounted
     let deskZ = 0; // the desk plane everything stands on and slides along
@@ -162,7 +198,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       camera.rotation.set(0, 0, 0);
       camera.updateProjectionMatrix();
     };
-    const fit = () => {
+    const resize = () => {
       const w = host.clientWidth;
       const h = host.clientHeight;
       if (!w || !h) return;
@@ -173,12 +209,82 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       fitDist = Math.max(fitSize.y / 2 / tan, fitSize.x / 2 / (tan * camera.aspect)) * 1.3 + fitSize.z;
       placeCamera();
     };
+    const onResize = () => {
+      resize();
+      // A new stage shape may suit another automatic layout; re-flow, and keep things fitted.
+      if (!moving) laidOutFor = -1;
+      if (!orbit.manual) fitAfterLayout = 'instant';
+    };
+
+    /**
+     * Where the camera must sit to show the device, every part and the wires, seen from the angle
+     * the orbit is heading to. The camera looks straight down -z, so a point (x, y, z) is in view
+     * when the camera is at least |x − cx| / (tan · aspect) and |y − cy| / tan further back than z.
+     */
+    const fitGoal = () => {
+      if (!host.clientWidth || !host.clientHeight) return null;
+      const saved = pivot.rotation.clone();
+      pivot.rotation.set(base.pitch + orbit.tPitch, base.yaw + orbit.tYaw, 0, 'YXZ');
+      scene.updateMatrixWorld(true);
+      // Every vertex you can see — the device, the parts and the wires — in world space. Fully
+      // transparent pick helpers (hit boxes, the radar's floor) don't count.
+      const pts: THREE.Vector3[] = [];
+      const v = new THREE.Vector3();
+      content.traverseVisible((o) => {
+        const pos = (o as THREE.Mesh).geometry?.attributes?.position;
+        const mat = (o as THREE.Mesh).material;
+        if (!pos || (mat && !Array.isArray(mat) && mat.transparent && mat.opacity === 0)) return;
+        for (let i = 0; i < pos.count; i++) pts.push(v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).clone());
+      });
+      pivot.rotation.copy(saved);
+      if (!pts.length) return null;
+      const all = new THREE.Box3().setFromPoints(pts);
+      let cx = (all.min.x + all.max.x) / 2;
+      let cy = (all.min.y + all.max.y) / 2;
+      const zMid = (all.min.z + all.max.z) / 2;
+      const distFor = () => {
+        let d = 0;
+        for (const p of pts) d = Math.max(d, p.z + Math.max(Math.abs(p.x - cx) / (tan * camera.aspect), Math.abs(p.y - cy) / tan) / FIT_MARGIN);
+        return d;
+      };
+      let dist = distFor();
+      // Perspective makes near things look bigger, so the box's centre isn't the picture's centre:
+      // nudge the camera to centre what it actually sees, then fit again.
+      for (let pass = 0; pass < 3; pass++) {
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const p of pts) {
+          const k = 1 / (dist - p.z);
+          x0 = Math.min(x0, (p.x - cx) * k);
+          x1 = Math.max(x1, (p.x - cx) * k);
+          y0 = Math.min(y0, (p.y - cy) * k);
+          y1 = Math.max(y1, (p.y - cy) * k);
+        }
+        cx += ((x0 + x1) / 2) * (dist - zMid);
+        cy += ((y0 + y1) / 2) * (dist - zMid);
+        dist = distFor();
+      }
+      return { zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fitDist / dist)), panX: cx, panY: cy };
+    };
+    const fitAll = (ease: boolean) => {
+      const g = fitGoal();
+      if (!g) return;
+      orbit.manual = false;
+      if (ease) goal = g;
+      else {
+        goal = null;
+        Object.assign(orbit, g);
+        placeCamera();
+      }
+    };
+
     /** Zoom by `factor`, keeping the point under the cursor (in normalised device coordinates) still. */
     const zoomAt = (nx: number, ny: number, factor: number) => {
+      goal = null;
+      orbit.manual = true;
       const d = fitDist / orbit.zoom;
       const wx = orbit.panX + nx * tan * d * camera.aspect;
       const wy = orbit.panY + ny * tan * d;
-      orbit.zoom = Math.max(0.4, Math.min(12, orbit.zoom * factor));
+      orbit.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, orbit.zoom * factor));
       const d2 = fitDist / orbit.zoom;
       orbit.panX = wx - nx * tan * d2 * camera.aspect;
       orbit.panY = wy - ny * tan * d2;
@@ -198,9 +304,69 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       }
     };
 
+    /** Where each part goes under one automatic flow (null for parts placed by hand). */
+    const flowParts = (flow: (typeof FLOWS)[number], dp: Pos): (Pos | null)[] => {
+      const devW = devBox.max.x - devBox.min.x;
+      const devH = devBox.max.y - devBox.min.y;
+      if (flow.dir === 'right') {
+        const top = devBox.max.y + dp.y;
+        let x = devBox.max.x + dp.x + GAP + 10;
+        let y = top;
+        let col = 0;
+        return parts.map((p, i) => {
+          if (placed[partKeys[i]]) return null;
+          if (top - (y - p.h) > devH * flow.f && y !== top) {
+            x += col + GAP;
+            y = top;
+            col = 0;
+          }
+          const at = { x: x + p.w / 2, y: y - p.h / 2 };
+          y -= p.h + GAP;
+          col = Math.max(col, p.w);
+          return at;
+        });
+      }
+      const left = devBox.min.x + dp.x;
+      let x = left;
+      let y = devBox.min.y + dp.y - GAP - 10;
+      let row = 0;
+      return parts.map((p, i) => {
+        if (placed[partKeys[i]]) return null;
+        if (x + p.w - left > devW * flow.f && x !== left) {
+          x = left;
+          y -= row + GAP;
+          row = 0;
+        }
+        const at = { x: x + p.w / 2, y: y - p.h / 2 };
+        x += p.w + GAP;
+        row = Math.max(row, p.h);
+        return at;
+      });
+    };
+    /** The flow whose footprint, roughly as seen from the default angle, fills the stage best. */
+    const bestFlow = (dp: Pos) => {
+      const aspect = host.clientWidth && host.clientHeight ? host.clientWidth / host.clientHeight : 1.6;
+      let best: { at: (Pos | null)[]; score: number } | null = null;
+      for (const flow of FLOWS) {
+        const at = flowParts(flow, dp);
+        const box = devBox.clone().translate(new THREE.Vector3(dp.x, dp.y, 0));
+        parts.forEach((p, i) => {
+          const c = at[i] ?? placed[partKeys[i]];
+          box.expandByPoint(new THREE.Vector3(c.x - p.w / 2, c.y - p.h / 2, 0));
+          box.expandByPoint(new THREE.Vector3(c.x + p.w / 2, c.y + p.h / 2, 0));
+        });
+        const w = (box.max.x - box.min.x) * Math.cos(base.yaw);
+        const h = (box.max.y - box.min.y) * Math.abs(Math.cos(base.pitch));
+        // Prefer the default unless another layout is clearly bigger on screen.
+        const score: number = Math.min(aspect / w, 1 / h) * (best ? 1 : 1.08);
+        if (!best || score > best.score) best = { at, score };
+      }
+      return best!.at;
+    };
+
     /**
      * Place the device and parts: where the user put them, otherwise the device at the origin and
-     * the parts flowing in columns to its right. Frames the camera the first time.
+     * the parts flowing beside or under it, whichever suits the stage. Centres the desk the first time.
      */
     const layout = (quarterTurns: number) => {
       // Measure in desk coordinates: level the orbit pivot while measuring, then restore it.
@@ -224,25 +390,10 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       deskGroup.position.set(dp.x, dp.y, 0);
 
       // Auto flow, relative to wherever the device is.
-      const colTop = devBox.max.y + dp.y;
-      const colLimit = devBox.min.y + dp.y - (devBox.max.y - devBox.min.y) * 0.6;
-      let x = devBox.max.x + dp.x + GAP + 10;
-      let y = colTop;
-      let colWidth = 0;
+      const at = bestFlow(dp);
       parts.forEach((p, i) => {
-        const manual = placed[partKeys[i]];
-        if (manual) {
-          p.root.position.set(manual.x, manual.y, deskZ);
-          return;
-        }
-        if (y - p.h < colLimit && y !== colTop) {
-          x += colWidth + GAP;
-          y = colTop;
-          colWidth = 0;
-        }
-        p.root.position.set(x + p.w / 2, y - p.h / 2, deskZ);
-        y -= p.h + GAP;
-        colWidth = Math.max(colWidth, p.w);
+        const c = at[i] ?? placed[partKeys[i]];
+        p.root.position.set(c.x, c.y, deskZ);
       });
       updateWires();
 
@@ -254,12 +405,12 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
         const all = new THREE.Box3().setFromObject(content);
         content.position.copy(all.getCenter(new THREE.Vector3())).multiplyScalar(-1);
         all.getSize(fitSize);
-        fit();
+        resize();
       }
       pivot.rotation.copy(savedPivot);
     };
 
-    const ro = new ResizeObserver(fit);
+    const ro = new ResizeObserver(onResize);
     ro.observe(host);
 
     const setRay = (e: { clientX: number; clientY: number }) => {
@@ -349,6 +500,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     };
     const onMove = (e: PointerEvent) => {
       if (panning) {
+        goal = null;
+        orbit.manual = true;
         const d = fitDist / orbit.zoom;
         orbit.panX -= ((e.clientX - panning.x) / el.clientWidth) * 2 * tan * d * camera.aspect;
         orbit.panY += ((e.clientY - panning.y) / el.clientHeight) * 2 * tan * d;
@@ -410,7 +563,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     const onUp = () => {
       if (moving) {
         placed[moving.key] = { x: moving.obj.position.x, y: moving.obj.position.y };
-        saveDesk(deskKey, placed);
+        savePlaced();
         moving = null;
       }
       if (pressed) inputFor(pressed)?.setDown(false);
@@ -426,16 +579,35 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       if (hit?.kind === 'move' && placed[hit.key]) {
         // Put it back where the automatic layout wants it.
         delete placed[hit.key];
-        saveDesk(deskKey, placed);
+        savePlaced();
         laidOutFor = -1;
         return;
       }
+      // Empty desk: back to the default angle, with everything in view.
       orbit.tYaw = 0;
       orbit.tPitch = 0;
-      orbit.zoom = 1;
-      orbit.panX = 0;
-      orbit.panY = 0;
-      placeCamera();
+      fitAll(true);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyF' || e.repeat || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if ((e.target as HTMLElement).closest?.('input, select, textarea, [contenteditable]')) return;
+      fitAll(true);
+    };
+    toolsRef.current = {
+      fitAll: () => fitAll(true),
+      zoomBy: (factor) => {
+        orbit.manual = true;
+        const from = goal ?? orbit;
+        goal = { zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, from.zoom * factor)), panX: from.panX, panY: from.panY };
+      },
+      tidy: () => {
+        // Forget every hand placement, re-flow, re-centre the desk, then fit it.
+        for (const k of Object.keys(placed)) delete placed[k];
+        savePlaced();
+        framed = false;
+        laidOutFor = -1;
+        fitAfterLayout = 'ease';
+      },
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -461,6 +633,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     el.addEventListener('dblclick', onDbl);
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('keydown', onKey);
 
     let raf = 0;
     let first = true;
@@ -499,6 +672,23 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       orbit.yaw += (orbit.tYaw - orbit.yaw) * 0.18;
       orbit.pitch += (orbit.tPitch - orbit.pitch) * 0.18;
       pivot.rotation.set(base.pitch + orbit.pitch, base.yaw + orbit.yaw, 0, 'YXZ');
+      if (fitAfterLayout && laidOutFor === quarter) {
+        fitAll(fitAfterLayout === 'ease');
+        fitAfterLayout = null;
+      }
+      if (goal) {
+        // Ease zoom in log space so zooming in and out feel alike.
+        const k = 0.18;
+        orbit.zoom = Math.exp(Math.log(orbit.zoom) + (Math.log(goal.zoom) - Math.log(orbit.zoom)) * k);
+        orbit.panX += (goal.panX - orbit.panX) * k;
+        orbit.panY += (goal.panY - orbit.panY) * k;
+        const near = Math.abs(Math.log(goal.zoom / orbit.zoom)) < 0.002 && Math.hypot(goal.panX - orbit.panX, goal.panY - orbit.panY) < 0.05;
+        if (near) {
+          Object.assign(orbit, goal);
+          goal = null;
+        }
+        placeCamera();
+      }
       const target = (-quarter * Math.PI) / 2;
       let diff = target - mountGroup.rotation.z;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // turn the short way
@@ -518,6 +708,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       el.removeEventListener('dblclick', onDbl);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('keydown', onKey);
+      toolsRef.current = null;
       onUp();
       model.dispose();
       deviceHandle.geometry.dispose();
@@ -534,5 +726,26 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     };
   }, [run, clock, onCanvas, benchVersion]);
 
-  return <div ref={hostRef} className="device-3d" />;
+  return (
+    <div ref={hostRef} className="device-3d">
+      <div className="view-tools" role="toolbar" aria-label="View">
+        <button onClick={() => toolsRef.current?.zoomBy(1.3)} title="Zoom in" aria-label="Zoom in">
+          +
+        </button>
+        <button onClick={() => toolsRef.current?.zoomBy(1 / 1.3)} title="Zoom out" aria-label="Zoom out">
+          −
+        </button>
+        <button onClick={() => toolsRef.current?.fitAll()} title="Fit everything in view (F)">
+          Fit all
+        </button>
+        <button
+          onClick={() => toolsRef.current?.tidy()}
+          disabled={!movedByHand}
+          title={movedByHand ? 'Tidy: put every part back in an automatic layout that suits the stage, then fit' : 'Nothing has been moved by hand'}
+        >
+          Tidy
+        </button>
+      </div>
+    </div>
+  );
 }

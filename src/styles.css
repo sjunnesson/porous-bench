@@ -301,6 +301,34 @@ select.wide {
   touch-action: none;
   cursor: grab;
 }
+/* View tools over the desk's corner, like a map's zoom controls. */
+.view-tools {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1;
+  display: flex;
+  gap: 0;
+  background: var(--paper);
+}
+.view-tools button {
+  min-width: 34px;
+  height: 32px;
+  padding: 0 10px;
+  font: 400 10px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.view-tools button + button {
+  margin-left: -1px;
+}
+.view-tools button:hover:not(:disabled) {
+  position: relative;
+}
+.view-tools button[aria-label] {
+  font: 400 16px/1 var(--mono);
+  letter-spacing: 0;
+}
 
 .statusbar {
   display: flex;
@@ -792,6 +820,8 @@ textarea.code {
     border-top: 1px solid var(--rule);
     padding: 0 16px;
     max-height: none;
+    /* Stacked, the page scrolls as one; a scrolling column would be squeezed to a sliver. */
+    overflow: visible;
   }
   .toolbar,
   .statusbar {

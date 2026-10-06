@@ -237,9 +237,13 @@ In the 3D view everything stands on one desk:
 - **Use a part:** click buttons, turn the encoder ring, slide the pot, click the radar floor.
 - **Move things:** drag the body of the device or of a part (its board, not its controls) to slide
   it across the desk; the wires follow. ⌥ Option-drag moves anything. Double-click something to put
-  it back. Layouts are remembered per device and sketch.
+  it back. Layouts are remembered per device and sketch. **Tidy** puts every part back in an
+  automatic layout chosen to suit the stage's shape (beside the device, or under it on a tall stage).
 - **Look around:** drag empty space to orbit; scroll or pinch to zoom towards the cursor; right- or
-  middle-drag to pan; double-click empty space to reset the view.
+  middle-drag to pan; double-click empty space to reset the angle and fit everything.
+- **Fit:** **Fit all** (or **F**) frames the device, every part and the wires. Until you zoom or pan
+  yourself, the view keeps everything fitted as the window resizes or parts are swapped. The **+ / −**
+  buttons zoom too.
 - **Tilt:** shift-drag the device when the sketch has an IMU.
 
 ## Add a display
