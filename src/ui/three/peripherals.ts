@@ -368,7 +368,8 @@ function radar(input: LD2410): Peripheral {
   // The module itself, antenna side facing into the fan.
   const module = new THREE.Group();
   module.add(block(35, 7, 1, 0));
-  for (let i = 0; i < 4; i++) module.add(place(block(3.2, 3.2, 0.1, 0, LINE_DIM), -9 + i * 6, 0, 1.05));
+  // Its two antenna patches (transmit and receive).
+  for (const x of [-6, 2]) module.add(place(block(3.2, 3.2, 0.1, 0, LINE_DIM), x, 0, 1.05));
   const out = disc(0.9, 1.1);
   out.position.x = 14;
   module.add(out);
