@@ -6,6 +6,8 @@ flashing hardware, and switch the display under your code with one click. It als
 [Resident](https://github.com/inanimate-tech/resident) Lua apps unmodified, and can join the Resident
 relay as a device.
 
+**Try it: [screensim.vercel.app](https://screensim.vercel.app)**
+
 ![screenSim running Resident's water-sim app on an M5StickC Plus2](docs/images/app.png)
 
 <table>
