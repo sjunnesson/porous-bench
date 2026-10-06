@@ -119,7 +119,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     const bodyBox = new THREE.Box3();
     model.group.updateMatrixWorld(true);
     for (const child of model.group.children) {
-      if (!model.buttons.some((b) => b.mesh === child)) bodyBox.expandByObject(child);
+      // Precise (vertex) bounds: the quick ones inflate rotated parts by many millimetres.
+      if (!model.buttons.some((b) => b.mesh === child)) bodyBox.expandByObject(child, true);
     }
     const deviceHandle = new THREE.Mesh(
       new THREE.BoxGeometry(...bodyBox.getSize(new THREE.Vector3()).toArray()),
@@ -379,8 +380,10 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       deskGroup.position.set(0, 0, 0);
       const savedContent = content.position.clone();
       content.position.set(0, 0, 0);
-      content.updateMatrixWorld(true);
-      devBox.setFromObject(model.group);
+      // From the pivot down: refreshing only `content` would keep the pivot's orbit rotation and
+      // measure a tilted, inflated box (the desk then sat below the device and wires missed it).
+      pivot.updateMatrixWorld(true);
+      devBox.setFromObject(model.group, true); // precise, so the desk and the wires meet the real body
       mountGroup.rotation.z = savedRot;
       tiltGroup.rotation.copy(savedTilt);
       content.position.copy(savedContent);
@@ -396,13 +399,12 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
         p.root.position.set(c.x, c.y, deskZ);
       });
       updateWires();
-
       if (!framed) {
         // Centre everything once, so orbiting turns around the whole desk; later moves don't jump it.
         framed = true;
         content.position.set(0, 0, 0);
-        content.updateMatrixWorld(true);
-        const all = new THREE.Box3().setFromObject(content);
+        pivot.updateMatrixWorld(true); // still level here
+        const all = new THREE.Box3().setFromObject(content, true);
         content.position.copy(all.getCenter(new THREE.Vector3())).multiplyScalar(-1);
         all.getSize(fitSize);
         resize();
