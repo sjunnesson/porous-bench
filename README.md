@@ -235,7 +235,8 @@ In the 3D view everything stands on one desk:
 - **Move things:** drag the body of the device or of a part (its board, not its controls) to slide
   it across the desk; the wires follow. ⌥ Option-drag moves anything. Double-click something to put
   it back. Layouts are remembered per device and sketch.
-- **Look around:** drag empty space to orbit, double-click it to reset the view.
+- **Look around:** drag empty space to orbit; scroll or pinch to zoom towards the cursor; right- or
+  middle-drag to pan; double-click empty space to reset the view.
 - **Tilt:** shift-drag the device when the sketch has an IMU.
 
 ## Add a display

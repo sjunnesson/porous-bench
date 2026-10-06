@@ -65,7 +65,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
   mountRef.current = mount;
   // Swapping hardware rebuilds the scene; the orbit survives it.
   const benchVersion = useSyncExternalStore(run.bench.subscribe, run.bench.getVersion);
-  const orbitRef = useRef({ yaw: 0, pitch: 0, tYaw: 0, tPitch: 0 });
+  // The view (orbit, zoom, pan) survives rebuilds.
+  const orbitRef = useRef({ yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, zoom: 1, panX: 0, panY: 0 });
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -141,6 +142,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     let grab: Grab | null = null;
     let orbiting: { x: number; y: number } | null = null;
     let tilting: { x: number; y: number } | null = null;
+    let panning: { x: number; y: number } | null = null;
     let moving: { key: string; obj: THREE.Object3D; start: THREE.Vector3; from: THREE.Vector3 } | null = null;
     let pressed: ModelButton | null = null;
     let laidOutFor = -1;
@@ -152,6 +154,14 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     const ndc = new THREE.Vector2();
     const el = renderer.domElement;
 
+    const tan = Math.tan((camera.fov * Math.PI) / 360);
+    let fitDist = 100; // camera distance at zoom 1
+    const placeCamera = () => {
+      // The camera keeps looking straight down -z; zoom moves it in, pan slides it sideways.
+      camera.position.set(orbit.panX, orbit.panY, fitDist / orbit.zoom);
+      camera.rotation.set(0, 0, 0);
+      camera.updateProjectionMatrix();
+    };
     const fit = () => {
       const w = host.clientWidth;
       const h = host.clientHeight;
@@ -160,11 +170,19 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       camera.aspect = w / h;
       // Fit the desk's width and height (with room for the default tilt), not a bounding sphere,
       // so a wide row of parts still fills the stage.
-      const tan = Math.tan((camera.fov * Math.PI) / 360);
-      const dist = Math.max(fitSize.y / 2 / tan, fitSize.x / 2 / (tan * camera.aspect)) * 1.3 + fitSize.z;
-      camera.position.set(0, 0, dist);
-      camera.lookAt(0, 0, 0);
-      camera.updateProjectionMatrix();
+      fitDist = Math.max(fitSize.y / 2 / tan, fitSize.x / 2 / (tan * camera.aspect)) * 1.3 + fitSize.z;
+      placeCamera();
+    };
+    /** Zoom by `factor`, keeping the point under the cursor (in normalised device coordinates) still. */
+    const zoomAt = (nx: number, ny: number, factor: number) => {
+      const d = fitDist / orbit.zoom;
+      const wx = orbit.panX + nx * tan * d * camera.aspect;
+      const wy = orbit.panY + ny * tan * d;
+      orbit.zoom = Math.max(0.4, Math.min(12, orbit.zoom * factor));
+      const d2 = fitDist / orbit.zoom;
+      orbit.panX = wx - nx * tan * d2 * camera.aspect;
+      orbit.panY = wy - ny * tan * d2;
+      placeCamera();
     };
 
     /** Redraw every wire, from its part to the nearest edge of the device. */
@@ -295,6 +313,12 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
 
     const onDown = (e: PointerEvent) => {
       el.setPointerCapture(e.pointerId);
+      if (e.button === 1 || e.button === 2) {
+        // Right or middle drag pans the view.
+        panning = { x: e.clientX, y: e.clientY };
+        el.style.cursor = 'grabbing';
+        return;
+      }
       const hit = pick(e, e.altKey);
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
@@ -324,6 +348,14 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       orbiting = { x: e.clientX, y: e.clientY };
     };
     const onMove = (e: PointerEvent) => {
+      if (panning) {
+        const d = fitDist / orbit.zoom;
+        orbit.panX -= ((e.clientX - panning.x) / el.clientWidth) * 2 * tan * d * camera.aspect;
+        orbit.panY += ((e.clientY - panning.y) / el.clientHeight) * 2 * tan * d;
+        panning = { x: e.clientX, y: e.clientY };
+        placeCamera();
+        return;
+      }
       if (moving) {
         setRay(e);
         const p = onDesk();
@@ -372,7 +404,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
             : 'Drag to slide it across the desk · double-click to put it back';
       } else {
         el.style.cursor = 'grab';
-        el.title = 'Drag to orbit · double-click to reset the view · ⌥ Option-drag moves anything';
+        el.title = 'Drag to orbit · scroll or pinch to zoom · right-drag to pan · double-click to reset the view · ⌥ Option-drag moves anything';
       }
     };
     const onUp = () => {
@@ -387,6 +419,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       grab = null;
       orbiting = null;
       tilting = null;
+      panning = null;
     };
     const onDbl = (e: MouseEvent) => {
       const hit = pick(e, true);
@@ -399,20 +432,35 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       }
       orbit.tYaw = 0;
       orbit.tPitch = 0;
+      orbit.zoom = 1;
+      orbit.panX = 0;
+      orbit.panY = 0;
+      placeCamera();
     };
     const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
       const hit = pick(e);
-      if (hit?.kind === 'part' && hit.part.wheel) {
-        e.preventDefault();
-        hit.part.wheel(hit.object, e.deltaY);
+      if (hit?.kind === 'part' && hit.part.wheel && !e.ctrlKey) {
+        hit.part.wheel(hit.object, e.deltaY); // scrolling over the encoder turns it
+        return;
       }
+      // Wheel or trackpad pinch (which arrives as ctrl + wheel): zoom towards the cursor.
+      const r = el.getBoundingClientRect();
+      const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+      const ny = -((e.clientY - r.top) / r.height) * 2 + 1;
+      // A mouse notch reports 100–240 px depending on the browser and screen density; a trackpad
+      // pinch reports many small steps. Cap each event so a notch is a gentle ~13% either way.
+      const delta = Math.max(-100, Math.min(100, e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY));
+      zoomAt(nx, ny, Math.exp(-delta * (e.ctrlKey ? 0.01 : 0.0012)));
     };
+    const onContextMenu = (e: MouseEvent) => e.preventDefault(); // right-drag pans
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
     el.addEventListener('dblclick', onDbl);
     el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('contextmenu', onContextMenu);
 
     let raf = 0;
     let first = true;
@@ -469,6 +517,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       el.removeEventListener('pointercancel', onUp);
       el.removeEventListener('dblclick', onDbl);
       el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('contextmenu', onContextMenu);
       onUp();
       model.dispose();
       deviceHandle.geometry.dispose();
