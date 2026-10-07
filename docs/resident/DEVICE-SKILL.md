@@ -21,7 +21,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 |---|---|---|---|---|
 | M5StickC Plus2 / M5StickS3 | 240×135 (landscape) | 16 | dark | the default Resident board |
 | Waveshare ESP32-C6-LCD-1.47 | 172×320 | 16 | dark | rounded corners: keep ~20 px clear |
-| Waveshare ESP32-S3-Touch-AMOLED-1.32 | 466×466 | 16 | dark | round (`shape = "round"`): only the circle of radius 233 shows; AMOLED, black is off |
+| Waveshare ESP32-S3-Touch-AMOLED-1.32 | 466×466 | 16 | dark | round (`shape = "round"`): only the circle of radius 233 shows; AMOLED, black is off; touch panel (`touchscreen`) |
 | 1.3" ST7789 | 240×240 | 16 | dark | |
 | SSD1306 OLED | 128×64 or 128×32 | 1 | dark | colours threshold to lit/unlit at 50% brightness |
 | 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh (0.3 s partial, 2 s full every 10th); it runs in the background and only the newest frame reaches the glass: flip only when something changed |
@@ -45,11 +45,11 @@ the header:
 ```lua
 -- Tilt ball: roll a ball with the IMU   -- line 1: "Name: description"
 -- @output display                       -- display (the default) | strip (strips and rings) | matrix
--- @needs motion color 240x135           -- only the ones that apply
+-- @needs motion color touch 240x135     -- only the ones that apply
 ```
 
-- `motion`: it animates (so not e-paper). `color`: it means nothing in 1-bit. `WxH`: the smallest
-  screen, as apps see it, that its fixed layout fits. An app that adapts through `screens.get`
+- `motion`: it animates (so not e-paper). `color`: it means nothing in 1-bit. `touch`: it needs a
+  touch panel. `WxH`: the smallest screen, as apps see it, that its fixed layout fits. An app that adapts through `screens.get`
   needs none of these.
 - Bench reads the rest from the code: the libraries it binds (`lvgl.bind` needs a board with LVGL)
   and its size (the memory it takes on a real board).
@@ -79,7 +79,8 @@ Bench's Real device panel pushes the open app to a Resident device and drives it
   unchanged.
 - Buttons A and B: the taps and holds Bench recognises are replayed on the board, and the board's
   own keys are ignored while Bench mirrors, so both screens count the same. `button.press_count()`
-  counts Bench's taps.
+  counts Bench's taps. Touches on Bench's screen are replayed the same way, in order with their
+  points, and the board's own touch panel is ignored while Bench mirrors.
 - E-paper: the real panel refreshes in the background, newest frame wins, exactly as Bench shows it.
 - An app the board can't load (out of memory, a module it lacks) leaves the previous app on screen:
   Bench only knows the relay took it. The Board line in Bench tells you what fits.
@@ -166,6 +167,22 @@ The first read puts the sensor on the user's bench if it isn't there. PIR and to
 events: `motion` `{ moving }` and `touch` `{ touched }` on each change. Prefer a `dial`/`trigger`
 (`via = "light"`, `"temperature"`, `"motion"`, `"touch"` …) when the app only needs "a value" or "a
 press": the user can then connect any part to it.
+
+### touchscreen (Bench driver, displays with a touch panel)
+
+Only on a display with a touch panel (the Waveshare ESP32-S3-Touch-AMOLED-1.32); elsewhere
+`touchscreen` is nil, so check `if touchscreen then` or tag the app `-- @needs touch`. One finger,
+in the coordinates the app draws in. In Bench the user taps and drags on the screen with the mouse.
+
+```lua
+local t = touchscreen.read()   -- { pressed = bool, x, y }: the last point touched
+touchscreen.pressed()
+-- on_event(ctx, e), e.channel == "driver", e.data = { x, y }:
+--   "touch_down", "touch_move" (the newest point, at most once a loop), "touch_up",
+--   "touch_tap"  after touch_up, for a release within 500 ms that moved under 10 px
+```
+
+LVGL widgets don't receive touches: hit-test your own layout.
 
 ### leds (Bench driver, LED outputs)
 

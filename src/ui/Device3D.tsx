@@ -181,6 +181,17 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     let panning: { x: number; y: number } | null = null;
     let moving: { key: string; obj: THREE.Object3D; start: THREE.Vector3; from: THREE.Vector3 } | null = null;
     let pressed: ModelButton | null = null;
+    // A touch panel: the pointer on the screen mesh, in native pixels via its texture coordinates.
+    const touchPanel = run.display.touch;
+    let touching = false;
+    const touchPoint = (e: { clientX: number; clientY: number }): [number, number] | null => {
+      setRay(e);
+      const [hit] = ray.intersectObject(model.screen, false);
+      if (!hit?.uv) return null;
+      const nx = hit.uv.x * device.width;
+      const ny = (1 - hit.uv.y) * device.height;
+      return [Math.min(device.width - 1, Math.floor(nx)), Math.min(device.height - 1, Math.floor(ny))];
+    };
     let laidOutFor = -1;
     let framed = false;
     // A camera move in progress (fit, zoom buttons), eased in each frame.
@@ -474,6 +485,14 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
         el.style.cursor = 'grabbing';
         return;
       }
+      if (touchPanel && !e.altKey) {
+        const p = touchPoint(e);
+        if (p) {
+          touching = true;
+          touchPanel.press(...p);
+          return;
+        }
+      }
       const hit = pick(e, e.altKey);
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
@@ -503,6 +522,11 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       orbiting = { x: e.clientX, y: e.clientY };
     };
     const onMove = (e: PointerEvent) => {
+      if (touching) {
+        const p = touchPoint(e);
+        if (p) touchPanel?.move(...p);
+        return;
+      }
       if (panning) {
         goal = null;
         orbit.manual = true;
@@ -572,6 +596,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
         moving = null;
       }
       if (pressed) inputFor(pressed)?.setDown(false);
+      if (touching) touchPanel?.release();
+      touching = false;
       grab?.up();
       pressed = null;
       grab = null;

@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SimClock } from '../sim/clock';
-import { fitZoom, PanelRenderer, type ViewOptions } from '../sim/renderer';
+import { canvasToNative, fitZoom, PanelRenderer, type ViewOptions } from '../sim/renderer';
 import type { SketchRun } from '../sim/runner';
 import { useAnimationFrame } from './hooks';
 
@@ -59,6 +59,31 @@ export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
   };
   const optionsRef = useRef({ options, mount });
   optionsRef.current = { options, mount };
+
+  // A touch panel: press, drag and lift on the drawn glass.
+  const touch = run.display.touch;
+  const touchAt = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const { options: o, mount: m } = optionsRef.current;
+    return canvasToNative(device, { ...o, rotation: m() }, e.clientX - r.left, e.clientY - r.top);
+  };
+  const touchHandlers = touch
+    ? {
+        onPointerDown: (e: ReactPointerEvent<HTMLCanvasElement>) => {
+          const p = touchAt(e);
+          if (!p) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          touch.press(...p);
+        },
+        onPointerMove: (e: ReactPointerEvent<HTMLCanvasElement>) => {
+          if (!touch.isPressed()) return;
+          const p = touchAt(e);
+          if (p) touch.move(...p);
+        },
+        onPointerUp: () => touch.release(),
+        onPointerCancel: () => touch.release(),
+      }
+    : {};
 
   const draw = useCallback(() => {
     const { options: o, mount: m } = optionsRef.current;
@@ -130,7 +155,12 @@ export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
             <Device3D run={run} clock={clock} mount={() => optionsRef.current.mount()} onCanvas={setCanvas3d} />
           </Suspense>
         ) : (
-          <canvas ref={canvasRef} className="device-canvas" />
+          <canvas
+            ref={canvasRef}
+            className={`device-canvas ${touch ? 'touchable' : ''}`}
+            title={touch ? `Touch screen (${device.touch?.controller}): click to tap, drag to swipe` : undefined}
+            {...touchHandlers}
+          />
         )}
         {error && (
           <div className="error-overlay">

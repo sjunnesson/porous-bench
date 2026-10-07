@@ -117,7 +117,11 @@ function planSection(p: DeviceProfile, board?: Board): string[] {
       DEVICE_SKILL +
       (p.look.leds
         ? '. Implement its `leds` module exactly (`count`, `width`, `height`, `xy`, `set`, `set_rgb`, `get`, `fill`, `clear`, `hsv`, `brightness`, `show`, and `on_frame(fn, fps)` as a frame timer calling the app between ticks; if Resident can\'t call into Lua from a driver timer, say so and document `on_tick` as the fallback).'
-        : '. Start with `screen` (the M5Stick drawing calls) on a full-frame canvas pushed in one transfer by `flip()`, then the board\'s buttons as `tap` / `hold` events, then `lgfx` (the LovyanGFX-style calls Bench apps use). ' + lvglAdvice(board)),
+        : '. Start with `screen` (the M5Stick drawing calls) on a full-frame canvas pushed in one transfer by `flip()`, then the board\'s buttons as `tap` / `hold` events, then `lgfx` (the LovyanGFX-style calls Bench apps use). ' +
+          (p.touch
+            ? `Then the ${p.touch.controller} touch panel as Bench's \`touchscreen\` module: \`read()\` returning \`{ pressed, x, y }\` in the coordinates apps draw in, and \`touch_down\` / \`touch_move\` (at most one per loop) / \`touch_up\` / \`touch_tap\` driver events with \`{ x, y }\` (a tap: released within 500 ms, moved under 10 px). `
+            : '') +
+          lvglAdvice(board)),
     '',
     'Practicalities:',
     '- Install PlatformIO if it\'s missing (`brew install platformio` or `pipx install platformio`). Put the project in a new folder here, and clone Resident next to it for the `symlink://` lib_dep, as its examples do.',

@@ -3,6 +3,7 @@ import type { DeviceProfile, Tech } from './devices/types';
 import { Framebuffer, type Rect } from './framebuffer';
 import { Gfx } from './gfx';
 import { createPanel, type Panel } from './panels/panel';
+import { TouchScreen } from './touchscreen';
 
 export type RefreshMode = 'auto' | 'full' | 'partial';
 
@@ -23,6 +24,8 @@ export interface DisplayStats {
  */
 export class Display extends Gfx {
   readonly panel: Panel;
+  /** The touch panel over the glass, when the module has one. */
+  readonly touch: TouchScreen | null;
   readonly stats: DisplayStats = { shows: 0, bytes: 0, busMs: 0, refreshMs: 0, fullRefreshes: 0 };
   private partialsSinceFull = 0;
   private everRefreshed = false;
@@ -44,6 +47,7 @@ export class Display extends Gfx {
   ) {
     super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led' ? 'rgb565' : 'mono'));
     this.panel = createPanel(profile);
+    this.touch = profile.touch ? new TouchScreen(profile.width, profile.height, () => clock.now()) : null;
   }
 
   get tech(): Tech {

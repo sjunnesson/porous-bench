@@ -327,6 +327,20 @@ export class Gfx {
       }
   }
 
+  /** A native panel pixel in the coordinates apps draw in (the inverse of the rotation). */
+  fromNative(nx: number, ny: number): [number, number] {
+    switch (this.rot) {
+      case 1:
+        return [ny, this.fb.width - 1 - nx];
+      case 2:
+        return [this.fb.width - 1 - nx, this.fb.height - 1 - ny];
+      case 3:
+        return [this.fb.height - 1 - ny, nx];
+      default:
+        return [nx, ny];
+    }
+  }
+
   // ---- internals ---------------------------------------------------------------------------
 
   private toNative(x: number, y: number): [number, number] {

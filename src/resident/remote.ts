@@ -38,6 +38,9 @@ export interface Snapshot {
   /** Bench's buttons A and B: [taps, holds started, holds ended] as Bench itself recognised them, so
    *  the device replays the same gestures rather than judging press lengths again. */
   g?: [number, number, number][];
+  /** The newest touch-panel events Bench raised, numbered: [seq, "d" | "m" | "u" | "t", x, y]. The
+   *  device replays the ones it hasn't seen, in order, with their points. */
+  te?: [number, string, number, number][];
   /** Sensor readings, as their Lua modules return them. */
   s: Record<string, unknown>;
 }
@@ -48,9 +51,16 @@ const round = (v: number, places = 3) => Math.round(v * 10 ** places) / 10 ** pl
 export class SnapshotReader {
   private steps = new Map<Dial, { last: number; total: number }>();
 
-  read(controls: Control[], bench: Bench, buttons: { a?: unknown; b?: unknown }, gestures?: [number, number, number][]): Snapshot {
+  read(
+    controls: Control[],
+    bench: Bench,
+    buttons: { a?: unknown; b?: unknown },
+    gestures?: [number, number, number][],
+    touches?: [number, string, number, number][],
+  ): Snapshot {
     const snap: Snapshot = { d: {}, t: {}, s: {} };
     if (gestures) snap.g = gestures;
+    if (touches?.length) snap.te = touches;
     for (const c of controls) {
       if (c.kind === 'dial') {
         const d = c as Dial;
@@ -107,6 +117,8 @@ export interface MirrorSource {
   buttons: { a?: unknown; b?: unknown };
   /** Bench's own taps and holds on A and B, from the app's host. */
   gestures?: [number, number, number][];
+  /** The touch-panel events the app's host raised. */
+  touches?: [number, string, number, number][];
 }
 
 export type RemoteStatus = 'off' | 'pushing' | 'live' | 'offline' | 'error';
@@ -191,8 +203,8 @@ export class RemoteMirror {
 
   private async tick(): Promise<void> {
     if (!this.source || this.inFlight) return;
-    const { controls, bench, buttons, gestures } = this.source();
-    const snap = this.reader.read(controls, bench, buttons, gestures);
+    const { controls, bench, buttons, gestures, touches } = this.source();
+    const snap = this.reader.read(controls, bench, buttons, gestures, touches);
     let json = JSON.stringify(snap);
     if (json.length > MAX_BYTES) {
       delete snap.s.radar; // the biggest part; dials and triggers matter most

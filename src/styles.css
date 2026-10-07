@@ -972,3 +972,9 @@ textarea.code {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* A display with a touch panel: the glass takes clicks and drags. */
+.device-canvas.touchable {
+  cursor: crosshair;
+  touch-action: none;
+}

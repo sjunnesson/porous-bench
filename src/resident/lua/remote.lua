@@ -3,7 +3,8 @@
 -- climate, touch, ld2410, imu, and a silent buzzer) are defined here only where this firmware has
 -- none. Each sits between "@@part <module>" and "@@end" lines: Bench sends only the parts the app
 -- names, since every line here costs compile memory on the device. Bench's buttons A and B arrive
--- as the taps and holds Bench recognised; the board's own keys are ignored while it mirrors.
+-- as the taps and holds Bench recognised, and touches on Bench's screen as touch_* events; the
+-- board's own keys and touch panel are ignored while it mirrors.
 local __bench = { d = {}, t = {}, s = {}, g = {} }
 local __now = function() return (time and time.ticks_ms) and time.ticks_ms() or 0 end
 
@@ -116,6 +117,12 @@ if not imu then
   }
 end
 -- @@end
+-- @@part touchscreen
+if not touchscreen then
+  touchscreen = { read = function() return __bench.touch or { pressed = false, x = 0, y = 0 } end }
+  function touchscreen.pressed() return touchscreen.read().pressed end
+end
+-- @@end
 -- @@part buzzer
 if not buzzer then
   buzzer = { beep = function() end, tone = function() end, stop = function() end }
@@ -154,6 +161,20 @@ local function __bench_apply(ctx, data, deliver)
       for _ = was[3] + 1, v[3] do deliver(ctx, "hold", { index = index, held = false }) end
     end
   end
+  -- Touches on Bench's screen, in order, with their points.
+  local TOUCH = { d = "touch_down", m = "touch_move", u = "touch_up", t = "touch_tap" }
+  local te = data.te or {}
+  if __bench.te_seq == nil then
+    __bench.te_seq = #te > 0 and te[#te][1] or 0 -- the first update is a baseline
+  else
+    for _, ev in ipairs(te) do
+      if ev[1] > __bench.te_seq then
+        __bench.te_seq = ev[1]
+        __bench.touch = { pressed = ev[2] == "d" or ev[2] == "m", x = ev[3], y = ev[4] }
+        deliver(ctx, TOUCH[ev[2]], { x = ev[3], y = ev[4] })
+      end
+    end
+  end
   local s = data.s or {}
   local before = __bench.s
   __bench.s = s
@@ -176,7 +197,7 @@ do
       return
     end
     -- The board's own keys: Bench's buttons stand in for them, or the two screens would drift.
-    if (e.name == "tap" or e.name == "hold" or e.name == "button") and e.channel ~= "app" then return end
+    if (e.name == "tap" or e.name == "hold" or e.name == "button" or e.name:sub(1, 6) == "touch_") and e.channel ~= "app" then return end
     if app_on_event then return app_on_event(ctx, e) end
   end
 end

@@ -6,6 +6,7 @@ import type { DeviceProfile } from '../src/sim/devices/types';
 import { Display } from '../src/sim/display';
 import { font5x7 } from '../src/sim/fonts/font';
 import { encodeReport, LD2410, LD2410Parser } from '../src/sim/inputs/ld2410';
+import { canvasToNative, sceneSize } from '../src/sim/renderer';
 import { SketchRun } from '../src/sim/runner';
 import { defineSketch } from '../src/sim/sketch';
 
@@ -123,6 +124,38 @@ describe('Display.show timing', () => {
     expect(pixel(d, 50, 50)[0]).toBeGreaterThan(250);
     d.setBrightness(50);
     expect(pixel(d, 50, 50)[0]).toBeLessThan(135);
+  });
+});
+
+describe('touch panel', () => {
+  it('maps a point on the drawn glass to native pixels, and then to app coordinates', () => {
+    const amoled = device('waveshare-esp32-s3-touch-amoled-1.32');
+    const view = { zoom: 1, grid: false, rotation: 0 };
+    const { w } = sceneSize(amoled, view);
+    expect(canvasToNative(amoled, view, w / 2, w / 2)).toEqual([233, 233]); // the centre
+    expect(canvasToNative(amoled, view, 15, 15)).toBeNull(); // a corner: off the round glass
+    const lcd = device('waveshare-esp32-c6-lcd-1.47');
+    const turned = { zoom: 2, grid: false, rotation: 1 };
+    // Mounted a quarter turn clockwise: the panel's top-left corner sits at the top right.
+    const s = sceneSize(lcd, turned);
+    expect(canvasToNative(lcd, turned, s.w - 14 - 1, 14 + 1)).toEqual([0, 0]);
+    const d = new Display(lcd, pausedClock());
+    d.setRotation(1);
+    expect(d.fromNative(0, 0)).toEqual([0, 171]);
+    expect(d.fromNative(171, 319)).toEqual([319, 0]);
+  });
+
+  it('logs every press, move and release in order, on displays that have one', () => {
+    const clock = pausedClock();
+    expect(new Display(device('m5stickc-plus2'), clock).touch).toBeNull();
+    const t = new Display(device('waveshare-esp32-s3-touch-amoled-1.32'), clock).touch!;
+    t.press(10, 20);
+    t.move(10, 20); // not a move: nothing changed
+    t.move(15, 25);
+    t.release();
+    t.release();
+    expect(t.log.map((e) => [e.kind, e.x, e.y])).toEqual([['down', 10, 20], ['move', 15, 25], ['up', 15, 25]]);
+    expect(t.isPressed()).toBe(false);
   });
 });
 

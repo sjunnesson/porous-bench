@@ -307,6 +307,14 @@ function climate.humidity() return climate.read().humidity end
 touch = { read = sensor("touch") }
 function touch.touched() return touch.read().touched end
 
+-- touchscreen: Bench driver for a touch panel over the display. Defined only on a display that has
+-- one, so apps can check `if touchscreen then`. Gestures arrive as driver events: touch_down,
+-- touch_move, touch_up and touch_tap, each with { x, y } in the coordinates apps draw in.
+if H.touch_read() ~= nil then
+  touchscreen = { read = function() return H.touch_read() end }
+  function touchscreen.pressed() return H.touch_read().pressed end
+end
+
 -- screens
 local SCREEN_KEYS = { name = 1, w = 1, h = 1, shape = 1, depth = 1, scheme = 1, dpi = 1, group = 1 }
 screens = {

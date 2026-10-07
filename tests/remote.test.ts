@@ -154,6 +154,64 @@ describe('remote mirror', () => {
     expect(t.display.stats.shows).toBeLessThan(6); // the frames in between were never refreshed
   });
 
+  it('turns presses on the touch panel into touch events for apps, a quick one into a tap', async () => {
+    const t = await device(
+      `function on_event(ctx, e)
+        if e.name:sub(1, 6) == "touch_" then log.info(e.name, e.data.x, e.data.y, tostring(touchscreen.pressed())) end
+      end`,
+      FIRMWARE,
+      'waveshare-esp32-s3-touch-amoled-1.32',
+      false,
+    );
+    expect(t.error).toBeUndefined();
+    const panel = t.display.touch!;
+    panel.press(100, 120);
+    panel.release();
+    await t.run(30);
+    expect(t.logs).toEqual(['touch_down\t100\t120\tfalse', 'touch_up\t100\t120\tfalse', 'touch_tap\t100\t120\tfalse']);
+    // A drag: its moves within one pass arrive as one, and it isn't a tap.
+    t.logs.length = 0;
+    panel.press(50, 50);
+    panel.move(60, 50);
+    panel.move(90, 60);
+    await t.run(30);
+    panel.release();
+    await t.run(30);
+    expect(t.logs).toEqual(['touch_down\t50\t50\ttrue', 'touch_move\t90\t60\ttrue', 'touch_up\t90\t60\tfalse']);
+    // Held past 500 ms: not a tap either.
+    t.logs.length = 0;
+    panel.press(10, 10);
+    await t.run(600);
+    panel.release();
+    await t.run(30);
+    expect(t.logs.map((l) => l.split('\t')[0])).toEqual(['touch_down', 'touch_up']);
+  });
+
+  it('has no touchscreen module on a display without a touch panel', async () => {
+    const t = await device('function init(ctx) log.info(tostring(touchscreen)) end', FIRMWARE, 'waveshare-esp32-c6-lcd-1.47', false);
+    expect(t.logs).toEqual(['nil']);
+  });
+
+  it("replays Bench's touches on a real board in order, and ignores the board's own touch panel", async () => {
+    const t = await device(`
+      function on_event(ctx, e)
+        if e.name:sub(1, 6) == "touch_" then log.info(e.name, e.data.x, e.data.y, tostring(touchscreen.read().pressed)) end
+      end`);
+    expect(t.error).toBeUndefined();
+    const te = (events: [number, string, number, number][]) => send(t.host, { d: {}, t: {}, s: {}, te: events });
+    te([]); // baseline: nothing yet
+    await t.run(30);
+    te([[1, 'd', 5, 6], [2, 'm', 7, 8]]);
+    await t.run(30);
+    te([[1, 'd', 5, 6], [2, 'm', 7, 8], [3, 'u', 7, 8], [4, 't', 7, 8]]); // the first two again: already seen
+    await t.run(30);
+    expect(t.logs).toEqual(['touch_down\t5\t6\ttrue', 'touch_move\t7\t8\ttrue', 'touch_up\t7\t8\tfalse', 'touch_tap\t7\t8\tfalse']);
+    t.logs.length = 0;
+    t.host.queue({ name: 'touch_tap', channel: 'driver', data: { x: 1, y: 1 } }); // the board's own panel
+    await t.run(30);
+    expect(t.logs).toEqual([]);
+  });
+
   it('tells apps on the round AMOLED that the screen is round and in colour', async () => {
     const t = await device(
       `local s = screens.get("main")

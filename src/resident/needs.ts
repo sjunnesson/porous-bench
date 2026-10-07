@@ -4,9 +4,10 @@
 // Needs come from two places:
 //  - the code itself: the libraries it binds (lvgl, lgfx, screen, leds) and an estimate of the memory
 //    it takes to receive, compile and run on a real board;
-//  - a header line for what code can't show: `-- @needs motion color 240x135`, where `motion` means it
-//    animates (so not e-paper), `color` that it means nothing in 1-bit, and WxH the smallest screen
-//    (as apps see it) its fixed layout fits.
+//  - a header line for what code can't show: `-- @needs motion color touch 240x135`, where `motion`
+//    means it animates (so not e-paper), `color` that it means nothing in 1-bit, `touch` that it
+//    needs a touch panel over the screen, and WxH the smallest screen (as apps see it) its fixed
+//    layout fits.
 //
 // Inputs are never a reason to leave an app out: every control and sensor is on the bench, and a real
 // device gets them from Bench through the mirror's shim.
@@ -22,6 +23,7 @@ export interface AppNeeds {
   libraries: Library[];
   motion: boolean;
   color: boolean;
+  touch: boolean;
   /** Smallest screen its layout fits, as apps see it. */
   min?: { w: number; h: number };
   /** Peak heap to receive, compile and start it on a real board (KB, estimated). */
@@ -36,6 +38,8 @@ export interface OutputCaps {
   color: boolean;
   /** Refreshes fast enough to animate (everything but e-paper). */
   motion: boolean;
+  /** A touch panel over the screen. */
+  touch: boolean;
   libraries: Library[];
   appRamKb?: number;
 }
@@ -71,6 +75,7 @@ export function appNeeds(code: string): AppNeeds {
     libraries,
     motion: words.includes('motion'),
     color: words.includes('color') || words.includes('colour'),
+    touch: words.includes('touch'),
     min: size ? { w: Number(size[1]), h: Number(size[2]) } : undefined,
     ramKb,
   };
@@ -90,6 +95,7 @@ export function outputCaps(profile: DeviceProfile, board: Board | undefined): Ou
     h,
     color: profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led',
     motion: profile.tech !== 'epaper',
+    touch: !!profile.touch,
     libraries,
     appRamKb: board?.appRamKb,
   };
@@ -102,6 +108,7 @@ export function misfits(needs: AppNeeds, caps: OutputCaps): string[] {
   for (const lib of needs.libraries) if (!caps.libraries.includes(lib)) why.push(`needs ${lib}`);
   if (needs.motion && !caps.motion) why.push('animates');
   if (needs.color && !caps.color) why.push('needs colour');
+  if (needs.touch && !caps.touch) why.push('needs a touchscreen');
   if (needs.min && (caps.w < needs.min.w || caps.h < needs.min.h)) why.push(`needs ${needs.min.w}×${needs.min.h}`);
   if (caps.appRamKb !== undefined && needs.ramKb > caps.appRamKb * USABLE) why.push(`needs ~${needs.ramKb} KB`);
   return why;

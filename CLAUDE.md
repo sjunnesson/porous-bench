@@ -25,8 +25,8 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   match the board (e.g. e-paper refreshes one frame at a time, newest wins; every button press
   counts). Measure on hardware before changing a model.
 - **Every bundled app says what it needs.** Line 1 `-- Name: description`; `-- @output strip|matrix`
-  for LED apps; `-- @needs motion color WxH` for what the code can't show (animates / colour only /
-  smallest screen its fixed layout fits). Libraries and memory are read from the code
+  for LED apps; `-- @needs motion color touch WxH` for what the code can't show (animates / colour
+  only / needs a touch panel / smallest screen its fixed layout fits). Libraries and memory are read from the code
   (`needs.ts`). Tests fail if an app runs nowhere or doesn't boot wrapped for a real device.
 - **A new output or board** goes in `src/sim/devices/` or `src/sim/boards.ts` with its libraries
   and its app memory: the PSRAM size on a board with PSRAM, otherwise *measured*

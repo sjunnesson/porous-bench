@@ -53,7 +53,7 @@ function boardLines(board: Board | undefined): string[] {
 }
 
 const NEEDS_LINE =
-  "- If the app animates, only makes sense in colour, or has a fixed layout, say so on the line after `@output`: `-- @needs motion color 240x135` (any of them; WxH is the smallest screen it fits). Bench then lists it only for outputs that can run it.";
+  "- If the app animates, only makes sense in colour, needs the touch panel, or has a fixed layout, say so on the line after `@output`: `-- @needs motion color touch 240x135` (any of them; WxH is the smallest screen it fits). Bench then lists it only for outputs that can run it.";
 
 function outputSection(p: DeviceProfile, board?: Board): string[] {
   const leds = p.look.leds;
@@ -88,6 +88,11 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
   if (p.shape === 'round') {
     lines.push(`- The glass is round: only the circle of radius ${Math.min(w, h) / 2} px around the centre shows (\`screens.get("main").shape\` is "round"). Lay out from the centre and keep text inside the circle.`);
   } else if (p.look.cornerRadiusPx) lines.push(`- The glass has rounded corners (radius ${p.look.cornerRadiusPx} px): keep content clear of them.`);
+  if (p.touch) {
+    lines.push(
+      `- It has a touch panel (${p.touch.controller}), one finger: \`touchscreen.read()\` gives \`{ pressed, x, y }\`, and \`on_event\` gets \`touch_down\`, \`touch_move\`, \`touch_up\` and \`touch_tap\` (released within 500 ms, moved under 10 px), each with \`e.data.x\` / \`e.data.y\` in the coordinates the app draws in. In Bench I tap by clicking the screen. Hit-test your own layout; LVGL widgets don't receive touches.`,
+    );
+  }
   if (p.tech === 'amoled') lines.push('- AMOLED: every pixel emits its own light and black is off, so a black background looks like no screen at all; it suits dark, high-contrast designs.');
   if (!color && p.tech !== 'epaper') lines.push('- 1-bit: use pure white on black; colours become lit or unlit at 50% brightness.');
   if (p.tech === 'epaper') lines.push('- E-paper: every `flip()` is a refresh (about 2 s full, 0.3 s partial). Change the screen rarely and don\'t animate.');

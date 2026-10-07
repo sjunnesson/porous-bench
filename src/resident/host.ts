@@ -107,6 +107,11 @@ export class ResidentHost {
   private taps = 0;
   /** Per button: the taps, holds started and holds ended recognised so far (what a mirror replays). */
   private gestureTotals: [number, number, number][] = [];
+  /** The touch panel: the log entries taken so far, the press being followed, and what was raised. */
+  private touchSeq = 0;
+  private touchDown: { x: number; y: number; t: number; far: boolean } | null = null;
+  private touchRaised: [number, 'd' | 'm' | 'u' | 't', number, number][] = [];
+  private touchRaisedSeq = 0;
   /** Per button: when it went down, whether it became a hold, and the edges taken so far. */
   private gestures: { downAt: number; held: boolean; presses: number; releases: number }[] = [];
   // Bench drivers the app declared, with what their events last reported.
@@ -130,6 +135,7 @@ export class ResidentHost {
     // Edges from before the app started aren't its gestures.
     this.gestures = board.buttons.map((b) => (b.isPressed(), { downAt: -1, held: false, presses: b.presses, releases: b.releases }));
     this.gestureTotals = board.buttons.map(() => [0, 0, 0]);
+    this.touchSeq = board.display.touch?.seq ?? 0; // touches from before the app aren't its own
   }
 
   /** Compile and init an app. Resolves with the host, or with the compile/init error. */
@@ -180,6 +186,7 @@ export class ResidentHost {
     if (this.closed) return;
     this.pollButtons();
     this.pollDrivers();
+    this.pollTouch();
     while (this.ring.length) {
       const e = this.ring.shift()!;
       const err = this.api.call('on_event', this.timeMs, e);
@@ -289,6 +296,52 @@ export class ResidentHost {
         this.hold(index, true);
       }
     });
+  }
+
+  /**
+   * The touch panel: `touch_down`, `touch_move` (the newest point of each pass, so a drag can't fill
+   * the 8-slot event ring), `touch_up`, and `touch_tap` for a release within 500 ms that moved under
+   * 10 px. Points are in the coordinates apps draw in.
+   */
+  private pollTouch() {
+    const t = this.board.display.touch;
+    if (!t) return;
+    const d = this.board.display;
+    let move: [number, number] | null = null;
+    for (const e of t.log) {
+      if (e.seq <= this.touchSeq) continue;
+      this.touchSeq = e.seq;
+      const [x, y] = d.fromNative(e.x, e.y);
+      if (e.kind === 'move') {
+        move = [x, y];
+        if (this.touchDown && Math.hypot(x - this.touchDown.x, y - this.touchDown.y) >= 10) this.touchDown.far = true;
+        continue;
+      }
+      if (move) this.raiseTouch('m', ...move);
+      move = null;
+      if (e.kind === 'down') {
+        this.touchDown = { x, y, t: e.t, far: false };
+        this.raiseTouch('d', x, y);
+      } else {
+        const down = this.touchDown;
+        this.touchDown = null;
+        this.raiseTouch('u', x, y);
+        if (down && !down.far && e.t - down.t < 500) this.raiseTouch('t', x, y);
+      }
+    }
+    if (move) this.raiseTouch('m', ...move);
+  }
+
+  private raiseTouch(kind: 'd' | 'm' | 'u' | 't', x: number, y: number) {
+    const name = { d: 'touch_down', m: 'touch_move', u: 'touch_up', t: 'touch_tap' }[kind];
+    this.queue({ name, channel: 'driver', data: { x, y } });
+    this.touchRaised.push([++this.touchRaisedSeq, kind, x, y]);
+    if (this.touchRaised.length > 16) this.touchRaised.shift();
+  }
+
+  /** The newest touch events raised, oldest first, numbered: [seq, kind, x, y] (what a mirror replays). */
+  touchEvents(): [number, string, number, number][] {
+    return this.touchRaised.map((e) => [...e]);
   }
 
   /** Taps, holds started and holds ended on each button so far: [A, B]. */
@@ -600,6 +653,14 @@ export class ResidentHost {
       },
       led_show: () => this.present(),
       led_brightness: (v: number) => d.setBrightness((Math.min(255, Math.max(0, v)) / 255) * 100),
+
+      // The touch panel over the glass: undefined on a display without one.
+      touch_read: () => {
+        const t = d.touch;
+        if (!t) return undefined;
+        const [x, y] = d.fromNative(...t.point());
+        return { pressed: t.isPressed(), x, y };
+      },
 
       // light, pir, climate, touch: the part on the bench (put there if missing), read as a table.
       sensor_read: (kind: 'light' | 'pir' | 'climate' | 'touch') => {

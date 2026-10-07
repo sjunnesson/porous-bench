@@ -88,6 +88,7 @@ describe('bundled apps', () => {
   for (const app of apps) {
     it(`${app.name} runs on every kind of ${app.target}`, async () => {
       for (const device of OUTPUTS[app.target]) {
+        if (/^--\s*@needs\b.*\btouch\b/m.test(app.code) && !device.touch) continue; // listed only where there's a touch panel
         expect(await runApp(app.code, device, 600), `${app.name} on ${device.id}`).toEqual([]);
       }
     }, 60_000);

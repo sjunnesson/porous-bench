@@ -49,6 +49,8 @@ export interface DeviceProfile {
   ram?: { width: number; height: number; offsetX: number; offsetY: number };
   /** setRotation() the board's firmware applies (e.g. M5StickC Plus2 runs landscape). Used for Resident apps. */
   firmwareRotation?: number;
+  /** A touch panel over the glass: apps get `touchscreen` and `touch_*` events. */
+  touch?: { controller: string; i2cAddress?: number };
   /** The boards (ids in src/sim/boards.ts) that can drive it, the default first. Unset: any generic board. */
   boards?: string[];
   /** Hardware built into the board besides its buttons (those come from the enclosure). */

@@ -216,7 +216,7 @@ export default function App() {
   // Mirroring on a real device: it reads this run's controls, and a new run (another app, a
   // restart) is sent to the device too.
   const mirrorSource = useCallback(
-    () => ({ controls: run?.controls ?? [], bench, buttons: { a: run?.inputs.a, b: run?.inputs.b }, gestures: session.host?.gestureCounts() }),
+    () => ({ controls: run?.controls ?? [], bench, buttons: { a: run?.inputs.a, b: run?.inputs.b }, gestures: session.host?.gestureCounts(), touches: session.host?.touchEvents() }),
     [run, bench],
   );
   useEffect(() => {

@@ -31,6 +31,28 @@ export function sceneSize(profile: DeviceProfile, view: ViewOptions): { w: numbe
   return { w: pw + 2 * BEZEL_PX, h: ph + 2 * BEZEL_PX };
 }
 
+/**
+ * A point on the drawn display (CSS pixels from the canvas's top left) as a native panel pixel,
+ * undoing what draw() does: the bezel, the zoom and the mount rotation. Null off the glass (and,
+ * on round glass, outside the circle).
+ */
+export function canvasToNative(profile: DeviceProfile, view: ViewOptions, cx: number, cy: number): [number, number] | null {
+  const { w, h } = sceneSize(profile, view);
+  const dx = cx - w / 2;
+  const dy = cy - h / 2;
+  const a = (-view.rotation * Math.PI) / 2;
+  const x = dx * Math.cos(a) - dy * Math.sin(a);
+  const y = dx * Math.sin(a) + dy * Math.cos(a);
+  const nx = x / view.zoom + profile.width / 2;
+  const ny = y / view.zoom + profile.height / 2;
+  if (nx < 0 || ny < 0 || nx >= profile.width || ny >= profile.height) return null;
+  if (profile.shape === 'round') {
+    const r = Math.min(profile.width, profile.height) / 2;
+    if (Math.hypot(nx - profile.width / 2, ny - profile.height / 2) > r) return null;
+  }
+  return [Math.floor(nx), Math.floor(ny)];
+}
+
 export function fitZoom(profile: DeviceProfile, rotation: number, availW: number, availH: number): number {
   const n = nativeSize(profile);
   const w = rotation & 1 ? n.h : n.w;

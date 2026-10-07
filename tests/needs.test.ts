@@ -108,17 +108,29 @@ describe('the round AMOLED board', () => {
     expect(runs(amoled)).toEqual(expect.arrayContaining(['hello-display', 'patterns', 'tilt-ball', 'rainbow', 'hello']));
   });
 
+  it('lists the Touch app only where there is a touch panel', () => {
+    expect(appNeeds('-- @needs touch motion\nlocal g = lgfx.bind("main")\n')).toMatchObject({ touch: true, motion: true });
+    expect(outputCaps(amoled, boardsFor(amoled)[0]).touch).toBe(true);
+    expect(runs(amoled)).toContain('touch');
+    for (const d of devices.filter((x) => !x.touch)) {
+      for (const b of boardsFor(d)) expect(misfits(residentApps.find((a) => a.id === 'touch')!.needs, outputCaps(d, b))).toContain('needs a touchscreen');
+    }
+  });
+
   it('tells the app writer the glass is round AMOLED, and the firmware writer its pins and quirks', () => {
     const app = appPrompt({ device: amoled, board: boardsFor(amoled)[0], parts: [], controls: [], app: { id: 'x', name: 'x', code: '', bundled: false }, deviceId: 'sim-1', online: false });
     expect(app).toContain('466×466 pixels');
     expect(app).toContain('16-bit colour');
     expect(app).toContain('The glass is round');
     expect(app).toContain('AMOLED: every pixel emits');
+    expect(app).toContain('touch panel (CST820)');
+    expect(app).toContain('`touch_tap`');
     const fw = firmwarePrompt(amoled, boardsFor(amoled)[0]);
     expect(fw).toContain('CO5300 over QSPI at 40 MHz');
     expect(fw).toContain('Column offset 6');
     expect(fw).toContain('QSPI CS 10');
     expect(fw).toContain('GPIO18 (BAT_EN)');
+    expect(fw).toContain("CST820 touch panel as Bench's `touchscreen` module");
     expect(fw).toContain("Follow Resident's guide");
   });
 });
@@ -137,7 +149,7 @@ describe('prompts follow the board', () => {
     const p = appPrompt({ ...base, board: driverBoard });
     expect(p).toContain('There is no `lvgl` on this board');
     expect(p).toContain('~70 KB of heap');
-    expect(p).toContain('`-- @needs motion color 240x135`');
+    expect(p).toContain('`-- @needs motion color touch 240x135`');
     expect(appPrompt({ ...base, board: s3 })).toContain('optional `lvgl` module');
   });
 
