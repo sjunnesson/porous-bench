@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { session } from '../resident/session';
+import { Copy } from './Copy';
 import { Panel } from './Panel';
 
 const STATUS = {
@@ -8,23 +9,6 @@ const STATUS = {
   retrying: { label: 'reconnecting…', cls: 'pending' },
   online: { label: 'online', cls: 'on' },
 } as const;
-
-function Copy({ text, label = 'copy' }: { text: string; label?: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      className="link"
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => {
-          setDone(true);
-          setTimeout(() => setDone(false), 1200);
-        });
-      }}
-    >
-      {done ? 'copied' : label}
-    </button>
-  );
-}
 
 interface Props {
   /** Source of the Resident app running now (null when the sketch isn't a Resident app). */

@@ -1,4 +1,4 @@
--- Patterns: animated LVGL patterns (orbits, ripple tiles, rings, equaliser, spinner, test card), all lvgl.Anim. A = next, B = previous; the Speed dial can be any hardware (Controls).
+-- Patterns: animated LVGL patterns (orbits, ripple tiles, rings, equaliser, spinner, test card), all lvgl.Anim. A = next, B = previous; the Speed dial can be any hardware (Connections).
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()

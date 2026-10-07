@@ -6,7 +6,7 @@ local color = s.depth == 16
 local paper = s.scheme == "light" -- e-paper: every LVGL refresh is a slow refresh, so nothing animates
 local canDim = not paper
 
--- The hardware this app wants on the desk. Each can be swapped in Controls without touching code.
+-- The hardware this app wants on the desk. Each can be swapped in Connections without touching code.
 local move = dial.new("move") -- open range: only its steps matter
 local select = trigger.new("select", { key = "Enter", via = "encoder-push" })
 local gauge = dial.new("gauge", { min = 0, max = 4095, step = 1, start = 1640, via = "pot",

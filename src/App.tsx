@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { session } from './resident/session';
+import { appPrompt } from './resident/prompt';
 import { residentSketch } from './resident/sketch';
 import { residentApps } from './resident-apps';
 import { SimClock } from './sim/clock';
@@ -12,6 +13,7 @@ import type { Knob } from './sim/inputs/knob';
 import { type LogLine, SketchRun } from './sim/runner';
 import type { InputSpecs, Sketch } from './sim/sketch';
 import { Console } from './ui/Console';
+import { Copy } from './ui/Copy';
 import { DeviceInfo } from './ui/DeviceInfo';
 import { DeviceView, type ViewState } from './ui/DeviceView';
 import { useClockState, usePersisted } from './ui/hooks';
@@ -277,6 +279,20 @@ export default function App() {
               >
                 ✦ New app from my bench
               </button>
+              <Copy
+                label="Copy app prompt"
+                title="Copy a prompt for Claude to write a new Lua app for this output and bench, with the right skills, ready to paste"
+                text={() =>
+                  appPrompt({
+                    device,
+                    parts: bench.hardware(),
+                    controls: (run?.controls ?? []).map((c) => ({ label: c.label, kind: c.kind, source: c.source })),
+                    app: { id: entry.id, name: entry.name.replace(/^▶ /, ''), description: entry.sketch.description, code: entry.code, bundled: entry.id !== 'resident:live' },
+                    deviceId: session.deviceId,
+                    online: session.status === 'online',
+                  })
+                }
+              />
             </div>
           </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
