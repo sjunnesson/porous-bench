@@ -279,8 +279,11 @@ export default function App() {
               >
                 ✦ New app from my bench
               </button>
+            </div>
+            <div className="row">
               <Copy
                 label="Copy app prompt"
+                done="App prompt copied"
                 title="Copy a prompt for Claude to write a new Lua app for this output and bench, with the right skills, ready to paste"
                 text={() =>
                   appPrompt({

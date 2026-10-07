@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 /** A link that copies text to the clipboard (`text` can be built at click time) and says so. */
-export function Copy({ text, label = 'copy', title }: { text: string | (() => string); label?: string; title?: string }) {
+export function Copy({ text, label = 'copy', done = 'copied', title }: { text: string | (() => string); label?: string; done?: string; title?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const show = (s: typeof state) => {
     setState(s);
@@ -17,7 +17,7 @@ export function Copy({ text, label = 'copy', title }: { text: string | (() => st
         navigator.clipboard.writeText(value).then(() => show('copied'), () => show('failed'));
       }}
     >
-      {state === 'copied' ? 'copied' : state === 'failed' ? "couldn't copy" : label}
+      {state === 'copied' ? done : state === 'failed' ? "couldn't copy" : label}
     </button>
   );
 }
