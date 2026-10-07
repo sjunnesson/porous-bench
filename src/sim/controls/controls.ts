@@ -393,6 +393,11 @@ export class Trigger extends SimInput {
     const hw = this.bench.resolve(this.connection);
     return hw ? [hw.part] : [];
   }
+  /** Connected to a sensor (motion, presence, shake, dark) rather than something you press and hold. */
+  get sensed(): boolean {
+    const hw = this.bench.resolve(this.connection);
+    return !!hw && !pushableOf(hw.part, hw.channel.id);
+  }
   handleKey(code: string, down: boolean): boolean {
     if (!this.key || code !== this.key) return false;
     const hw = this.bench.resolve(this.connection);

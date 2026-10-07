@@ -41,6 +41,8 @@ export interface Pressable {
   isPressed(): boolean;
   wasPressed(): boolean;
   wasReleased(): boolean;
+  /** Fired by a sensor (motion, presence, shake…) rather than pressed: its moments are taps, never holds. */
+  readonly sensed?: boolean;
 }
 
 /** What the board gives the runtime. */
@@ -240,6 +242,13 @@ export class ResidentHost {
       const g = this.gestures[index];
       const pressed = b.wasPressed();
       const released = b.wasReleased();
+      if (b.sensed) {
+        // A PIR stays on for seconds after motion: that's one moment, not a long press.
+        if (pressed) this.tap(index);
+        g.downAt = -1;
+        g.held = false;
+        return;
+      }
       if (pressed && g.downAt < 0) g.downAt = now;
       if (g.downAt >= 0 && !g.held && now - g.downAt >= 500) {
         g.held = true;
@@ -247,16 +256,18 @@ export class ResidentHost {
       }
       if (released && g.downAt >= 0 && !b.isPressed()) {
         if (g.held) this.queue({ name: 'hold', channel: 'driver', data: { index, held: false } });
-        else {
-          this.taps++;
-          const data = { index, count: this.taps };
-          this.queue({ name: 'tap', channel: 'driver', data });
-          this.queue({ name: 'button', channel: 'driver', data });
-        }
+        else this.tap(index);
         g.downAt = -1;
         g.held = false;
       }
     });
+  }
+
+  private tap(index: number) {
+    this.taps++;
+    const data = { index, count: this.taps };
+    this.queue({ name: 'tap', channel: 'driver', data });
+    this.queue({ name: 'button', channel: 'driver', data });
   }
 
   /** Driver events for the declared hardware: a dial that moved, a trigger edge, a radar state change. */

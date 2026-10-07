@@ -1,6 +1,6 @@
 import { LuaFactory } from 'wasmoon';
 import { describe, expect, it } from 'vitest';
-import { ResidentHost, resetScreen, type ResidentBoard } from '../src/resident/host';
+import { type Pressable, ResidentHost, resetScreen, type ResidentBoard } from '../src/resident/host';
 import { AppStore } from '../src/resident/store';
 import { strftime, breakDown } from '../src/resident/timecore';
 import { Zone } from '../src/resident/zone';
@@ -12,10 +12,11 @@ import { Dial, Trigger } from '../src/sim/controls/controls';
 import { Button } from '../src/sim/inputs/button';
 import type { Knob } from '../src/sim/inputs/knob';
 import { LD2410 } from '../src/sim/inputs/ld2410';
+import type { Pir } from '../src/sim/inputs/pir';
 
 const factory = new LuaFactory();
 
-async function boot(code: string, deviceId = 'm5stickc-plus2') {
+async function boot(code: string, deviceId = 'm5stickc-plus2', buttonsOn?: (bench: Bench) => Pressable[]) {
   const clock = new SimClock();
   clock.paused = true;
   const device = findDevice(deviceId)!;
@@ -23,9 +24,9 @@ async function boot(code: string, deviceId = 'm5stickc-plus2') {
   display.setRotation(device.firmwareRotation ?? 0);
   const logs: string[] = [];
   const telemetry: string[] = [];
-  const buttons = [new Button({}, clock), new Button({}, clock)];
   const bench = new Bench(clock);
   bench.load(DEFAULT_PARTS);
+  const buttons = buttonsOn?.(bench) ?? [new Button({}, clock), new Button({}, clock)];
   const declared: Record<string, Dial | Trigger | LD2410> = {};
   const board: ResidentBoard = {
     display,
@@ -45,7 +46,7 @@ async function boot(code: string, deviceId = 'm5stickc-plus2') {
   for (let i = 0; i < 20; i++) clock.advance(1);
   await cleared;
   const { host, error } = await ResidentHost.boot(factory, board, { code });
-  return { host, error, clock, display, logs, telemetry, buttons, declared };
+  return { host, error, clock, display, logs, telemetry, buttons, declared, bench };
 }
 
 function glass(d: Display, x: number, y: number): [number, number, number] {
@@ -137,17 +138,31 @@ describe('Resident sandbox', () => {
     const t = await boot(`function on_event(ctx, e)
       log.info(e.name .. " " .. tostring(e.data.index) .. " " .. tostring(e.data.held) .. " " .. e.channel .. " " .. tostring(e.index))
     end`);
-    t.buttons[1].setDown(true);
+    (t.buttons[1] as Button).setDown(true);
     await run(t, 30);
-    t.buttons[1].setDown(false);
+    (t.buttons[1] as Button).setDown(false);
     await run(t, 30);
     expect(t.logs).toEqual(['info: tap 1 nil driver 1', 'info: button 1 nil driver 1']);
     t.logs.length = 0;
-    t.buttons[0].setDown(true);
+    (t.buttons[0] as Button).setDown(true);
     await run(t, 600);
-    t.buttons[0].setDown(false);
+    (t.buttons[0] as Button).setDown(false);
     await run(t, 30);
     expect(t.logs).toEqual(['info: hold 0 true driver 0', 'info: hold 0 false driver 0']);
+  });
+
+  it('taps once when a sensor fires button A, however long the sensor stays on', async () => {
+    let pir: Pir | undefined;
+    const t = await boot(`function on_event(ctx, e) log.info(e.name .. " " .. tostring(e.data.index)) end`, 'm5stickc-plus2', (bench) => {
+      pir = bench.add('pir') as Pir;
+      const a = new Trigger({ label: 'A' }, bench);
+      a.bind(`${bench.idOf(pir)}:motion`);
+      return [a, new Trigger({ label: 'B' }, bench)];
+    });
+    (t.buttons[0] as Trigger).isPressed();
+    pir!.wave(); // OUT stays high for 2.5 s
+    await run(t, 3000);
+    expect(t.logs.filter((l) => !l.includes('motion'))).toEqual(['info: tap 0', 'info: button 0']);
   });
 
   it('aborts a runaway callback without killing the app', async () => {
