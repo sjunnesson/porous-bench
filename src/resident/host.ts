@@ -5,7 +5,7 @@
 
 import qrcode from 'qrcode-generator';
 import type { LuaEngine, LuaFactory } from 'wasmoon';
-import { color565, colors } from '../sim/color';
+import { color565, colors, rgb565ToRgb } from '../sim/color';
 import { DIAL_VIA, type Dial, type DialOptions, TRIGGER_VIA, type Trigger, type TriggerOptions } from '../sim/controls/controls';
 import type { LD2410, LD2410Options } from '../sim/inputs/ld2410';
 import type { Display } from '../sim/display';
@@ -75,6 +75,7 @@ interface Api {
   has(name: string): boolean;
   call(name: string, timeMs: number, arg?: unknown): string | null;
   lv_pump(timeMs: number, period: number): string | null;
+  frame(timeMs: number): string | null;
 }
 
 const RING = 8;
@@ -182,6 +183,9 @@ export class ResidentHost {
       if (err) this.reportError(err, true);
     }
     if (this.lv) this.pumpLvgl(now);
+    // leds.on_frame: the LED driver's own frame timer, between ticks too.
+    const frameErr = this.api.frame(this.timeMs);
+    if (frameErr) this.reportError(frameErr, true);
   }
 
   /**
@@ -530,6 +534,26 @@ export class ResidentHost {
       },
       lv_theme: (theme: Record<string, Record<string, unknown>> | null | undefined) => this.lv!.setTheme(theme ?? null),
 
+      // leds: the LED chain when the output is one (strip, ring, matrix), chain order row by row.
+      led_size: () => (d.tech === 'led' ? [d.width(), d.height()] : undefined),
+      led_set: (i: number, c: number) => {
+        const w = d.width();
+        if (i >= 0 && i < w * d.height()) d.drawPixel(i % w, Math.floor(i / w), c24(c));
+      },
+      led_get: (i: number) => {
+        const w = d.width();
+        if (i < 0 || i >= w * d.height()) return 0;
+        const [r, g, bl] = rgb565ToRgb(d.getPixel(i % w, Math.floor(i / w)));
+        return (r << 16) | (g << 8) | bl;
+      },
+      led_fill: (c: number, from: number, count: number) => {
+        const w = d.width();
+        const n = w * d.height();
+        for (let i = Math.max(0, from); i < Math.min(n, from + count); i++) d.drawPixel(i % w, Math.floor(i / w), c24(c));
+      },
+      led_show: () => this.present(),
+      led_brightness: (v: number) => d.setBrightness((Math.min(255, Math.max(0, v)) / 255) * 100),
+
       // light, pir, climate, touch: the part on the bench (put there if missing), read as a table.
       sensor_read: (kind: 'light' | 'pir' | 'climate' | 'touch') => {
         if (!b.sensor) return undefined;
@@ -566,7 +590,7 @@ export class ResidentHost {
       },
       screens_set: (name: string, settings: Record<string, unknown>) => {
         if (name !== 'main') return `screens.set: no screen named '${name}'`;
-        const keys = d.tech === 'lcd' ? ['brightness'] : d.tech === 'oled' ? ['brightness', 'contrast'] : [];
+        const keys = d.tech === 'lcd' || d.tech === 'led' ? ['brightness'] : d.tech === 'oled' ? ['brightness', 'contrast'] : [];
         for (const [k, v] of Object.entries(settings)) {
           if (!keys.includes(k)) return `screens.set: screen 'main' has no setting '${k}'`;
           if (typeof v !== 'number') return `screens.set: '${k}' must be a number`;

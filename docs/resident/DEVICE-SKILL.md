@@ -101,6 +101,37 @@ the radar's state changes. Poll in `on_tick` or react to events, whichever reads
 modules exist only on Bench (or a board whose firmware provides them); guard with `if dial then`
 for apps that should also run on a plain M5Stick.
 
+### light, pir, climate, touch (Bench drivers)
+
+```lua
+light.read()    -- { level = 0..1, lux = 1..10000, raw = 0..4095 }   light.level()
+pir.read()      -- { motion = bool }                                  pir.motion()
+climate.read()  -- { temperature = °C, humidity = % }                 climate.temperature(), climate.humidity()
+touch.read()    -- { touched = bool, raw = touchRead() }              touch.touched()
+```
+
+The first read puts the sensor on the user's bench if it isn't there. PIR and touch also send driver
+events: `motion` `{ moving }` and `touch` `{ touched }` on each change. Prefer a `dial`/`trigger`
+(`via = "light"`, `"temperature"`, `"motion"`, `"touch"` …) when the app only needs "a value" or "a
+press": the user can then connect any part to it.
+
+### leds (Bench driver, LED outputs)
+
+When the user picks an LED strip, ring or matrix as the output (instead of a display), the board
+drives a WS2812B chain. Start the file with `-- @output strip` (strips and rings) or
+`-- @output matrix` so it's listed for that output.
+
+```lua
+leds.count()  leds.width()  leds.height()  leds.xy(x, y)   -- LEDs from 0, chain order, a matrix row by row
+leds.set(i, 0xRRGGBB)  leds.set_rgb(i, r, g, b)  leds.get(i)  leds.fill(c[, from[, count]])  leds.clear()
+leds.hsv(hue_degrees, s, v) -> colour     leds.brightness(0..255)     leds.show()   -- nothing lights until show
+leds.on_frame(function(ctx, dt_ms) ... end[, fps])   -- the LED driver's frame timer, default 50 fps
+```
+
+Put continuous effects in `on_frame` (on_tick is only 10 Hz). Keep brightness modest (~100): full
+white is ~60 mA an LED. A matrix is also an `lgfx` display (8 pixels tall on an 8×8, the built-in
+5×7 font fits), so text and shapes work with `lgfx.bind("main")` and `g:flip()`.
+
 Plus every universal module from Resident's `prompts/sandbox.md`: `log`, `events`, `store`,
 `time`, `datetime` (local zone = the browser's), `screens`.
 

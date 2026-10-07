@@ -2,6 +2,7 @@ import type { DeviceProfile } from '../devices/types';
 import type { Framebuffer, Rect } from '../framebuffer';
 import { EpaperPanel } from './epaper';
 import { LcdPanel } from './lcd';
+import { LedPanel } from './led';
 import { OledPanel } from './oled';
 
 /**
@@ -28,6 +29,8 @@ export function createPanel(profile: DeviceProfile): Panel {
       return new OledPanel(profile);
     case 'epaper':
       return new EpaperPanel(profile);
+    case 'led':
+      return new LedPanel(profile);
   }
 }
 

@@ -7,21 +7,31 @@ import { SimClock } from '../src/sim/clock';
 import { Bench, DEFAULT_PARTS } from '../src/sim/controls/bench';
 import { Dial, Trigger } from '../src/sim/controls/controls';
 import { findDevice } from '../src/sim/devices';
+import type { DeviceProfile } from '../src/sim/devices/types';
 import { Display } from '../src/sim/display';
+import { ledProfile, MATRIX_SIZES } from '../src/sim/leds';
 import { Imu } from '../src/sim/inputs/imu';
 import { LD2410 } from '../src/sim/inputs/ld2410';
 
-// Every bundled app must boot and run without a Lua error on one display of each kind: colour LCD
-// in landscape and portrait, a tiny 1-bit OLED, and e-paper.
-const DISPLAYS = ['m5stickc-plus2', 'waveshare-esp32-c6-lcd-1.47', 'ssd1306-128x32', 'waveshare-epd-2.13-v4'];
+// Every bundled app must boot and run without a Lua error on each kind of output it's written for:
+// display apps on a colour LCD in landscape and portrait, a tiny 1-bit OLED and e-paper; strip apps
+// on a strip and a ring; matrix apps on every matrix size.
+const OUTPUTS: Record<'display' | 'strip' | 'matrix', DeviceProfile[]> = {
+  display: ['m5stickc-plus2', 'waveshare-esp32-c6-lcd-1.47', 'ssd1306-128x32', 'waveshare-epd-2.13-v4'].map((id) => findDevice(id)!),
+  strip: [ledProfile({ kind: 'strip', count: 30 }), ledProfile({ kind: 'ring', count: 12 })],
+  matrix: MATRIX_SIZES.map(([w, h]) => ledProfile({ kind: 'matrix', w, h })),
+};
 const files = import.meta.glob<string>('../src/resident-apps/*.lua', { query: '?raw', import: 'default', eager: true });
-const apps = Object.entries(files).map(([path, code]) => ({ name: path.split('/').pop()!, code }));
+const apps = Object.entries(files).map(([path, code]) => ({
+  name: path.split('/').pop()!,
+  code,
+  target: (/^--\s*@output\s+(display|strip|matrix)\b/m.exec(code)?.[1] ?? 'display') as keyof typeof OUTPUTS,
+}));
 const factory = new LuaFactory();
 
-async function runApp(code: string, deviceId: string, ms: number) {
+async function runApp(code: string, device: DeviceProfile, ms: number) {
   const clock = new SimClock();
   clock.paused = true;
-  const device = findDevice(deviceId)!;
   const display = new Display(device, clock);
   display.setRotation(device.firmwareRotation ?? 0);
   const bench = new Bench(clock);
@@ -65,9 +75,9 @@ async function runApp(code: string, deviceId: string, ms: number) {
 
 describe('bundled apps', () => {
   for (const app of apps) {
-    it(`${app.name} runs on every kind of display`, async () => {
-      for (const id of DISPLAYS) {
-        expect(await runApp(app.code, id, 600), `${app.name} on ${id}`).toEqual([]);
+    it(`${app.name} runs on every kind of ${app.target}`, async () => {
+      for (const device of OUTPUTS[app.target]) {
+        expect(await runApp(app.code, device, 600), `${app.name} on ${device.id}`).toEqual([]);
       }
     }, 60_000);
   }

@@ -1,7 +1,8 @@
 # porous.systems Bench
 
-**A workbench in the browser for ESP32 hardware: the small displays you wire to it (LCD, OLED and
-e-paper) and the buttons, knobs and sensors that drive them, laid out on a desk.** Apps are Lua, written
+**A workbench in the browser for ESP32 hardware: an output (a small LCD, OLED or e-paper display,
+or a WS2812 LED strip, ring or matrix) and the buttons, knobs and sensors you wire to it, laid out
+on a desk.** Apps are Lua, written
 for [Resident](https://github.com/inanimate-tech/resident)'s runtime: try animations, fonts and UI
 ideas without flashing hardware, switch the display under your code with one click, and push the same
 app to a real device. Bench can also join the Resident relay as a device.
@@ -42,8 +43,10 @@ npm run dev        # → http://localhost:5199
 
 The page has three columns. The **left** column holds the code: pick an **App**, and see its
 source, the Resident relay and the console. The **desk** is in the middle. The **right** column holds
-the hardware: the controls, the **Display** picker with its specs, and the parts on the desk. Click a
-section's heading to fold it away; folded sections stay folded next time.
+the hardware: **Hardware**, where you choose the output and put inputs on the bench, and
+**Connections**, where you decide which part drives each of the app's controls. Click a section's
+heading to fold it away. Everything you set up (the output, your parts, the connections, where things
+sit on the desk, folded sections) is saved in this browser and comes back on your next visit.
 Everything runs locally in the browser;
 `npm run build` produces a static site you can host anywhere.
 
@@ -56,8 +59,14 @@ Everything runs locally in the browser;
   their real 2 s / 0.3 s, flash on a full refresh and leave ghosting after partial ones.
 - **One kind of app: Lua, the Resident way.** `init`, `on_tick` at 10 FPS, `on_event`, drawing with
   `lgfx`. Resident apps run unmodified, and Bench adds drivers for the hardware on its desk.
-- **Inputs you can poke.** Push buttons, a rotary encoder, a potentiometer, an IMU you tilt and
-  shake, a buzzer you can hear, and an HLK-LD2410 presence radar. Each has a widget and keyboard keys.
+- **Outputs.** Display modules, or addressable LEDs: a WS2812B strip (8–144 LEDs), a ring (12, 16,
+  24) or a matrix (8×8, 16×16, 32×8), glowing in both views and timed on the real 800 kHz one-wire bus.
+- **Your bench.** Add and remove inputs: push buttons, a rotary encoder, a slide pot, a touch pad, an
+  IMU you tilt and shake, an HLK-LD2410 radar, a PIR motion sensor, a light sensor, a temperature /
+  humidity sensor and a buzzer you can hear. The board brings its own (the M5StickC's buttons, IMU and
+  buzzer). Each part has a widget and a 3D model on the desk.
+- **Connections.** An app declares the controls it needs ("speed", "next"); you connect each one to a
+  part on the bench, and can rewire it while the app runs.
 - **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
   sensor data all follow the simulated clock.
 - **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it, or the bare
@@ -121,47 +130,87 @@ Included, from Bench, all drawn with LVGL and moved by `lvgl.Anim` (see [LVGL](#
 highlight slides between rows), **LD2410 radar** (a presence dashboard with gliding markers and bars),
 **Little devil** (a cute chibi devil whose mood follows the radar: it naps when nobody's there, gets
 curious, schemes, pops up with a "boo!" when you come close and gets cozy if you stay) and **LVGL
-motion** (an `Anim` and an `on_tick` dot side by side). On e-paper they skip the animation and jump to
+motion** (an `Anim` and an `on_tick` dot side by side). For LED strips and rings: **Rainbow chase**,
+**Comet**, **Fire** (Fire2012), **Level meter** (a VU bar you can drive from any sensor) and **Night
+light** (fades in on motion, brighter in a darker room). For LED matrices: **Scrolling text**, **Life**
+and **Plasma**. On e-paper they skip the animation and jump to
 each end state, since every refresh is a slow one. From Resident: the Swiss railway clock, water-sim,
 daisy, accelerometer and the rest of its M5Stick examples, which draw with `lgfx`.
 
-### Controls: swap the hardware, keep the code
+### Your bench, and connecting it
 
-A `dial` or `trigger` describes what an app needs, not which part provides it. Declaring one puts
-its hardware on the desk; in the **Controls** panel each has a **via** menu you can change while the
-app runs:
+Set up the hardware first, then connect it:
 
-| Declare | Read | Hardware it can run on |
+1. **Hardware → Output**: a display module, or an LED strip, ring or matrix. The App menu then shows
+   the apps written for that output.
+2. **Hardware → Inputs**: the parts on the bench. **+ Add an input** puts one on the desk (with its 3D
+   part, wired to the board); **remove** takes it off. The board's own buttons, IMU and buzzer are
+   there too, marked built-in. Your parts stay when you switch apps.
+3. **Connections**: the controls the running app declared. Each reads one *channel* of a part on the
+   bench; pick it from the list (only channels that fit are offered), choose **Keyboard only**, or
+   **add** a part that's missing and connect it in one go.
+
+A `dial` or `trigger` describes what an app needs, not which part provides it:
+
+| Declare | Read | Channels it can connect to |
 |---|---|---|
-| `dial.new(name, { min, max, step, start, wrap, via, label, keys })` | `d:value()`, `d:delta()` (steps since last read), `d:fraction()` | rotary encoder · slide pot · IMU tilt ←→ or ↑↓ · two buttons − / + · LD2410 distance |
-| `trigger.new(name, { key, via, label })` | `t:is_pressed()`, `t:was_pressed()`, `t:was_released()`, `t:pressed_for(ms)` | push button (built-in or external) · encoder push · IMU shake · LD2410 presence |
+| `dial.new(name, { min, max, step, start, wrap, via, label, keys })` | `d:value()`, `d:delta()` (steps since last read), `d:fraction()` | encoder turn · slide pot position · IMU tilt ←→ / ↑↓ · radar distance · light level · temperature · humidity |
+| `trigger.new(name, { key, via, label })` | `t:is_pressed()`, `t:was_pressed()`, `t:was_released()`, `t:pressed_for(ms)` | button press · encoder push · touch · IMU shake · radar presence · PIR motion · light goes dark |
 
-The board's own buttons A and B are triggers too, so they can be swapped the same way. A trigger's
-**push button** uses the device's own button when it has one for it (the M5StickC's A and B, say);
-pick **External button** to put a separate switch on the desk instead. Relative hardware (encoder,
-buttons) steps a dial; absolute hardware (pot, tilt, distance) sets it, and on a swap the new hardware
-takes over at the current value, so nothing jumps. `delta()` works the same either way, so menu code
-doesn't care what's turning it. Parts are shared the way a real bench would: one IMU and one radar
-per board, and one encoder can turn one dial while its push fires a trigger. The choice is remembered
-per app, and the keyboard keys work whatever the hardware.
+`via` says what to connect to first (`"encoder"`, `"pot"`, `"light"`, `"temperature"`, `"motion"` …);
+the first time an app runs, each control connects to a free part that fits, preferring that one (the
+board's buttons A and B go to the board's own buttons). After that your choice is remembered per app.
+An encoder steps a dial; a pot or a sensor sets it across its range, and `delta()` counts steps either
+way, so menu code doesn't care what's turning it. One encoder can turn one dial while its push fires a
+trigger. The keyboard keys work whatever the hardware: they move the connected part itself.
 
 ### Bench drivers
 
 Resident boards add hardware through drivers: a Lua module plus events into `on_event` on the
-`driver` channel. Bench's desk has three, on top of the M5StickC Plus2's (`screen`, `imu`,
-`buzzer`, `button`):
+`driver` channel. Bench's desk has these, on top of the M5StickC Plus2's (`screen`, `imu`, `buzzer`,
+`button`). A sensor module an app uses puts that part on the bench if it isn't there yet.
 
 | Module | Events |
 |---|---|
 | `dial`: as above | `dial` `{ name, value, delta }` when a dial moves |
 | `trigger`: as above | `trigger` `{ name, pressed }` on each press and release |
 | `ld2410.begin({ mode })`, `ld2410.read()` → `{ connected, moving, still, distance_cm, moving_cm, moving_energy, still_cm, still_energy, out }` | `presence` `{ moving, still, distance_cm }` when the state changes |
+| `light.read()` → `{ level, lux, raw }`, `light.level()` | |
+| `pir.read()` → `{ motion }`, `pir.motion()` | `motion` `{ moving }` on each change |
+| `climate.read()` → `{ temperature, humidity }`, `climate.temperature()`, `climate.humidity()` | |
+| `touch.read()` → `{ touched, raw }`, `touch.touched()` | `touch` `{ touched }` on each change |
+| `leds`: see [LED outputs](#led-outputs) | |
 
 The LD2410 is simulated at the UART level: the virtual sensor sends real 23-byte report frames at
 10 Hz and `read()` parses them. Drag the character around the radar (speed decides "moving" vs
 "stationary"), click to send it walking, or let it wander (`mode = "wander"`) or approach.
 Presence is held for the module's 5 s "no-one duration". `screens.get("main")` also carries Bench
 extras: `model`, `controller` and `tech`.
+
+### LED outputs
+
+Choose **LED strip**, **LED ring** or **LED matrix** as the output and the board drives a chain of
+WS2812B LEDs instead of a display. Every `show()` sends the whole chain at 800 kHz (24 bits an LED,
+then the latch), so a 144-LED strip tops out near 230 fps. The `leds` module (a Bench driver):
+
+```lua
+-- @output strip                                   -- in an app: which output it's written for
+local n = leds.count()                             -- also leds.width(), leds.height(), leds.xy(x, y)
+leds.on_frame(function(ctx, dt_ms)                 -- the LED driver's frame timer (50 fps default)
+  for i = 0, n - 1 do                              -- LEDs count from 0, in chain order
+    leds.set(i, leds.hsv(ctx.time_ms / 10 + i * 360 / n, 1, 1))
+  end
+  leds.brightness(96)                              -- 0..255; full white is ~60 mA an LED
+  leds.show()                                      -- nothing lights until show()
+end)
+```
+
+Also `leds.set_rgb(i, r, g, b)`, `leds.get(i)`, `leds.fill(colour[, from[, count]])` and
+`leds.clear()`. `on_frame` runs on the driver's own timer like LVGL's pump, so effects move smoothly
+between 10 Hz ticks. A matrix is also an `lgfx` display (`lgfx.bind("main")`, 8 pixels tall on an
+8×8), so text and drawing work there too; LEDs are row by row from the top-left. An app's
+`-- @output display|strip|matrix` line decides where it appears in the App menu (strip apps run on
+rings too).
 
 ### How it matches Resident
 

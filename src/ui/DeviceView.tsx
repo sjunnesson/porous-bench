@@ -100,7 +100,8 @@ export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
     });
   };
 
-  const busLabel = device.bus.kind === 'spi' ? `SPI ${device.bus.hz / 1e6} MHz` : `I2C ${device.bus.hz / 1e3} kHz`;
+  const busLabel =
+    device.bus.kind === 'ws2812' ? `WS2812 ${device.bus.hz / 1e3} kHz` : device.bus.kind === 'spi' ? `SPI ${device.bus.hz / 1e6} MHz` : `I2C ${device.bus.hz / 1e3} kHz`;
 
   return (
     <section className="stage-wrap">

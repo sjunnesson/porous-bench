@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { SimClock } from '../sim/clock';
 import type { Imu } from '../sim/inputs/imu';
 import type { SketchRun } from '../sim/runner';
+import { drawLeds, ledCells } from '../sim/leds';
 import { buildModel, type ModelButton } from './three/model';
 import { buildPeripherals, type Grab, type Peripheral, wire } from './three/peripherals';
 
@@ -106,8 +107,11 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
 
     const { device } = run;
     const native = document.createElement('canvas');
-    native.width = device.width;
-    native.height = device.height;
+    // LEDs are painted as glowing dots, so their texture needs room for the glow.
+    const leds = device.tech === 'led';
+    const cells = leds ? ledCells(device) : null;
+    native.width = cells ? Math.min(2048, cells.w * 24) : device.width;
+    native.height = cells ? Math.min(2048, cells.h * 24) : device.height;
     const nctx = native.getContext('2d')!;
     const image = new ImageData(device.width, device.height);
 
@@ -647,7 +651,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       }
 
       run.display.panel.render(clock.now(), image.data);
-      nctx.putImageData(image, 0, 0);
+      if (leds) drawLeds(nctx, device, image.data, 0, 0, native.width, native.height);
+      else nctx.putImageData(image, 0, 0);
       model.texture.needsUpdate = true;
 
       // Buttons on the device follow their inputs (mouse or keyboard).

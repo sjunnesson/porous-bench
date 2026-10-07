@@ -155,7 +155,7 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
   }
   screenGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   const texture = track(new THREE.CanvasTexture(screenCanvas));
-  texture.magFilter = THREE.NearestFilter;
+  texture.magFilter = profile.tech === 'led' ? THREE.LinearFilter : THREE.NearestFilter; // LED glow is painted smooth
   texture.minFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
   texture.colorSpace = THREE.SRGBColorSpace;

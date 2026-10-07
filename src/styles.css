@@ -908,6 +908,11 @@ textarea.code {
 .part-remove:hover {
   color: var(--now);
 }
+.output-pick {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
 .add-part {
   margin-top: 12px;
 }

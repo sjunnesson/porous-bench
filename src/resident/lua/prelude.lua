@@ -232,6 +232,62 @@ ld2410 = {
   end,
 }
 
+-- leds: a Bench driver for an addressable LED chain (WS2812 strip, ring or matrix) as the output.
+-- LEDs are numbered from 0 in chain order (a matrix row by row); colours are 0xRRGGBB. Nothing
+-- lights until show(). on_frame(fn[, fps]) runs fn(ctx, dt_ms) on the driver's own frame timer
+-- (default 50 fps), so effects can move smoothly between 10 Hz ticks.
+local function chain(fname)
+  local s = H.led_size()
+  if s == nil then error("leds." .. fname .. ": this board has no LED chain (choose a strip, ring or matrix output)", 3) end
+  return s
+end
+local led_set = wrap("set", "ii", fn("led_set"))
+local led_get = wrap("get", "i", fn("led_get"))
+local frameFn, framePeriod, frameLast = nil, 20, nil
+leds = {
+  count = function() local s = chain("count") return s[1] * s[2] end,
+  width = function() return chain("width")[1] end,
+  height = function() return chain("height")[2] end,
+  xy = function(x, y)
+    local s = chain("xy")
+    return ck_int(y, 2, "xy", 2) * s[1] + ck_int(x, 1, "xy", 2)
+  end,
+  set = function(i, c) chain("set") return led_set(i, c) end,
+  set_rgb = function(i, r, g, b)
+    chain("set_rgb")
+    local function byte(v, k) return math.max(0, math.min(255, ck_int(v, k, "set_rgb", 4))) end
+    return led_set(i, (byte(r, 2) << 16) | (byte(g, 3) << 8) | byte(b, 4))
+  end,
+  get = function(i) chain("get") return led_get(i) end,
+  fill = function(c, from, count)
+    local s = chain("fill")
+    H.led_fill(ck_int(c, 1, "fill", 3), from and ck_int(from, 2, "fill", 3) or 0, count and ck_int(count, 3, "fill", 3) or s[1] * s[2])
+  end,
+  clear = function() local s = chain("clear") H.led_fill(0, 0, s[1] * s[2]) end,
+  brightness = function(v) chain("brightness") H.led_brightness(ck_num(v, 1, "brightness", 1)) end,
+  show = function() chain("show") H.led_show() end,
+  -- 0xRRGGBB from hue in degrees and saturation / value 0..1.
+  hsv = function(h, sat, v)
+    h = ck_num(h, 1, "hsv", 3) % 360
+    sat = math.max(0, math.min(1, ck_num(sat or 1, 2, "hsv", 3)))
+    v = math.max(0, math.min(1, ck_num(v or 1, 3, "hsv", 3)))
+    local c = v * sat
+    local x = c * (1 - math.abs((h / 60) % 2 - 1))
+    local r, g, b
+    if h < 60 then r, g, b = c, x, 0 elseif h < 120 then r, g, b = x, c, 0 elseif h < 180 then r, g, b = 0, c, x
+    elseif h < 240 then r, g, b = 0, x, c elseif h < 300 then r, g, b = x, 0, c else r, g, b = c, 0, x end
+    local m = v - c
+    local function byte(u) return math.floor((u + m) * 255 + 0.5) end
+    return (byte(r) << 16) | (byte(g) << 8) | byte(b)
+  end,
+  on_frame = function(f, fps)
+    if f ~= nil and type(f) ~= "function" then argerr(1, "on_frame", "function expected, got " .. type(f), 3) end
+    frameFn = f
+    framePeriod = 1000 / math.max(1, math.min(60, ck_num(fps or 50, 2, "on_frame", 2)))
+    frameLast = nil
+  end,
+}
+
 -- light, pir, climate, touch: Bench drivers for the sensors on the desk. The first read puts the
 -- part on the bench if it isn't there. PIR and touch also send `motion` / `touch` driver events.
 local function sensor(kind)
@@ -450,6 +506,18 @@ function api.chunk(code)
 end
 
 function api.has(name) return type(rawget(_G, name)) == "function" end
+
+-- leds.on_frame's timer, called on every pass of the host loop.
+function api.frame(time_ms)
+  if not frameFn then return nil end
+  if frameLast and time_ms - frameLast < framePeriod then return nil end
+  local dt = frameLast and (time_ms - frameLast) or framePeriod
+  frameLast = time_ms
+  ctx.time_ms = time_ms
+  local ok, err = run(frameFn, ctx, dt)
+  if ok then return nil end
+  return err
+end
 
 -- LVGL's timer pump, called on every pass of the host loop (not on_tick's 10 Hz).
 function api.lv_pump(time_ms, period)

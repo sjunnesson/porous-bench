@@ -4,6 +4,7 @@ import { residentSketch } from './resident/sketch';
 import { residentApps } from './resident-apps';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
+import { ledProfile, MATRIX_SIZES, type OutputKind, RING_COUNTS, STRIP_COUNTS } from './sim/leds';
 import { devices, findDevice } from './sim/devices';
 import type { Button } from './sim/inputs/button';
 import type { Knob } from './sim/inputs/knob';
@@ -18,7 +19,7 @@ import { Panel } from './ui/Panel';
 import { ResidentPanel } from './ui/ResidentPanel';
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
-const TECH_LABEL = { lcd: 'LCD', oled: 'OLED', epaper: 'E-paper' } as const;
+const TECH_LABEL = { lcd: 'LCD', oled: 'OLED', epaper: 'E-paper', led: 'LED' } as const;
 
 const GROUPS = ['Your app', 'Bench examples', 'Resident examples'] as const;
 
@@ -29,6 +30,8 @@ interface Entry {
   group: (typeof GROUPS)[number];
   sketch: Sketch<InputSpecs>;
   code: string;
+  /** The output it's written for (your own app runs on whatever is chosen). */
+  target?: 'display' | 'strip' | 'matrix';
 }
 
 /** The parts you put on the bench, kept in this browser (first visit: a starter set). */
@@ -70,6 +73,7 @@ const bundled: Entry[] = residentApps.map((a) => ({
   group: a.origin === 'resident' ? 'Resident examples' : 'Bench examples',
   sketch: residentSketch({ name: a.name, code: a.code, description: a.description || undefined }),
   code: a.code,
+  target: a.target,
 }));
 
 export default function App() {
@@ -77,6 +81,11 @@ export default function App() {
   const { paused, speed } = useClockState(clock);
   const [sketchId, setSketchId] = usePersisted('sketch', 'resident:hello-display');
   const [deviceId, setDeviceId] = usePersisted('device', 'waveshare-esp32-c6-lcd-1.47');
+  // The output: a display module, or an LED strip, ring or matrix (kept in this browser).
+  const [outputKind, setOutputKind] = usePersisted<OutputKind>('output-kind', 'display');
+  const [stripCount, setStripCount] = usePersisted('output-strip', 30);
+  const [ringCount, setRingCount] = usePersisted('output-ring', 16);
+  const [matrixSize, setMatrixSize] = usePersisted('output-matrix', '8x8');
   const [view, setView] = usePersisted<ViewState>('view', { zoom: 'fit', grid: true, rotation: 'auto' });
   const [restarts, setRestarts] = useState(0);
   const [logs, setLogs] = useState<LogLine[]>([]);
@@ -95,9 +104,22 @@ export default function App() {
     lastLive.current = live;
   }, [live, setSketchId]);
 
-  const entries: Entry[] = [...(liveEntry ? [liveEntry] : []), ...bundled];
+  const device = useMemo(() => {
+    if (outputKind === 'strip') return ledProfile({ kind: 'strip', count: stripCount });
+    if (outputKind === 'ring') return ledProfile({ kind: 'ring', count: ringCount });
+    if (outputKind === 'matrix') {
+      const [w, h] = matrixSize.split('x').map(Number);
+      return ledProfile({ kind: 'matrix', w, h });
+    }
+    return findDevice(deviceId) ?? devices[0];
+  }, [outputKind, deviceId, stripCount, ringCount, matrixSize]);
+
+  // The App menu shows what fits the output: display apps, strip apps (strips and rings), matrix apps.
+  const target = outputKind === 'ring' ? 'strip' : outputKind;
+  const allEntries: Entry[] = [...(liveEntry ? [liveEntry] : []), ...bundled];
+  const fitting = allEntries.filter((e) => !e.target || e.target === target);
+  const entries = fitting.length ? fitting : allEntries;
   const entry = entries.find((s) => s.id === sketchId) ?? entries[0];
-  const device = findDevice(deviceId) ?? devices[0];
 
   // The bench: the board's own hardware plus your parts. It outlives app switches (a new board
   // brings its own built-ins), and every add or remove is saved in this browser.
@@ -260,17 +282,54 @@ export default function App() {
               run={run}
               output={
                 <DeviceInfo device={device}>
-                  <select className="wide" value={device.id} onChange={(e) => (setDeviceId(e.target.value), e.target.blur())} aria-label="Display">
-                    {byTech.map(({ tech, list }) => (
-                      <optgroup key={tech} label={TECH_LABEL[tech]}>
-                        {list.map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.name}
+                  <div className="output-pick">
+                    <select className="wide" value={outputKind} onChange={(e) => (setOutputKind(e.target.value as OutputKind), e.target.blur())} aria-label="Output">
+                      <option value="display">Display</option>
+                      <option value="strip">LED strip</option>
+                      <option value="ring">LED ring</option>
+                      <option value="matrix">LED matrix</option>
+                    </select>
+                    {outputKind === 'display' && (
+                      <select className="wide" value={device.id} onChange={(e) => (setDeviceId(e.target.value), e.target.blur())} aria-label="Display">
+                        {byTech.map(({ tech, list }) => (
+                          <optgroup key={tech} label={TECH_LABEL[tech]}>
+                            {list.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    )}
+                    {outputKind === 'strip' && (
+                      <select className="wide" value={stripCount} onChange={(e) => (setStripCount(Number(e.target.value)), e.target.blur())} aria-label="LEDs on the strip">
+                        {STRIP_COUNTS.map((n) => (
+                          <option key={n} value={n}>
+                            {n} LEDs
                           </option>
                         ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                      </select>
+                    )}
+                    {outputKind === 'ring' && (
+                      <select className="wide" value={ringCount} onChange={(e) => (setRingCount(Number(e.target.value)), e.target.blur())} aria-label="LEDs on the ring">
+                        {RING_COUNTS.map((n) => (
+                          <option key={n} value={n}>
+                            {n} LEDs
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {outputKind === 'matrix' && (
+                      <select className="wide" value={matrixSize} onChange={(e) => (setMatrixSize(e.target.value), e.target.blur())} aria-label="Matrix size">
+                        {MATRIX_SIZES.map(([w, h]) => (
+                          <option key={`${w}x${h}`} value={`${w}x${h}`}>
+                            {w} × {h}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 </DeviceInfo>
               }
               onBind={(control, source) => {

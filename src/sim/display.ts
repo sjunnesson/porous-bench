@@ -32,7 +32,7 @@ export class Display extends Gfx {
     private clock: SimClock,
     private signal?: AbortSignal,
   ) {
-    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' ? 'rgb565' : 'mono'));
+    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'led' ? 'rgb565' : 'mono'));
     this.panel = createPanel(profile);
   }
 
@@ -69,7 +69,8 @@ export class Display extends Gfx {
     if (!dirty && !(epaper && mode !== 'auto')) return;
 
     let region: Rect = dirty ?? { x: 0, y: 0, w: width, h: height };
-    if (epaper) region = { x: 0, y: 0, w: width, h: height };
+    // E-paper refreshes the whole panel; a WS2812 chain is always sent end to end.
+    if (epaper || tech === 'led') region = { x: 0, y: 0, w: width, h: height };
     if (tech === 'oled') {
       // SSD1306 memory is organised in 8-row pages; a transfer covers whole pages.
       const y0 = Math.floor(region.y / 8) * 8;
@@ -113,11 +114,15 @@ export class Display extends Gfx {
         const ram = Math.ceil(this.profile.width / 8) * this.profile.height;
         return (fullEpaperRefresh ? 2 * ram : ram) + 12; // new (and old) image RAM + update commands
       }
+      case 'led':
+        return r.w * r.h * 3; // GRB, 8 bits each, for every LED in the chain
     }
   }
 
   private transferMs(bytes: number): number {
     const { kind, hz } = this.profile.bus;
+    // WS2812: 1.25 µs a bit, then a ≥280 µs low to latch.
+    if (kind === 'ws2812') return ((bytes * 8) / hz) * 1000 + 0.3;
     // I2C: 9 clocks per byte plus address+control bytes for every ~32-byte chunk.
     const bits = kind === 'i2c' ? bytes * 9 + Math.ceil(bytes / 32) * 18 : bytes * 8;
     return (bits / hz) * 1000;

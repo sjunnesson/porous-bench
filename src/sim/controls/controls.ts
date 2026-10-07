@@ -382,8 +382,12 @@ export class Trigger extends SimInput {
     const hw = this.bench.resolve(this.connection);
     const p = hw && pushableOf(hw.part, hw.channel.id);
     if (p) p.setDown(down); // press the real part, so it animates
-    else {
+    else if (hw?.part.kind === 'pir') (hw.part as Pir).setMoving(down); // wave at the real sensor
+    else if (hw?.part.kind === 'imu') {
+      if (down) (hw.part as Imu).shake();
+    } else {
       this.keyDown = down;
+      this.poll(); // latch the edge now: a tap can be over before the app next reads
       this.changed();
     }
     return true;

@@ -117,6 +117,24 @@ describe('Trigger', () => {
     pad.setDown(false);
     expect(touched.wasPressed()).toBe(true);
   });
+
+  it('turns a key tap into real motion on a PIR, and latches it with nothing connected', () => {
+    const { clock, bench } = setup();
+    const pir = bench.add('pir') as Pir;
+    const motion = new Trigger({ key: 'KeyM', via: 'motion' }, bench);
+    motion.handleKey('KeyM', true);
+    motion.handleKey('KeyM', false);
+    expect(pir.motion()).toBe(true);
+    expect(motion.wasPressed()).toBe(true);
+    clock.advance(pir.holdMs + 10);
+    expect(motion.isPressed()).toBe(false);
+    const loose = new Trigger({ key: 'KeyL' }, bench);
+    loose.bind('none');
+    loose.handleKey('KeyL', true);
+    loose.handleKey('KeyL', false);
+    expect(loose.wasPressed()).toBe(true);
+    expect(loose.wasReleased()).toBe(true);
+  });
 });
 
 describe('Bench', () => {

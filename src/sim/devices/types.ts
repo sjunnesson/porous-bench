@@ -3,7 +3,8 @@
 // The hardware fields (controller, RAM offsets, wiring) aren't simulated byte-for-byte; they're
 // recorded so porting a sketch to the real board has the facts in one place.
 
-export type Tech = 'lcd' | 'oled' | 'epaper';
+/** lcd/oled/epaper are displays; led is addressable LEDs (WS2812): a strip, a ring or a matrix. */
+export type Tech = 'lcd' | 'oled' | 'epaper' | 'led';
 
 /** A face of the body. Coordinates on a face are (u, v) in mm from its centre:
  *  front/back: u = x (right), v = y (up) · left/right: u = depth (towards the viewer), v = y
@@ -39,7 +40,8 @@ export interface DeviceProfile {
   height: number;
 
   controller: string;
-  bus: { kind: 'spi' | 'i2c'; hz: number; i2cAddress?: number };
+  /** ws2812: one-wire, 24 bits per LED at 800 kHz, the whole chain every time. */
+  bus: { kind: 'spi' | 'i2c' | 'ws2812'; hz: number; i2cAddress?: number };
   /** Where the visible area sits inside controller RAM (what drivers call colstart/rowstart). */
   ram?: { width: number; height: number; offsetX: number; offsetY: number };
   /** setRotation() the board's firmware applies (e.g. M5StickC Plus2 runs landscape). Used for Resident apps. */
@@ -65,6 +67,8 @@ export interface DeviceProfile {
     /** Two-colour OLED glass: the first N rows use accentColor. */
     accentRows?: number;
     accentColor?: string;
+    /** LEDs: how the chain is laid out (width × height LEDs, in chain order, row by row). */
+    leds?: { layout: 'line' | 'ring' | 'grid'; pitchMm: number };
   };
 
   epaper?: {
