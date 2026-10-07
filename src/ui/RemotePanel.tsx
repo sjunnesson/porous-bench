@@ -34,6 +34,7 @@ export function RemotePanel({ device, board, app, source }: Props) {
     <Panel
       id="remote"
       title="Real device"
+      className="resident-panel"
       extra={
         active ? (
           <span className={`status ${STATUS[remote.status]}`}>
@@ -44,14 +45,6 @@ export function RemotePanel({ device, board, app, source }: Props) {
     >
       <p className="dim small">Mirror this app onto a Resident board, driven by this bench.</p>
       <div className="row">
-        <Copy
-          label="Copy firmware prompt"
-          done="Firmware prompt copied"
-          title={`Copy a prompt for Claude Code to build Resident firmware for ${device.name} and flash it, so it gets a device ID`}
-          text={() => firmwarePrompt(device, board)}
-        />
-      </div>
-      <div className="row">
         <input
           className="text grow mono"
           value={draft}
@@ -61,6 +54,8 @@ export function RemotePanel({ device, board, app, source }: Props) {
           onBlur={() => remote.setDeviceId(draft)}
           aria-label="Real device ID"
         />
+      </div>
+      <div className="row">
         {active ? (
           <button onClick={() => remote.stop()}>Stop</button>
         ) : (
@@ -77,6 +72,14 @@ export function RemotePanel({ device, board, app, source }: Props) {
       </div>
       {remote.message && <p className={`small ${remote.status === 'error' || remote.status === 'offline' ? 'warn' : 'dim'}`}>{remote.message}</p>}
       {active && remote.status === 'live' && <p className="dim small">{remote.sent} updates sent. Switching apps here sends the new one.</p>}
+      <div className="row">
+        <Copy
+          label="Copy firmware prompt"
+          done="Firmware prompt copied"
+          title={`Copy a prompt for Claude Code to build Resident firmware for ${device.name} and flash it, so it gets a device ID`}
+          text={() => firmwarePrompt(device, board)}
+        />
+      </div>
     </Panel>
   );
 }

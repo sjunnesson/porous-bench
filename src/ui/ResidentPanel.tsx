@@ -60,12 +60,15 @@ export function ResidentPanel({ code, appName }: Props) {
         </button>
       </div>
       <div className="row">
+        <span className="dim">Relay</span>
+        <span className="small">{session.relay.host}</span>
+      </div>
+      <div className="row">
         {session.status === 'off' ? (
           <button onClick={() => session.connect()}>Connect to relay</button>
         ) : (
           <button onClick={() => session.disconnect()}>Disconnect</button>
         )}
-        <span className="dim small">{session.relay.host}</span>
       </div>
 
       {session.status !== 'off' && (
