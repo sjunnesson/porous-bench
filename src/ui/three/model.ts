@@ -27,7 +27,17 @@ export interface BuiltModel {
   dispose(): void;
 }
 
+/** A square whose corner radius reaches its middle is a circle (round glass, a round board). */
+function isCircle(w: number, h: number, r: number): boolean {
+  return Math.abs(w - h) < 0.01 && r >= w / 2 - 0.01;
+}
+
+/** Enough segments that a circle's facets fall under the edge threshold: clean rims, no polygon. */
+const CIRCLE_SEGMENTS = 72;
+
 function roundedRect(w: number, h: number, r: number): THREE.Shape {
+  // Quadratic corners only approximate a quarter circle: a full circle needs a true arc.
+  if (isCircle(w, h, r)) return new THREE.Shape().absarc(0, 0, w / 2, 0, Math.PI * 2, false);
   r = Math.max(0.001, Math.min(r, w / 2, h / 2));
   const s = new THREE.Shape();
   const x = -w / 2;
@@ -53,7 +63,7 @@ function slab(w: number, h: number, d: number, r: number, bevel: number, materia
     bevelThickness: b,
     bevelSize: b,
     bevelSegments: b > 0 ? 3 : 0,
-    curveSegments: 4,
+    curveSegments: isCircle(w, h, r) ? CIRCLE_SEGMENTS : 4,
   });
   geo.translate(0, 0, -(d - 2 * b) / 2);
   // A low threshold keeps each facet of the rounded corners: the striated, hand-drawn look.
@@ -70,7 +80,7 @@ function annulusShape(r: number, hole: number): THREE.Shape {
 }
 
 function annulus(r: number, hole: number, d: number, material = GHOST): THREE.LineSegments {
-  const geo = new THREE.ExtrudeGeometry(annulusShape(r, hole), { depth: d, bevelEnabled: false, curveSegments: 72 });
+  const geo = new THREE.ExtrudeGeometry(annulusShape(r, hole), { depth: d, bevelEnabled: false, curveSegments: CIRCLE_SEGMENTS });
   geo.translate(0, 0, -d / 2);
   const edges = new THREE.EdgesGeometry(geo, 8);
   geo.dispose();
@@ -83,6 +93,7 @@ function circle(r: number, material = GHOST): THREE.LineLoop {
 }
 
 function outline(w: number, h: number, r: number, material = GHOST): THREE.LineLoop {
+  if (isCircle(w, h, r)) return circle(w / 2, material);
   const pts = roundedRect(w, h, r).getPoints(10);
   return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), material);
 }
@@ -171,7 +182,7 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
   const radiusMm = ((profile.look.cornerRadiusPx ?? 0) * sw) / profile.width;
   // A ring's face has the board's hole in it: the desk shows through.
   const screenShape = body.hole ? annulusShape(sw / 2, body.hole) : roundedRect(sw, sh, radiusMm);
-  const screenGeo = track(new THREE.ShapeGeometry(screenShape, body.hole ? 72 : 12));
+  const screenGeo = track(new THREE.ShapeGeometry(screenShape, body.hole || isCircle(sw, sh, radiusMm) ? CIRCLE_SEGMENTS : 12));
   const pos = screenGeo.attributes.position;
   const uv = new Float32Array(pos.count * 2);
   for (let i = 0; i < pos.count; i++) {
