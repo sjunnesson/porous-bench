@@ -14,3 +14,6 @@ dist
 .idea/
 .vercel
 .env*
+
+# PlatformIO build output (firmware/)
+.pio/

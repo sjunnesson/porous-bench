@@ -360,11 +360,14 @@ connected. Use **new** in the Resident panel to rotate it.
 shows) and press **Mirror**.
 
 No Resident firmware on the board yet? **Copy firmware prompt** copies a prompt for Claude Code to
-build and flash it for the hardware selected in Bench. For an M5StickC Plus2 or M5StickS3 that's
-Resident's own `m5stick-demo` firmware. For other boards it follows Resident's
+build and flash it for the hardware selected in Bench, and the board chosen under it. For an
+M5StickC Plus2 or M5StickS3 that's Resident's own `m5stick-demo` firmware. For the 2.13" e-paper on
+the Waveshare ESP32 e-Paper Driver Board (or an ESP32-S3 DevKitC-1 N16R8) it's the firmware in
+[`firmware/epd213/`](firmware/epd213/), built and tested on that board. For other boards it follows Resident's
 [start-building guide](https://github.com/inanimate-tech/resident/blob/main/docs/start-building.md)
 in stages (bring-up, then Resident, then drivers), using the pins, offsets and quirks Bench knows
-for the part and the platform it needs (pioarduino for the ESP32-C6). For an LED output it adds a
+for the part and the platform it needs (pioarduino for the ESP32-C6), plus what bringing up the
+e-paper board taught (check the real part, measure byte-addressable heap, don't block `flip()`). For an LED output it adds a
 `leds` module that matches Bench's. It asks before flashing and ends with the device ID to paste here. Bench sends it the open app, then streams the state of the app's
 controls and the bench's sensors to it as `bench` events, up to ten times a second and only when
 something changed. Switching apps or restarting sends the new run. **Stop** leaves the device running
@@ -372,9 +375,11 @@ the app with the last values it got.
 
 The app reaches the device wrapped in a small shim (`src/resident/lua/remote.lua`). Where the firmware
 has none of Bench's drivers, the shim defines `dial`, `trigger`, `light`, `pir`, `climate`, `touch`,
-`ld2410` and `imu`, and feeds them from those events. It also raises the driver events the app would
-get on Bench (`dial`, `trigger`, `motion`, `touch`, and a `tap` when Bench's button A or B fires).
-Every other event still reaches the app. A driver the firmware does have, like an M5Stick's own IMU,
+`ld2410`, `imu` and a silent `buzzer`, and feeds them from those events; it carries only the ones
+the app names, minified, since a board without PSRAM compiles it in ~70 KB. It also raises the
+driver events the app would get on Bench (`dial`, `trigger`, `motion`, `touch`). Buttons A and B
+arrive as the taps and holds Bench recognised, and the board's own keys are ignored while Bench
+mirrors, so both screens count the same. Every other event still reaches the app. A driver the firmware does have, like an M5Stick's own IMU,
 stays the real one. Error line numbers on the device are offset by the shim's length.
 
 The relay doesn't accept calls from web pages, so Bench sends through its own origin: `/relay/…`
@@ -457,6 +462,7 @@ src/ui/             React UI; ui/three/ builds the wireframe models from each en
 tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol, Lua sandbox and
                     drivers, every bundled and generated app on every kind of output
 docs/resident/      DEVICE-SKILL.md for Resident's agent skills
+firmware/           Resident firmware for real boards Bench supports (epd213: the 2.13" e-paper)
 ```
 
 ## Development

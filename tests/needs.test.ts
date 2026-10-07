@@ -118,9 +118,25 @@ describe('prompts follow the board', () => {
   });
 
   it('names the chosen board in the firmware prompt and says whether to build lvgl', () => {
+    const oled = findDevice('ssd1306-128x64')!;
+    const p = firmwarePrompt(oled, findBoard('esp32-devkitc'));
+    expect(p).toContain('ESP32 DevKitC (WROOM-32, no PSRAM), my choice in Bench');
+    expect(p).toContain('Skip `lvgl`');
+    expect(firmwarePrompt(oled, s3)).toContain('Then `lvgl`');
+    expect(p).toContain('Lessons from boards Bench has already brought up');
+    expect(p).toContain('MALLOC_CAP_8BIT');
+  });
+
+  it("builds Bench's own firmware for the e-paper on the boards it has firmware for", () => {
     const p = firmwarePrompt(epaper, driverBoard);
     expect(p).toContain('Waveshare ESP32 e-Paper Driver Board, my choice in Bench');
-    expect(p).toContain('Skip `lvgl`');
-    expect(firmwarePrompt(epaper, s3)).toContain('Then `lvgl`');
+    expect(p).toContain('`firmware/epd213/device` in https://github.com/sjunnesson/porous-bench');
+    expect(p).toContain('tested on hardware');
+    expect(p).toContain('-DEPD_PANEL=4');
+    expect(p).not.toContain("Follow Resident's guide");
+    expect(p).toContain('Its `DEVICE-SKILL.md`');
+    const onS3 = firmwarePrompt(epaper, s3);
+    expect(onS3).toContain('`firmware/epd213/device-s3`');
+    expect(onS3).toContain("hasn't run on hardware yet");
   });
 });

@@ -13,6 +13,35 @@ const SITE = 'https://bench.porous.systems';
 /** Official Resident firmware for these boards: build it as it is. */
 const M5_ENVS: Record<string, string> = { 'm5stickc-plus2': 'm5stick', m5sticks3: 'm5sticks3' };
 
+const REPO = 'https://github.com/sjunnesson/porous-bench';
+
+/** Firmware Bench ships in its own repo (firmware/), by output and board: build it as it is. */
+const BENCH_FIRMWARE: Record<string, { path: string; tested: boolean; note?: string }> = {
+  'waveshare-epd-2.13-v4|waveshare-esp32-epaper-driver': {
+    path: 'firmware/epd213/device',
+    tested: true,
+    note: 'Its panel may be the older V2 (ribbon HINK-E0213A22, controller IL3897): that build drives the V2, which is what the driver boards Bench has seen carry. If partial refreshes flash the whole screen, the panel is the other generation: rebuild with `-DEPD_PANEL=4`.',
+  },
+  'waveshare-epd-2.13-v4|esp32-s3-devkitc-1-n16r8': {
+    path: 'firmware/epd213/device-s3',
+    tested: false,
+    note: 'It compiles but hasn\'t run on hardware yet: wire it as its README says and go through its first-flash checklist with me (PSRAM reported, orientation, partial refreshes in place, BOOT taps).',
+  },
+};
+
+/** What bringing up Resident on real boards has taught, for hardware without firmware yet. */
+const DISPLAY_LESSONS = [
+  '- `flip()` must not wait for a slow panel: Resident aborts a Lua dispatch after 1 s. Snapshot the frame, return, and refresh from the driver\'s `update()`; for e-paper, one refresh at a time, newest frame wins, skip a frame identical to the one on the glass.',
+  '- On a 1-bit panel, give the `lgfx` module a `Resident::LgfxTarget` that draws into the same 1-bit canvas as `screen` (luminance >= 50% is white) instead of a full RGB565 sprite.',
+];
+const LESSONS = [
+  '- Check the real part against Bench\'s profile before trusting it: read the ribbon or the back sticker (a "2.13 V4" may turn out to be a V2 with another controller). A test card that looks right can hide the wrong controller; partial refresh is what tells them apart.',
+  '- Measure app memory with `heap_caps_get_free_size(MALLOC_CAP_8BIT)` and `heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)`, not `ESP.getFreeHeap()`: on a classic ESP32 that also counts IRAM Lua can\'t use. Without PSRAM about 70 KB is left once Wi-Fi and TLS are up; LVGL\'s first bind keeps ~30 KB, so leave `lvgl` out there.',
+  '- Opening the serial port resets a board with a USB-serial bridge (DTR/RTS); open it with both lines released, or it can stay held in reset.',
+  '- A key on a strapping pin (IO12 on the Waveshare e-Paper Driver Board) may have no pull-up of its own: enable `INPUT_PULLUP` after boot.',
+  `- When it works, tell me the libraries it has and the app memory you measured, so Bench's board entry (src/sim/boards.ts in ${REPO}) lists the right apps for it.`,
+];
+
 const pins = (w: Record<string, number>) =>
   Object.entries(w)
     .map(([k, v]) => `${k} ${v}`)
@@ -60,6 +89,15 @@ function hardwareSection(p: DeviceProfile, board?: Board): string[] {
 }
 
 function planSection(p: DeviceProfile, board?: Board): string[] {
+  const shipped = board && BENCH_FIRMWARE[`${p.id}|${board.id}`];
+  if (shipped) {
+    return [
+      `Bench ships firmware for this display on this board: \`${shipped.path}\` in ${REPO} (its README has the wiring, the pins and what was learnt bringing it up). It pulls Resident from GitHub, pinned to the commit it was ${shipped.tested ? 'tested on hardware' : 'built'} against.`,
+      `1. Clone ${REPO} and build \`${shipped.path}\` as it is (\`pio run\`).`,
+      '2. Find the board\'s port (`pio device list`), confirm it with me, then flash: `pio run -t upload`.',
+      ...(shipped.note ? [`3. ${shipped.note}`, '4. Go to step "First boot" below.'] : ['3. Go to step "First boot" below.']),
+    ];
+  }
   const env = M5_ENVS[p.id];
   if (env) {
     return [
@@ -93,6 +131,7 @@ function planSection(p: DeviceProfile, board?: Board): string[] {
     );
   }
   lines.push('- Flashing replaces whatever is on the board: confirm the port with me before the first upload.');
+  lines.push('', 'Lessons from boards Bench has already brought up:', ...(p.look.leds ? [] : DISPLAY_LESSONS), ...LESSONS);
   return lines;
 }
 
@@ -118,7 +157,9 @@ export function firmwarePrompt(device: DeviceProfile, board?: Board): string {
     '## First boot',
     '- The board opens a "Resident …" Wi-Fi hotspot: tell me to join it from my phone and enter my Wi-Fi. Then watch the serial monitor (`pio device monitor`) until it connects and prints its device ID.',
     '- Tell me the device ID. In Bench I paste it into **Real device** and press **Mirror**.',
-    '- Write a `DEVICE-SKILL.md` for this firmware (the Resident plugin\'s write-device-skill skill does this), listing exactly which modules it has, so apps can be written for it.',
+    board && BENCH_FIRMWARE[`${device.id}|${board.id}`]
+      ? `- Its \`DEVICE-SKILL.md\` (next to its \`platformio.ini\`) lists exactly which modules it has: use it when writing apps for it.`
+      : '- Write a `DEVICE-SKILL.md` for this firmware (the Resident plugin\'s write-device-skill skill does this), listing exactly which modules it has, so apps can be written for it.',
     '',
     '## Rules',
     '- Ask me before anything that touches the hardware (flashing, erasing) and whenever a pin or board detail isn\'t certain.',

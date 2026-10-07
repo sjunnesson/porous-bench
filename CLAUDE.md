@@ -1,0 +1,45 @@
+# porous.systems Bench
+
+A browser simulator for ESP32 displays, LED chains and the inputs around them, running Resident Lua
+apps; it can also mirror an app onto a real Resident board. Live at https://bench.porous.systems.
+
+## Layout
+
+- `src/sim/`: the simulated hardware. `devices/` (one profile per output), `boards.ts` (the boards
+  that drive them: libraries, app memory), `display.ts` + `panels/` (bus and refresh timing),
+  `controls/` (the bench: parts, dials, triggers), `inputs/`.
+- `src/resident/`: the Resident runtime in the browser (`host.ts`), matching apps to hardware
+  (`needs.ts`), the mirror to a real board (`remote.ts` + `lua/remote.lua`, the shim it wraps apps
+  in), and the prompts Bench copies for Claude (`prompt.ts` for apps, `firmware.ts` for firmware).
+- `src/resident-apps/`: bundled Lua apps. `docs/resident/DEVICE-SKILL.md`: Bench's device skill.
+- `firmware/`: Resident firmware Bench ships for real boards (PlatformIO; Resident pinned by commit).
+
+## Commands
+
+- `npm test` (vitest), `npm run typecheck`, `npm run build`; dev server: `npx vite`.
+- Pushing `main` deploys production on Vercel; don't also run `vercel --prod` (it deploys twice).
+
+## Conventions
+
+- **Bench must behave like the real hardware.** When a real board and Bench disagree, fix Bench to
+  match the board (e.g. e-paper refreshes one frame at a time, newest wins; every button press
+  counts). Measure on hardware before changing a model.
+- **Every bundled app says what it needs.** Line 1 `-- Name: description`; `-- @output strip|matrix`
+  for LED apps; `-- @needs motion color WxH` for what the code can't show (animates / colour only /
+  smallest screen its fixed layout fits). Libraries and memory are read from the code
+  (`needs.ts`). Tests fail if an app runs nowhere or doesn't boot wrapped for a real device.
+- **A new output or board** goes in `src/sim/devices/` or `src/sim/boards.ts` with its libraries
+  and *measured* app memory (`heap_caps_get_free_size(MALLOC_CAP_8BIT)` after Wi-Fi + TLS, not
+  `ESP.getFreeHeap()`); unmeasured stays unset. Keep the Boards table in DEVICE-SKILL.md in step.
+- **The mirror shim is compiled on the device**, often in ~70 KB: keep `lua/remote.lua` small, put
+  each stand-in between `-- @@part <module>` / `-- @@end` (sent only to apps that name it). While
+  Bench mirrors, the board's own keys are ignored and buttons A/B arrive as the taps and holds
+  Bench's host recognised (`gestureCounts()`).
+- **Other Claude sessions learn Bench from the prompts and the device skill.** When behaviour
+  changes, update `prompt.ts`, `firmware.ts` (shipped firmware in `BENCH_FIRMWARE`, hardware
+  lessons in `LESSONS`) and `docs/resident/DEVICE-SKILL.md` (prompts fetch it from GitHub `main`,
+  so it's live once pushed).
+- **Firmware for a real board** lives in `firmware/<name>/`, one buildable PlatformIO project per
+  stage of Resident's start-building guide, with a README of what bring-up taught. Ask before
+  flashing a board.
+- Commits: a short title, then a body that says why. Comments and docs in plain, concrete prose.

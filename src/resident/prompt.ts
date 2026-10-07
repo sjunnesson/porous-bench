@@ -150,6 +150,7 @@ export function appPrompt(input: PromptInput): string {
     '## Skills and references',
     '- Use the Resident Claude Code plugin\'s skills: create-app to write the app (it validates it too), push-app to send it. If they\'re missing: `/plugin marketplace add inanimate-tech/agent-plugins`, then `/plugin install resident@inanimate`.',
     `- Bench's device skill describes this board, its Lua modules and the Bench drivers. Download it into the current folder as \`./DEVICE-SKILL.md\`: ${DEVICE_SKILL}. Both skills pick it up from there (without it, push-app falls back to the plain M5Stick surface for \`sim-\` devices).`,
+    "- Its sections *Which outputs list an app*, *Boards: libraries and memory* and *On a real board (Bench's Mirror)* say how Bench matches apps to hardware and runs them on a real board: follow them.",
     `- Bench itself: ${SITE} (source: ${REPO}).`,
     '',
     '## Output',

@@ -23,7 +23,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 | Waveshare ESP32-C6-LCD-1.47 | 172×320 | 16 | dark | rounded corners: keep ~20 px clear |
 | 1.3" ST7789 | 240×240 | 16 | dark | |
 | SSD1306 OLED | 128×64 or 128×32 | 1 | dark | colours threshold to lit/unlit at 50% brightness |
-| 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh: 2 s full, 0.3 s partial; flip rarely |
+| 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh (0.3 s partial, 2 s full every 10th); it runs in the background and only the newest frame reaches the glass: flip only when something changed |
 
 On 1-bit screens use pure white for marks on a dark scheme, pure black on a light one.
 
@@ -35,6 +35,53 @@ On 1-bit screens use pure white for marks on a dark scheme, pure black on a ligh
 pad and can shake it. `imu.gyro()` in °/s. `imu.temp()` returns 0.
 
 **Buzzer**: square-wave piezo, 20–20000 Hz (clamped), durations up to 5000 ms.
+
+## Which outputs list an app
+
+Bench lists an app only for outputs, and boards, that can run it. Say what the code can't show in
+the header:
+
+```lua
+-- Tilt ball: roll a ball with the IMU   -- line 1: "Name: description"
+-- @output display                       -- display (the default) | strip (strips and rings) | matrix
+-- @needs motion color 240x135           -- only the ones that apply
+```
+
+- `motion`: it animates (so not e-paper). `color`: it means nothing in 1-bit. `WxH`: the smallest
+  screen, as apps see it, that its fixed layout fits. An app that adapts through `screens.get`
+  needs none of these.
+- Bench reads the rest from the code: the libraries it binds (`lvgl.bind` needs a board with LVGL)
+  and its size (the memory it takes on a real board).
+
+## Boards: libraries and memory
+
+The board driving the output decides what an app gets. Bench shows it under the display, with a
+**Board** menu for bare modules and LEDs:
+
+| Board | Libraries | Memory for apps |
+|---|---|---|
+| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8 | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
+| ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~70 KB |
+| Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`, `lvgl` | not measured yet |
+
+On a board without PSRAM, draw with `lgfx` (or `screen`) and keep the app small: receiving and
+compiling it takes about 6x its size, so stay under ~6 KB of Lua, and `datetime` costs ~35 KB
+once touched.
+
+## On a real board (Bench's Mirror)
+
+Bench's Real device panel pushes the open app to a Resident device and drives it from the bench:
+
+- The app travels wrapped in a small shim (only the stand-ins it uses, minified) that defines
+  `dial`, `trigger`, `light`, `pir`, `climate`, `touch`, `ld2410`, `imu` and a silent `buzzer` where
+  the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
+  unchanged.
+- Buttons A and B: the taps and holds Bench recognises are replayed on the board, and the board's
+  own keys are ignored while Bench mirrors, so both screens count the same. `button.press_count()`
+  counts Bench's taps.
+- E-paper: the real panel refreshes in the background, newest frame wins, exactly as Bench shows it.
+- An app the board can't load (out of memory, a module it lacks) leaves the previous app on screen:
+  Bench only knows the relay took it. The Board line in Bench tells you what fits.
 
 ## Lua modules
 
@@ -124,9 +171,6 @@ press": the user can then connect any part to it.
 When the user picks an LED strip, ring or matrix as the output (instead of a display), the board
 drives a WS2812B chain. Start the file with `-- @output strip` (strips and rings) or
 `-- @output matrix` so it's listed for that output.
-On any output, an app that animates, only makes sense in colour, or has a fixed layout says so on
-the next line, `-- @needs motion color 240x135` (any of the three; WxH is the smallest screen it
-fits), so Bench lists it only where it can run.
 
 ```lua
 leds.count()  leds.width()  leds.height()  leds.xy(x, y)   -- LEDs from 0, chain order, a matrix row by row
@@ -142,7 +186,7 @@ white is ~60 mA an LED. A matrix is also an `lgfx` display (8 pixels tall on an 
 Plus every universal module from Resident's `prompts/sandbox.md`: `log`, `events`, `store`,
 `time`, `datetime` (local zone = the browser's), `screens`.
 
-### lvgl (optional)
+### lvgl (optional; only on boards with LVGL)
 
 LVGL 9 through luavgl, per Resident's `prompts/lvgl.md`. `lvgl.bind("main")` returns the display
 handle and claims the panel (`lgfx` flips are then dropped: one library per panel). Fonts: the
