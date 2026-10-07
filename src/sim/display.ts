@@ -26,6 +26,16 @@ export class Display extends Gfx {
   readonly stats: DisplayStats = { shows: 0, bytes: 0, busMs: 0, refreshMs: 0, fullRefreshes: 0 };
   private partialsSinceFull = 0;
   private everRefreshed = false;
+  // E-paper, driven the way its firmware drives it: one refresh at a time.
+  /** The newest frame shown while the panel was busy: the only one that will reach the glass. */
+  private epaperNext: Uint8Array | null = null;
+  /** A mode forced by the newest show(): 'full', 'partial', or 'auto'. */
+  private epaperMode: RefreshMode = 'auto';
+  /** The frame on the glass, or going there. */
+  private epaperLast: Uint8Array | null = null;
+  /** The refresh loop while it runs: resolves once no frame is waiting. */
+  private epaperRun: Promise<void> | null = null;
+  private epaperFb: Framebuffer | null = null;
 
   constructor(
     readonly profile: DeviceProfile,
@@ -43,7 +53,11 @@ export class Display extends Gfx {
     return this.fb.format === 'rgb565';
   }
   hasPendingChanges(): boolean {
-    return this.fb.isDirty();
+    return this.fb.isDirty() || this.epaperNext !== null;
+  }
+  /** An e-paper refresh is running (the panel's BUSY line). */
+  refreshing(): boolean {
+    return this.epaperRun !== null;
   }
   /** Mark the whole frame changed, so the next show() sends every pixel (a full-frame blit). */
   invalidate(): void {
@@ -63,14 +77,14 @@ export class Display extends Gfx {
    * (see profile.epaper.fullRefreshEvery); 'full'/'partial' force a mode.
    */
   async show(mode: RefreshMode = 'auto'): Promise<void> {
+    if (this.profile.tech === 'epaper') return this.showEpaper(mode);
     const { width, height, tech } = this.profile;
     const dirty = this.fb.takeDirty();
-    const epaper = tech === 'epaper';
-    if (!dirty && !(epaper && mode !== 'auto')) return;
+    if (!dirty) return;
 
-    let region: Rect = dirty ?? { x: 0, y: 0, w: width, h: height };
-    // E-paper refreshes the whole panel; a WS2812 chain is always sent end to end.
-    if (epaper || tech === 'led') region = { x: 0, y: 0, w: width, h: height };
+    let region: Rect = dirty;
+    // A WS2812 chain is always sent end to end.
+    if (tech === 'led') region = { x: 0, y: 0, w: width, h: height };
     if (tech === 'oled') {
       // SSD1306 memory is organised in 8-row pages; a transfer covers whole pages.
       const y0 = Math.floor(region.y / 8) * 8;
@@ -78,24 +92,63 @@ export class Display extends Gfx {
       region = { x: region.x, y: y0, w: region.w, h: y1 - y0 };
     }
 
-    const full = epaper && (mode === 'full' || (mode === 'auto' && this.needsFullRefresh()));
-    const bytes = this.transferBytes(region, full);
+    const bytes = this.transferBytes(region, false);
     const busMs = this.transferMs(bytes);
     this.panel.write(this.fb, region);
     this.stats.shows++;
     this.stats.bytes += bytes;
     this.stats.busMs += busMs;
     await this.clock.sleep(busMs, this.signal);
+  }
 
-    if (epaper && this.panel.refresh) {
-      const busy = this.panel.refresh(full ? 'full' : 'partial', this.clock.now());
+  /**
+   * E-paper as the firmware drives it: the panel is BUSY until a refresh ends, so a frame shown
+   * meanwhile waits, and only the newest waiting frame goes to the glass; a frame identical to the
+   * one there isn't refreshed again. Resolves when the frame (or a newer one) is on the glass. Only
+   * actual refreshes count towards the periodic full one.
+   */
+  private showEpaper(mode: RefreshMode): Promise<void> {
+    const dirty = this.fb.takeDirty();
+    if (dirty || mode !== 'auto') {
+      this.epaperNext = (this.fb.data as Uint8Array).slice();
+      if (mode !== 'auto') this.epaperMode = mode;
+      if (!this.epaperRun) {
+        this.epaperRun = this.runEpaper().finally(() => (this.epaperRun = null));
+      }
+    }
+    return this.epaperRun ?? Promise.resolve();
+  }
+
+  private async runEpaper(): Promise<void> {
+    const { width, height } = this.profile;
+    const whole = { x: 0, y: 0, w: width, h: height };
+    this.epaperFb ??= new Framebuffer(width, height, 'mono');
+    while (this.epaperNext) {
+      const frame = this.epaperNext;
+      this.epaperNext = null;
+      const mode = this.epaperMode;
+      this.epaperMode = 'auto';
+      const full = !this.everRefreshed || mode === 'full' || (mode === 'auto' && this.needsFullRefresh());
+      if (!full && this.epaperLast && sameBytes(frame, this.epaperLast)) continue;
+      this.epaperLast = frame;
+
+      const bytes = this.transferBytes(whole, full);
+      const busMs = this.transferMs(bytes);
+      this.epaperFb.data.set(frame);
+      this.panel.write(this.epaperFb, whole);
+      this.stats.shows++;
+      this.stats.bytes += bytes;
+      this.stats.busMs += busMs;
+      await this.clock.sleep(busMs, this.signal);
+
+      const busy = this.panel.refresh!(full ? 'full' : 'partial', this.clock.now());
       this.everRefreshed = true;
       if (full) {
         this.partialsSinceFull = 0;
         this.stats.fullRefreshes++;
       } else this.partialsSinceFull++;
       this.stats.refreshMs += busy;
-      await this.clock.sleep(busy, this.signal); // firmware polls BUSY here
+      await this.clock.sleep(busy, this.signal); // the firmware polls BUSY here
     }
   }
 
@@ -127,4 +180,10 @@ export class Display extends Gfx {
     const bits = kind === 'i2c' ? bytes * 9 + Math.ceil(bytes / 32) * 18 : bytes * 8;
     return (bits / hz) * 1000;
   }
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }

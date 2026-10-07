@@ -54,6 +54,9 @@ interface Pushable {
   wasPressed(): boolean;
   wasReleased(): boolean;
   setDown(down: boolean): void;
+  /** Edges so far, never consumed. */
+  readonly presses: number;
+  readonly releases: number;
 }
 
 /** A 0..1 reading from an absolute channel, or null when the part has nothing to say (radar: no one). */
@@ -325,6 +328,9 @@ export class Trigger extends SimInput {
   private pressed = false;
   private released = false;
   private since = 0;
+  /** The connected button's edge counts as far as this trigger has taken them. */
+  private seenPresses = 0;
+  private seenReleases = 0;
   /** Press and release edges so far: a host can turn them into events without consuming them. */
   presses = 0;
   releases = 0;
@@ -381,6 +387,8 @@ export class Trigger extends SimInput {
     const p = hw && pushableOf(hw.part, hw.channel.id);
     p?.wasPressed();
     p?.wasReleased();
+    this.seenPresses = p?.presses ?? 0;
+    this.seenReleases = p?.releases ?? 0;
     this.changed();
   }
   bind(id: string): void {
@@ -421,9 +429,16 @@ export class Trigger extends SimInput {
     const hw = this.bench.resolve(this.connection);
     const p = hw && pushableOf(hw.part, hw.channel.id);
     if (p) {
-      // Buttons keep their own edge flags, so even a tap shorter than the app's loop counts.
-      if (p.wasPressed()) this.edge(true);
-      if (p.wasReleased()) this.edge(false);
+      // Buttons count their own edges, so every tap counts, even several between two reads.
+      for (;;) {
+        if (this.seenPresses <= this.seenReleases && this.seenPresses < p.presses) {
+          this.seenPresses++;
+          this.edge(true);
+        } else if (this.seenReleases < p.releases) {
+          this.seenReleases++;
+          this.edge(false);
+        } else break;
+      }
       this.prev = p.isPressed();
       return;
     }

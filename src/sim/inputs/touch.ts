@@ -16,6 +16,10 @@ export class Touch extends SimInput {
   private down = false;
   private pressed = false;
   private released = false;
+  /** Presses and releases so far: a reader that can't watch every edge counts them instead of
+   *  taking the once-per-read flags, so quick taps between two reads all count. */
+  presses = 0;
+  releases = 0;
   private since = 0;
 
   constructor(
@@ -31,8 +35,13 @@ export class Touch extends SimInput {
     if (down === this.down) return;
     this.down = down;
     this.since = this.clock.now();
-    if (down) this.pressed = true;
-    else this.released = true;
+    if (down) {
+      this.pressed = true;
+      this.presses++;
+    } else {
+      this.released = true;
+      this.releases++;
+    }
     this.changed();
   }
 

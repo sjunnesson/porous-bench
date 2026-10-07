@@ -18,10 +18,10 @@ const factory = new LuaFactory();
 /** A real Resident device, as far as the shim can tell: none of Bench's drivers. */
 const FIRMWARE = 'dial, trigger, light, pir, climate, touch, ld2410 = nil, nil, nil, nil, nil, nil, nil\n';
 
-async function device(app: string, firmware = FIRMWARE) {
+async function device(app: string, firmware = FIRMWARE, displayId = 'waveshare-esp32-c6-lcd-1.47') {
   const clock = new SimClock();
   clock.paused = true;
-  const display = new Display(findDevice('waveshare-esp32-c6-lcd-1.47')!, clock);
+  const display = new Display(findDevice(displayId)!, clock);
   const logs: string[] = [];
   const board: ResidentBoard = {
     display,
@@ -47,7 +47,7 @@ async function device(app: string, firmware = FIRMWARE) {
       }
     }
   };
-  return { host, error, logs, run };
+  return { host, error, logs, run, board, display, clock };
 }
 
 const send = (host: ResidentHost, data: unknown) => host.queue({ name: 'bench', data: data as Record<string, unknown>, from: 'bench', channel: 'app' });
@@ -102,6 +102,46 @@ describe('remote mirror', () => {
     expect(t.error).toBeUndefined();
     await t.run(50);
     expect(t.logs).toEqual(['beeped']);
+  });
+
+  it('counts every quick tap on e-paper, refreshing in the background as the board does', async () => {
+    const t = await device(
+      `local g = lgfx.bind("main")
+      local taps = 0
+      local function draw() g:fillScreen(0xFFFFFF) g:setCursor(4, 4) g:print("taps " .. taps) g:flip() end
+      function init(ctx) draw() end
+      function on_event(ctx, e) if e.name == "tap" then taps = taps + 1 draw() log.info("taps", taps) end end`,
+      FIRMWARE,
+      'waveshare-epd-2.13-v4',
+    );
+    expect(t.error).toBeUndefined();
+    const a = t.board.buttons[0] as Button;
+    await t.run(50); // the first (full, 2 s) refresh is under way
+    expect(t.display.refreshing()).toBe(true);
+    // Five quick clicks, faster than the panel refreshes, some between two passes of the loop.
+    for (let i = 0; i < 5; i++) {
+      a.setDown(true);
+      a.setDown(false);
+      if (i % 2) await t.run(20);
+    }
+    await t.run(50);
+    expect(t.logs.at(-1)).toBe('taps\t5'); // none lost, even while the panel was BUSY
+    expect(t.display.stats.shows).toBeLessThan(6); // the frames in between were never refreshed
+  });
+
+  it('gives the mirror every press, however quick', () => {
+    const clock = new SimClock();
+    clock.paused = true;
+    const bench = new Bench(clock);
+    bench.load(DEFAULT_PARTS);
+    const a = new Trigger({ builtin: 0 }, bench);
+    const button = bench.resolve(a.connection)!.part as Button;
+    expect(button.kind).toBe('button');
+    for (let i = 0; i < 3; i++) {
+      button.setDown(true);
+      button.setDown(false);
+    }
+    expect(new SnapshotReader().read([a], bench, { a }).t['@a']).toEqual([3, 3, 0]);
   });
 
   it("reads Bench's controls and sensors into an update, counting dial steps", () => {

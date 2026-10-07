@@ -153,6 +153,34 @@ describe('e-paper', () => {
     await settle(clock, d.show('full'), 5);
     expect(pixel(d, 5, 5)[0]).toBe(paperR);
   });
+
+  it('refreshes one frame at a time, as the firmware does: the newest waiting frame wins', async () => {
+    const clock = pausedClock();
+    const d = new Display(device('waveshare-epd-2.13-v4'), clock);
+    d.fillScreen(colors.WHITE);
+    const first = d.show(); // the first refresh (full, 2 s) starts now
+    expect(d.refreshing()).toBe(true);
+    // Three more frames while the panel is BUSY: only the last one should reach the glass.
+    for (const x of [0, 30, 60]) {
+      d.fillScreen(colors.WHITE);
+      d.fillRect(x, 0, 20, 20, colors.BLACK);
+      void d.show();
+    }
+    expect(d.hasPendingChanges()).toBe(true);
+    await settle(clock, first, 5);
+    await settle(clock, d.show(), 5); // nothing new: resolves once the waiting frame is on the glass
+    expect(d.refreshing()).toBe(false);
+    expect(d.stats.shows).toBe(2); // the first frame and the newest, nothing in between
+    const ink = pixel(d, 65, 5)[0];
+    expect(ink).toBeLessThan(80);
+    expect(pixel(d, 5, 5)[0]).toBeGreaterThan(150); // the frame drawn at x = 0 never showed
+
+    // The same frame again isn't refreshed again; only real refreshes count towards the full one.
+    d.fillScreen(colors.WHITE);
+    d.fillRect(60, 0, 20, 20, colors.BLACK);
+    await settle(clock, d.show(), 5);
+    expect(d.stats.shows).toBe(2);
+  });
 });
 
 describe('LD2410', () => {

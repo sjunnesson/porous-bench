@@ -41,6 +41,9 @@ export interface Pressable {
   isPressed(): boolean;
   wasPressed(): boolean;
   wasReleased(): boolean;
+  /** Edges so far, never consumed (a trigger brings them up to date in isPressed()). */
+  readonly presses: number;
+  readonly releases: number;
   /** Fired by a sensor (motion, presence, shake…) rather than pressed: its moments are taps, never holds. */
   readonly sensed?: boolean;
 }
@@ -102,7 +105,8 @@ export class ResidentHost {
   private tickErrors = 0;
   private lastTickErrorReport = -Infinity;
   private taps = 0;
-  private gestures: { downAt: number; held: boolean }[] = [];
+  /** Per button: when it went down, whether it became a hold, and the edges taken so far. */
+  private gestures: { downAt: number; held: boolean; presses: number; releases: number }[] = [];
   // Bench drivers the app declared, with what their events last reported.
   private dials = new Map<string, { dial: Dial; last: number }>();
   private triggers = new Map<string, { trigger: Trigger; presses: number; releases: number }>();
@@ -121,7 +125,8 @@ export class ResidentHost {
   ) {
     this.loadedAt = board.now();
     this.lastTick = this.loadedAt;
-    this.gestures = board.buttons.map(() => ({ downAt: -1, held: false }));
+    // Edges from before the app started aren't its gestures.
+    this.gestures = board.buttons.map((b) => (b.isPressed(), { downAt: -1, held: false, presses: b.presses, releases: b.releases }));
   }
 
   /** Compile and init an app. Resolves with the host, or with the compile/init error. */
@@ -200,11 +205,18 @@ export class ResidentHost {
     const lv = this.lv!;
     if (this.owner !== 'lvgl' || !lv.dirty || now - this.lastLvRefresh < LV_PERIOD_MS) return;
     this.lastLvRefresh = now;
-    if (lv.refresh()) {
-      const shown = this.board.display.show();
-      shown.catch(() => {});
-      this.presents.push(shown);
-    }
+    if (lv.refresh()) this.track(this.board.display.show());
+  }
+
+  /**
+   * A frame on its way to the glass. The loop waits for it to cross the bus before the next pass,
+   * but not for an e-paper refresh: the firmware's flip returns at once and the panel refreshes in
+   * the background (newest frame wins), so taps and ticks keep coming while it's BUSY.
+   */
+  private track(shown: Promise<void>) {
+    // Stopping the app mid-transfer rejects it; settle() reports that, so don't let it surface as unhandled.
+    shown.catch(() => {});
+    if (this.board.display.tech !== 'epaper') this.presents.push(shown);
   }
 
   /** Wait for every flip of the last pass to finish travelling over the bus. */
@@ -240,25 +252,38 @@ export class ResidentHost {
     const now = this.board.now();
     this.board.buttons.forEach((b, index) => {
       const g = this.gestures[index];
-      const pressed = b.wasPressed();
-      const released = b.wasReleased();
+      b.isPressed(); // a trigger brings its edge counts up to date here
       if (b.sensed) {
         // A PIR stays on for seconds after motion: that's one moment, not a long press.
-        if (pressed) this.tap(index);
+        while (g.presses < b.presses) {
+          g.presses++;
+          this.tap(index);
+        }
+        g.releases = b.releases;
         g.downAt = -1;
         g.held = false;
         return;
       }
-      if (pressed && g.downAt < 0) g.downAt = now;
+      // Every press and release since the last pass, in order, so quick taps all count even when
+      // the loop was busy (the device counts them all too).
+      for (;;) {
+        if (g.presses <= g.releases && g.presses < b.presses) {
+          g.presses++;
+          g.downAt = now;
+          g.held = false;
+        } else if (g.releases < b.releases) {
+          g.releases++;
+          if (g.downAt >= 0) {
+            if (g.held) this.queue({ name: 'hold', channel: 'driver', data: { index, held: false } });
+            else this.tap(index);
+          }
+          g.downAt = -1;
+          g.held = false;
+        } else break;
+      }
       if (g.downAt >= 0 && !g.held && now - g.downAt >= 500) {
         g.held = true;
         this.queue({ name: 'hold', channel: 'driver', data: { index, held: true } });
-      }
-      if (released && g.downAt >= 0 && !b.isPressed()) {
-        if (g.held) this.queue({ name: 'hold', channel: 'driver', data: { index, held: false } });
-        else this.tap(index);
-        g.downAt = -1;
-        g.held = false;
       }
     });
   }
@@ -311,10 +336,7 @@ export class ResidentHost {
     if (this.owner === 'lvgl') return; // LVGL owns the panel: an lgfx flip stands down silently
     const d = this.board.display;
     d.invalidate(); // a flip blits the whole frame buffer
-    const shown = d.show();
-    // Stopping the app mid-transfer rejects it; settle() reports that, so don't let it surface as unhandled.
-    shown.catch(() => {});
-    this.presents.push(shown);
+    this.track(d.show());
   }
 
   private drawString(s: string, x: number, y: number) {
@@ -594,7 +616,7 @@ export class ResidentHost {
         if (name !== 'main') return undefined;
         const info: Record<string, unknown> = { ...this.screenInfo(), brightness: d.getBrightness() / 100 };
         if (d.tech === 'epaper') {
-          info.busy = this.presents.length > 0;
+          info.busy = d.refreshing();
           info.pending = d.hasPendingChanges();
         }
         return info;
@@ -612,7 +634,7 @@ export class ResidentHost {
       screens_refresh: (name: string) => {
         if (name !== 'main' || d.tech !== 'epaper') return false;
         d.invalidate();
-        this.presents.push(d.show('full'));
+        this.track(d.show('full'));
         return true;
       },
 
