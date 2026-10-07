@@ -914,7 +914,12 @@ textarea.code {
   margin-bottom: 10px;
 }
 .add-part {
+  display: flex;
   margin-top: 12px;
+}
+.add-part select {
+  flex: 1;
+  min-width: 0;
 }
 .panel-body > h3 {
   margin-top: 20px;
@@ -922,34 +927,34 @@ textarea.code {
 
 /* ---- controls ------------------------------------------------------------------------------ */
 
-.control-row {
-  padding: 12px 0;
-}
-.control-row + .control-row {
-  border-top: 1px solid var(--rule);
-}
-.control-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.control-value {
-  font: 500 22px/1 var(--display);
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.control-via {
-  display: flex;
+/* One grid for all the rows, so names, dropdowns and values line up. */
+.control-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 10px 10px;
 }
-.control-via .dim {
-  font: 400 10px/1 var(--mono);
+.control-row {
+  display: contents;
+}
+.control-name {
+  max-width: 8.5em;
+  font: 400 10px/1.2 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.control-via select {
-  flex: 1;
+.control-row select {
+  width: 100%;
   min-width: 0;
+  font-size: 13px;
+}
+.control-value {
+  font: 500 15px/1 var(--display);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }

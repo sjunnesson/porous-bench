@@ -54,10 +54,16 @@ export function InputPanel({ run, output, onBind }: Props) {
         <AddPart bench={bench} />
       </Panel>
       <Panel id="connections" title="Connections">
-        {run.controls.length === 0 && <p className="dim">This app has no controls to connect.</p>}
-        {run.controls.map((c) => (
-          <ControlRow key={c.name} control={c} bench={bench} onBind={onBind} />
-        ))}
+        {run.controls.length === 0 ? (
+          <p className="dim">This app has no controls to connect.</p>
+        ) : (
+          <p className="dim small">Which part drives each of the app's controls.</p>
+        )}
+        <div className="control-list">
+          {run.controls.map((c) => (
+            <ControlRow key={c.name} control={c} bench={bench} onBind={onBind} />
+          ))}
+        </div>
       </Panel>
     </>
   );
@@ -85,7 +91,7 @@ function PartRow({ bench, part }: { bench: Bench; part: SimInput }) {
 
 function AddPart({ bench }: { bench: Bench }) {
   return (
-    <div className="control-via add-part">
+    <div className="add-part">
       <select
         className="wide"
         value=""
@@ -133,13 +139,17 @@ function Widget({ input }: { input: SimInput }) {
   }
 }
 
-/** One of the app's controls: its live value and the part channel that drives it. */
+/**
+ * One of the app's controls, on one line: its name, the part channel that drives it, and for a dial
+ * the app's value. The part's own state is under Inputs, so it isn't repeated here.
+ */
 function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench; onBind: Props['onBind'] }) {
   useInput(control);
   const [reading, setReading] = useState('');
   // Absolute channels (pot, tilt, light …) change without telling the control, so poll it.
   const tick = useCallback(() => {
-    const next = control.kind === 'dial' ? formatValue(control as Dial) : (control as Trigger).isPressed() ? 'on' : 'off';
+    if (control.kind !== 'dial') return;
+    const next = formatValue(control as Dial);
     setReading((prev) => (prev === next ? prev : next));
   }, [control]);
   useAnimationFrame(tick);
@@ -154,52 +164,44 @@ function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench
       : (control as Trigger).key
         ? [(control as Trigger).key!]
         : [];
+  const keyHint = keys.length ? `Keys: ${keys.map(keyLabel).join(' ')}` : undefined;
   return (
     <div className="control-row">
-      <div className="control-head">
-        <span className="widget-title">{control.label}</span>
-        {control.kind === 'dial' ? (
-          <span className="control-value">{reading}</span>
-        ) : (
-          <span className={`led ${reading === 'on' ? 'on' : ''}`} aria-label={reading} />
-        )}
-      </div>
-      <div className="control-via">
-        <span className="dim">from</span>
-        <select
-          value={control.source}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v.startsWith('add:')) {
-              const kind = v.slice(4) as PartKind;
-              const part = bench.add(kind);
-              const ch = CHANNELS[kind].find((c) => (control.kind === 'trigger' ? c.kind === 'momentary' : c.kind !== 'momentary'));
-              if (ch) onBind(control, `${bench.idOf(part)}:${ch.id}`);
-            } else onBind(control, v);
-            e.target.blur();
-          }}
-          aria-label={`What drives ${control.label}`}
-        >
-          {options.map((o) => (
-            <option key={`${o.connection.part}:${o.connection.channel}`} value={`${o.connection.part}:${o.connection.channel}`}>
-              {o.part.label} · {o.channel.label}
-            </option>
-          ))}
-          <option value="none">Keyboard only</option>
-          {addable.length > 0 && (
-            <optgroup label="Add to the bench">
-              {addable.map((k) => (
-                <option key={k.kind} value={`add:${k.kind}`}>
-                  + {k.label}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        {keys.map((k) => (
-          <kbd key={k}>{keyLabel(k)}</kbd>
+      <span className="control-name" title={keyHint}>
+        {control.label}
+      </span>
+      <select
+        value={control.source}
+        title={keyHint}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v.startsWith('add:')) {
+            const kind = v.slice(4) as PartKind;
+            const part = bench.add(kind);
+            const ch = CHANNELS[kind].find((c) => (control.kind === 'trigger' ? c.kind === 'momentary' : c.kind !== 'momentary'));
+            if (ch) onBind(control, `${bench.idOf(part)}:${ch.id}`);
+          } else onBind(control, v);
+          e.target.blur();
+        }}
+        aria-label={`What drives ${control.label}`}
+      >
+        {options.map((o) => (
+          <option key={`${o.connection.part}:${o.connection.channel}`} value={`${o.connection.part}:${o.connection.channel}`}>
+            {o.part.label} · {o.channel.label}
+          </option>
         ))}
-      </div>
+        <option value="none">Keyboard only{keys.length ? ` (${keys.map(keyLabel).join(' ')})` : ''}</option>
+        {addable.length > 0 && (
+          <optgroup label="Add to the bench">
+            {addable.map((k) => (
+              <option key={k.kind} value={`add:${k.kind}`}>
+                + {k.label}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      <span className="control-value">{control.kind === 'dial' ? reading : ''}</span>
     </div>
   );
 }
