@@ -1,7 +1,7 @@
 # porous.systems Bench
 
-**A workbench in the browser for ESP32 hardware: an output (a small LCD, OLED or e-paper display,
-or a WS2812 LED strip, ring or matrix) and the buttons, knobs and sensors you wire to it, laid out
+**A workbench in the browser for ESP32 hardware: an output (a small LCD, OLED, AMOLED or e-paper
+display, or a WS2812 LED strip, ring or matrix) and the buttons, knobs and sensors you wire to it, laid out
 on a desk.** Apps are Lua, written
 for [Resident](https://github.com/inanimate-tech/resident)'s runtime: try animations, fonts and UI
 ideas without flashing hardware, switch the display under your code with one click, and push the same
@@ -45,7 +45,7 @@ The page has three columns. The **left** column holds the code: pick an **App**,
 source, the Resident relay and the console. The **desk** is in the middle. The **right** column holds
 the hardware: **Hardware**, where you choose the output and put inputs on the bench, and
 **Connections**, where you decide which part drives each of the app's controls. Click a section's
-heading to fold it away. Everything you set up (the output, your parts, the connections, where things
+heading to fold it away. **About**, top right, says what Bench is and what it's built on. Everything you set up (the output, your parts, the connections, where things
 sit on the desk, folded sections) is saved in this browser and comes back on your next visit.
 Everything runs locally in the browser;
 `npm run build` produces a static site you can host anywhere.
@@ -146,7 +146,9 @@ curious, schemes, pops up with a "boo!" when you come close and gets cozy if you
 motion** (an `Anim` and an `on_tick` dot side by side). For LED strips and rings: **Rainbow chase**,
 **Comet**, **Fire** (Fire2012), **Level meter** (a VU bar you can drive from any sensor) and **Night
 light** (fades in on motion, brighter in a darker room). For LED matrices: **Scrolling text**, **Life**
-and **Plasma**. On e-paper they skip the animation and jump to
+and **Plasma**. Two more draw with `lgfx`: **lgfx hello** (reads the screen's facts from `screens` and
+adapts to colour or 1-bit, dark or light glass) and **Tilt ball** (roll a ball with the IMU; it clicks
+off the walls). On e-paper they skip the animation and jump to
 each end state, since every refresh is a slow one. From Resident: the Swiss railway clock, water-sim,
 daisy, accelerometer and the rest of its M5Stick examples, which draw with `lgfx`.
 
@@ -237,7 +239,9 @@ Also `leds.set_rgb(i, r, g, b)`, `leds.get(i)`, `leds.fill(colour[, from[, count
 between 10 Hz ticks. A matrix is also an `lgfx` display (`lgfx.bind("main")`, 8 pixels tall on an
 8×8), so text and drawing work there too; LEDs are row by row from the top-left. An app's
 `-- @output display|strip|matrix` line decides where it appears in the App menu (strip apps run on
-rings too).
+rings too). An app that arrives with that line (pushed, dropped on the device or run from the editor)
+while another kind of output is chosen switches Bench to it: a matrix app pushed at a display gets
+the LED matrix instead of crashing on its first `leds` call.
 
 ### Which apps an output lists
 
@@ -483,6 +487,11 @@ npm run build      # typecheck + static build into dist/
 ```
 
 ## Credits and license
+
+Bench is built on [Resident](https://github.com/inanimate-tech/resident) by
+[Inanimate](https://inanimate.tech): the runtime and its Lua API that Bench recreates, the relay that
+carries pushed apps and the mirror to a board, and the Claude Code plugin that writes and pushes
+apps are their work.
 
 MIT, see [LICENSE](LICENSE). Resident's `datetime` module and example apps are included under
 Resident's MIT license, and the Waveshare panel init values come from Waveshare's demo; see
