@@ -1,0 +1,185 @@
+// Watch a folder on this computer for Lua apps: whenever a .lua file in it is saved, Bench runs it.
+// The way to get an app from Claude Code (or any editor) onto Bench with no network in between: the
+// agent writes a file, Bench reads it. Uses Chromium's File System Access API (Chrome, Edge, Opera);
+// the folder is remembered, and after a reload one click picks it up again.
+
+import { session } from './session';
+
+interface FileEntry {
+  kind: 'file';
+  name: string;
+  getFile(): Promise<File>;
+}
+interface FolderHandle {
+  kind: 'directory';
+  name: string;
+  values(): AsyncIterable<FileEntry | { kind: 'directory'; name: string }>;
+  queryPermission?(o: { mode: 'read' }): Promise<PermissionState>;
+  requestPermission?(o: { mode: 'read' }): Promise<PermissionState>;
+}
+type Picker = (o?: { id?: string; mode?: 'read' }) => Promise<FolderHandle>;
+
+const picker = (): Picker | undefined => (typeof window !== 'undefined' ? (window as unknown as { showDirectoryPicker?: Picker }).showDirectoryPicker : undefined);
+const POLL_MS = 700;
+const MAX_FILES = 200;
+
+// The chosen folder survives reloads in IndexedDB (a handle can't go in localStorage).
+function db(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('bench', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function keep(handle: FolderHandle | null): Promise<void> {
+  try {
+    const store = (await db()).transaction('handles', 'readwrite').objectStore('handles');
+    if (handle) store.put(handle, 'watch');
+    else store.delete('watch');
+  } catch {
+    /* not remembered */
+  }
+}
+async function recall(): Promise<FolderHandle | null> {
+  try {
+    const store = (await db()).transaction('handles').objectStore('handles');
+    return await new Promise((resolve) => {
+      const req = store.get('watch');
+      req.onsuccess = () => resolve((req.result as FolderHandle | undefined) ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+class FolderWatch {
+  readonly supported = !!picker();
+  /** The folder being watched. */
+  folder: FolderHandle | null = null;
+  /** A folder from last time, waiting for a click (the browser asks again after a reload). */
+  saved: FolderHandle | null = null;
+  /** The last file that was run from the folder. */
+  last: string | null = null;
+  error: string | null = null;
+  private seen = new Map<string, number>();
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private busy = false;
+  private listeners = new Set<() => void>();
+  private version = 0;
+
+  constructor() {
+    if (!this.supported) return;
+    void recall().then(async (h) => {
+      if (!h || this.folder) return;
+      if ((await h.queryPermission?.({ mode: 'read' })) === 'granted') await this.start(h);
+      else {
+        this.saved = h;
+        this.notify();
+      }
+    });
+  }
+
+  /** Ask for a folder and start watching it. */
+  async pick(): Promise<void> {
+    const show = picker();
+    if (!show) return;
+    try {
+      const h = await show({ id: 'bench-apps', mode: 'read' });
+      await keep(h);
+      await this.start(h);
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') this.fail(e);
+    }
+  }
+  /** Watch last time's folder again (needs the click, for the permission prompt). */
+  async resume(): Promise<void> {
+    const h = this.saved;
+    if (!h) return;
+    try {
+      if ((await h.requestPermission?.({ mode: 'read' })) !== 'granted') return;
+      await this.start(h);
+    } catch (e) {
+      this.fail(e);
+    }
+  }
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    this.folder = null;
+    this.saved = null;
+    this.last = null;
+    void keep(null);
+    this.notify();
+  }
+
+  private async start(h: FolderHandle): Promise<void> {
+    if (this.timer) clearInterval(this.timer);
+    this.folder = h;
+    this.saved = null;
+    this.error = null;
+    this.last = null;
+    // Only what's saved from now on runs: the files already there are a baseline.
+    this.seen = await this.scan(h);
+    this.timer = setInterval(() => void this.poll(), POLL_MS);
+    this.notify();
+  }
+
+  private async scan(h: FolderHandle): Promise<Map<string, number>> {
+    const found = new Map<string, number>();
+    for await (const entry of h.values()) {
+      if (entry.kind !== 'file' || !entry.name.endsWith('.lua')) continue;
+      found.set(entry.name, (await entry.getFile()).lastModified);
+      if (found.size >= MAX_FILES) break;
+    }
+    return found;
+  }
+
+  private async poll(): Promise<void> {
+    const h = this.folder;
+    if (!h || this.busy) return;
+    this.busy = true;
+    try {
+      let newest: { name: string; file: File } | null = null;
+      for await (const entry of h.values()) {
+        if (entry.kind !== 'file' || !entry.name.endsWith('.lua')) continue;
+        const file = await entry.getFile();
+        if (this.seen.get(entry.name) === file.lastModified) continue;
+        this.seen.set(entry.name, file.lastModified);
+        if (!newest || file.lastModified > newest.file.lastModified) newest = { name: entry.name, file };
+      }
+      if (newest && this.folder === h) {
+        const code = await newest.file.text();
+        // An editor may save in two steps; an empty file is the first one.
+        if (code.trim()) {
+          this.last = newest.name;
+          session.setLive({ name: newest.name.replace(/\.lua$/, ''), code, source: 'file' });
+          this.notify();
+        }
+      }
+    } catch (e) {
+      this.fail(e);
+      this.stop();
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private fail(e: unknown) {
+    this.error = `Couldn't read the folder: ${e instanceof Error ? e.message : String(e)}`;
+    this.notify();
+  }
+
+  subscribe = (fn: () => void): (() => void) => {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  };
+  getVersion = (): number => this.version;
+  private notify() {
+    this.version++;
+    for (const fn of this.listeners) fn();
+  }
+}
+
+export const folderWatch = new FolderWatch();

@@ -32,7 +32,9 @@ describe('app prompt', () => {
     expect(p).toContain('`pir.motion()`');
     expect(p).toContain('Button A (trigger) ← PIR 1 motion (`pir-1:motion`)');
     expect(p).toContain('src/resident-apps/patterns.lua');
-    expect(p).toContain('RESIDENT_DEVICE_ID=sim-abc12345');
+    expect(p).toContain('`--device-id sim-abc12345`');
+    expect(p).toContain('./DEVICE-SKILL.md');
+    expect(p).toContain("don't look for another way");
     expect(p).toContain('docs/resident/DEVICE-SKILL.md');
     expect(p).toContain('/plugin install resident@inanimate');
   });
@@ -55,5 +57,11 @@ describe('app prompt', () => {
   it('gives a ring the strip tag and an M5Stick its landscape size', () => {
     expect(appPrompt({ ...base, device: ledProfile({ kind: 'ring', count: 12 }) })).toContain('`-- @output strip`');
     expect(appPrompt({ ...base, device: findDevice('m5stickc-plus2')! })).toContain('240×135 pixels');
+  });
+
+  it('delivers into the watched folder, with no push, when Bench is watching one', () => {
+    const p = appPrompt({ ...base, watching: 'my-apps' });
+    expect(p).toContain('Bench is watching my folder `my-apps`');
+    expect(p).not.toContain('--device-id');
   });
 });

@@ -71,8 +71,9 @@ Everything runs locally in the browser;
   you've chosen: a control for every input, connected to its part and shown live, ready to edit.
 - **A prompt for Claude.** **Copy app prompt** copies a ready-to-paste prompt for writing a new app in
   Claude Code: the output, every part on the bench with its `connect` ids, how the open app is wired,
-  that app as a reference, the Resident plugin skills and Bench's device skill to use, and your device
-  ID to push the result to.
+  that app as a reference, the Resident plugin skills and Bench's device skill to use, and how to
+  deliver it: into a folder Bench watches, or pushed over the relay.
+- **Watch a folder.** Point Bench at a folder and any `.lua` saved there runs immediately.
 - **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
   sensor data all follow the simulated clock.
 - **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it, or the bare
@@ -297,6 +298,13 @@ the simulated glass, the first updates about 25 times a second and the second 10
 
 The quickest start: set up the output and the bench, then **App → Copy app prompt** and paste it into
 Claude Code with a line about what you want. It's built from what's on screen when you click it.
+
+**Watch a folder (no network).** In Chrome or Edge, **App → Watch a folder for apps** and pick the
+folder you run Claude Code in: every `.lua` file saved there runs on Bench straight away, and runs
+again on each save. The app prompt then tells Claude to just save the file there. Nothing goes
+through the relay, so it works offline and needs no permission to send anything anywhere (Claude
+Code's auto mode can block uploading a file to an outside server, which is what a relay push is).
+Bench remembers the folder; after a reload, one click resumes watching it.
 
 Press **Connect to relay** in the Resident panel. Bench connects to
 `wss://resident.inanimate.tech/devices/sim-xxxxxxxx` the way the firmware does and shows its device ID.

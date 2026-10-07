@@ -18,6 +18,8 @@ export interface PromptInput {
   app: { id: string; name: string; description?: string; code: string; bundled: boolean };
   deviceId: string;
   online: boolean;
+  /** The folder Bench is watching for .lua files, if any (just its name: the browser doesn't reveal paths). */
+  watching?: string | null;
 }
 
 /** What a part offers besides dials and triggers: its own Lua module. */
@@ -99,15 +101,29 @@ function appSection(app: PromptInput['app']): string[] {
   return lines;
 }
 
+function deliverSection({ deviceId, online, watching }: PromptInput): string[] {
+  const save = 'Save the app as `<app-name>.lua` in the current folder (create-app `--out`), so I can keep it.';
+  if (watching) {
+    return [
+      `- ${save}`,
+      `- That's all the delivery it needs: Bench is watching my folder \`${watching}\` (the one I'm running you in) and runs any .lua file the moment it's saved there. No push, nothing over the network. If the current folder isn't \`${watching}\`, tell me.`,
+    ];
+  }
+  return [
+    `- ${save} If I point Bench at this folder (App → Watch a folder for apps), it runs the moment it's saved, with nothing over the network.`,
+    `- Then push it to my Bench with push-app: \`--device-id ${deviceId}\` (the default relay, https://resident.inanimate.tech, passes it to my own Bench tab; the ID is mine). ${online ? 'Bench is connected to the relay.' : "I'll press Connect to relay in Bench's Resident panel first."} If push.sh exits 1, Bench isn't connected: say so and stop.`,
+    '- If the push is blocked by a permission check or fails, don\'t look for another way to send it: show me the exact push command so I can run it myself.',
+  ];
+}
+
 /** The prompt, as Markdown. */
 export function appPrompt(input: PromptInput): string {
-  const { deviceId, online } = input;
   return [
     'Write a Resident Lua app for my porous.systems Bench setup, for the hardware described below.',
     '',
     '## Skills and references',
-    '- Use the Resident Claude Code plugin\'s skills: create-app to write the app, push-app to send it. If they\'re missing: `/plugin marketplace add inanimate-tech/agent-plugins`, then `/plugin install resident@inanimate`.',
-    `- Bench's device skill describes this board, its Lua modules and the Bench drivers. Download it and pass it to create-app as \`--device-skill\`: ${DEVICE_SKILL}`,
+    '- Use the Resident Claude Code plugin\'s skills: create-app to write the app (it validates it too), push-app to send it. If they\'re missing: `/plugin marketplace add inanimate-tech/agent-plugins`, then `/plugin install resident@inanimate`.',
+    `- Bench's device skill describes this board, its Lua modules and the Bench drivers. Download it into the current folder as \`./DEVICE-SKILL.md\`: ${DEVICE_SKILL}. Both skills pick it up from there (without it, push-app falls back to the plain M5Stick surface for \`sim-\` devices).`,
     `- Bench itself: ${SITE} (source: ${REPO}).`,
     '',
     '## Output',
@@ -127,8 +143,7 @@ export function appPrompt(input: PromptInput): string {
     '- Keep each callback short: there is an instruction budget per call.',
     '',
     '## Deliver',
-    `- Push it to my Bench with push-app, using \`RESIDENT_DEVICE_ID=${deviceId}\`. ${online ? 'Bench is open and connected to the relay.' : "I'll open Bench and press Connect to relay in its Resident panel first."}`,
-    '- Also save it as a `.lua` file named after the app, so I can keep it or drop it onto the device in Bench.',
+    ...deliverSection(input),
     '',
     '## What to build',
     '[Describe the app: what it shows, and what each input should do.]',

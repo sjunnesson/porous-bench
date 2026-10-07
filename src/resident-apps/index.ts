@@ -13,19 +13,23 @@ export interface BundledApp {
 
 const files = import.meta.glob<string>('./*.lua', { query: '?raw', import: 'default', eager: true });
 
+/** An app's name and description from its first comment line ("Name: description", or just a description). */
+export function appHeader(code: string): { name?: string; description: string } {
+  const line = code
+    .split('\n')
+    .find((l) => l.startsWith('--') && !/^--\s*(From |@output)/.test(l))
+    ?.replace(/^--\s*/, '');
+  const m = line ? /^([^:]{1,40}):\s*(.*)$/.exec(line) : null;
+  return { name: m?.[1], description: (m ? m[2] : (line ?? '')).replace(/^\w/, (c) => c.toUpperCase()) };
+}
+
 export const residentApps: BundledApp[] = Object.entries(files)
   .map(([path, code]) => {
     const id = path.replace(/^\.\/|\.lua$/g, '');
-    // First comment line that isn't an attribution line: "Name: description" or just a description.
-    const line = code
-      .split('\n')
-      .find((l) => l.startsWith('--') && !/^--\s*(From |@output)/.test(l))
-      ?.replace(/^--\s*/, '');
-    const m = line ? /^([^:]{1,40}):\s*(.*)$/.exec(line) : null;
+    const { name, description } = appHeader(code);
     const origin: BundledApp['origin'] = /^--\s*From inanimate-tech\/resident/m.test(code) ? 'resident' : 'bench';
-    const description = (m ? m[2] : (line ?? '')).replace(/^\w/, (c) => c.toUpperCase());
     const tag = /^--\s*@output\s+(display|strip|matrix)\b/m.exec(code)?.[1] as BundledApp['target'] | undefined;
-    return { id, name: m ? m[1] : id, description, origin, target: tag ?? 'display', code };
+    return { id, name: name ?? id, description, origin, target: tag ?? 'display', code };
   })
   .sort((a, b) => order(a.id) - order(b.id) || a.name.localeCompare(b.name));
 

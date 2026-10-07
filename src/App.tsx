@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { session } from './resident/session';
 import { appPrompt } from './resident/prompt';
+import { folderWatch } from './resident/watch';
 import { residentSketch } from './resident/sketch';
-import { residentApps } from './resident-apps';
+import { appHeader, residentApps } from './resident-apps';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
 import { benchApp } from './sim/generate';
@@ -14,6 +15,7 @@ import { type LogLine, SketchRun } from './sim/runner';
 import type { InputSpecs, Sketch } from './sim/sketch';
 import { Console } from './ui/Console';
 import { Copy } from './ui/Copy';
+import { WatchFolder } from './ui/WatchFolder';
 import { DeviceInfo } from './ui/DeviceInfo';
 import { DeviceView, type ViewState } from './ui/DeviceView';
 import { useClockState, usePersisted } from './ui/hooks';
@@ -98,7 +100,17 @@ export default function App() {
   useSyncExternalStore(session.subscribe, session.getVersion);
   const live = session.live;
   const liveEntry = useMemo<Entry | null>(
-    () => (live ? { id: 'resident:live', name: `▶ ${live.name}`, group: 'Your app', sketch: residentSketch({ ...live, live }), code: live.code } : null),
+    () =>
+      live
+        ? {
+            id: 'resident:live',
+            name: `▶ ${live.name}`,
+            group: 'Your app',
+            // Its own first comment line describes it, unless whoever sent it gave a description.
+            sketch: residentSketch({ ...live, description: live.description ?? (appHeader(live.code).description || undefined), live }),
+            code: live.code,
+          }
+        : null,
     [live],
   );
   const lastLive = useRef(live);
@@ -293,10 +305,12 @@ export default function App() {
                     app: { id: entry.id, name: entry.name.replace(/^▶ /, ''), description: entry.sketch.description, code: entry.code, bundled: entry.id !== 'resident:live' },
                     deviceId: session.deviceId,
                     online: session.status === 'online',
+                    watching: folderWatch.folder?.name ?? null,
                   })
                 }
               />
             </div>
+            <WatchFolder />
           </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
           <Console lines={logs} onClear={() => setLogs([])} />
