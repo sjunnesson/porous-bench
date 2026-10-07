@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import type { DeviceProfile, Enclosure, EnclosurePart, Face } from '../../sim/devices/types';
+import { LED_PACKAGE_MM } from '../../sim/leds';
 
 export const GHOST = new THREE.LineBasicMaterial({ color: 0x1b4b7a, transparent: true, opacity: 0.72, depthWrite: false });
 const GHOST_DIM = new THREE.LineBasicMaterial({ color: 0x1b4b7a, transparent: true, opacity: 0.3, depthWrite: false });
@@ -59,6 +60,26 @@ function slab(w: number, h: number, d: number, r: number, bevel: number, materia
   const edges = new THREE.EdgesGeometry(geo, 8);
   geo.dispose();
   return new THREE.LineSegments(edges, material);
+}
+
+/** A disc with a round hole through it (a NeoPixel ring's board): true circles, so only its rims draw. */
+function annulusShape(r: number, hole: number): THREE.Shape {
+  const s = new THREE.Shape().absarc(0, 0, r, 0, Math.PI * 2, false);
+  s.holes.push(new THREE.Path().absarc(0, 0, hole, 0, Math.PI * 2, true));
+  return s;
+}
+
+function annulus(r: number, hole: number, d: number, material = GHOST): THREE.LineSegments {
+  const geo = new THREE.ExtrudeGeometry(annulusShape(r, hole), { depth: d, bevelEnabled: false, curveSegments: 72 });
+  geo.translate(0, 0, -d / 2);
+  const edges = new THREE.EdgesGeometry(geo, 8);
+  geo.dispose();
+  return new THREE.LineSegments(edges, material);
+}
+
+function circle(r: number, material = GHOST): THREE.LineLoop {
+  const pts = new THREE.EllipseCurve(0, 0, r, r).getPoints(96);
+  return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), material);
 }
 
 function outline(w: number, h: number, r: number, material = GHOST): THREE.LineLoop {
@@ -128,6 +149,8 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
     const lip = outline(body.w - 3, body.h - 3, Math.max(0.5, body.r - 1.5));
     lip.position.z = body.d / 2 + 0.02;
     group.add(lip);
+  } else if (body.hole) {
+    group.add(annulus(body.w / 2, body.hole, body.d));
   } else {
     group.add(slab(body.w, body.h, body.d, body.r, 0));
   }
@@ -146,7 +169,9 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
   const sw = profile.look.activeWidthMm || profile.width / 6;
   const sh = profile.look.activeHeightMm || profile.height / 6;
   const radiusMm = ((profile.look.cornerRadiusPx ?? 0) * sw) / profile.width;
-  const screenGeo = track(new THREE.ShapeGeometry(roundedRect(sw, sh, radiusMm), 12));
+  // A ring's face has the board's hole in it: the desk shows through.
+  const screenShape = body.hole ? annulusShape(sw / 2, body.hole) : roundedRect(sw, sh, radiusMm);
+  const screenGeo = track(new THREE.ShapeGeometry(screenShape, body.hole ? 72 : 12));
   const pos = screenGeo.attributes.position;
   const uv = new Float32Array(pos.count * 2);
   for (let i = 0; i < pos.count; i++) {
@@ -162,9 +187,31 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
   const screen = new THREE.Mesh(screenGeo, track(new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })));
   screen.position.set(enc.screen.x, enc.screen.y, frontZ + 0.05);
   group.add(screen);
-  const rim = outline(sw + 0.6, sh + 0.6, radiusMm + 0.3, GHOST_DIM);
-  rim.position.copy(screen.position);
-  group.add(rim);
+  if (!body.hole) {
+    const rim = outline(sw + 0.6, sh + 0.6, radiusMm + 0.3, GHOST_DIM);
+    rim.position.copy(screen.position);
+    group.add(rim);
+  }
+
+  // A ring's LEDs as 5050 packages on the board, each over its light in the texture.
+  const leds = profile.look.leds;
+  if (leds?.layout === 'ring' && leds.radiusMm) {
+    const n = profile.width;
+    const h = 1.6;
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (i / n) * Math.PI * 2; // LED 0 at the top, clockwise (as drawLeds)
+      const pkg = new THREE.Group();
+      const box = slab(LED_PACKAGE_MM, LED_PACKAGE_MM, h, 0.3, 0, GHOST_DIM);
+      box.position.z = h / 2;
+      pkg.add(box);
+      const window = circle(LED_PACKAGE_MM * 0.36, GHOST_DIM);
+      window.position.z = h + 0.01;
+      pkg.add(window);
+      pkg.position.set(enc.screen.x + Math.cos(a) * leds.radiusMm, enc.screen.y - Math.sin(a) * leds.radiusMm, frontZ + 0.05);
+      pkg.rotation.z = -a;
+      group.add(pkg);
+    }
+  }
 
   // Parts
   const buttons: ModelButton[] = [];

@@ -110,8 +110,10 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     // LEDs are painted as glowing dots, so their texture needs room for the glow.
     const leds = device.tech === 'led';
     const cells = leds ? ledCells(device) : null;
-    native.width = cells ? Math.min(2048, cells.w * 24) : device.width;
-    native.height = cells ? Math.min(2048, cells.h * 24) : device.height;
+    // A ring is seen up close, its packages to scale: give it more pixels per LED.
+    const perCell = device.look.leds?.layout === 'ring' ? 64 : 24;
+    native.width = cells ? Math.min(2048, cells.w * perCell) : device.width;
+    native.height = cells ? Math.min(2048, cells.h * perCell) : device.height;
     const nctx = native.getContext('2d')!;
     const image = new ImageData(device.width, device.height);
 

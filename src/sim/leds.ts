@@ -21,8 +21,11 @@ export const MATRIX_SIZES: [number, number][] = [
   [32, 8],
 ];
 
-/** NeoPixel ring outer diameters, mm. */
-const RING_OD: Record<number, number> = { 12: 37, 16: 44.5, 24: 66 };
+/** NeoPixel ring outer and inner diameters, mm (Adafruit's 12, 16 and 24). */
+const RING_MM: Record<number, { od: number; id: number }> = { 12: { od: 37, id: 23 }, 16: { od: 44.5, id: 31.75 }, 24: { od: 65.6, id: 52.3 } };
+
+/** A WS2812B is a 5050 package: 5 × 5 mm. */
+export const LED_PACKAGE_MM = 5;
 
 const STRIP_PITCH = 1000 / 144; // a dense 144 LEDs/m strip, so a short one fits the desk
 
@@ -62,7 +65,9 @@ export function ledProfile(o: Exclude<Output, { kind: 'display' }>): DeviceProfi
   }
   if (o.kind === 'ring') {
     const n = o.count;
-    const od = RING_OD[n] ?? (n * 7.5) / Math.PI + 8;
+    // Unlisted sizes: LEDs 7.5 mm apart on a 7 mm wide board.
+    const { od, id } = RING_MM[n] ?? { od: (n * 7.5) / Math.PI + 7, id: (n * 7.5) / Math.PI - 7 };
+    const radius = (od + id) / 4; // the LEDs sit midway across the board
     return {
       ...common,
       id: `ws2812-ring-${n}`,
@@ -72,12 +77,11 @@ export function ledProfile(o: Exclude<Output, { kind: 'display' }>): DeviceProfi
       porting: porting(n),
       enclosure: {
         style: 'pcb',
-        body: { w: od, h: od, d: 1.6, r: od / 2 },
+        body: { w: od, h: od, d: 1.6, r: od / 2, hole: id / 2 },
         screen: { x: 0, y: 0 },
-        parts: [{ kind: 'hole', face: 'front', u: 0, v: 0, r: od / 2 - 7 }],
       },
-      // The "glass" is the whole disc; the LEDs sit on a circle inside it.
-      look: { activeWidthMm: od - 1, activeHeightMm: od - 1, cornerRadiusPx: n / 2, leds: { layout: 'ring', pitchMm: (Math.PI * (od - 8)) / n } },
+      // The "glass" is the board's face; the LEDs sit on a circle across it.
+      look: { activeWidthMm: od, activeHeightMm: od, cornerRadiusPx: n / 2, leds: { layout: 'ring', pitchMm: (2 * Math.PI * radius) / n, radiusMm: radius } },
     };
   }
   const { w, h } = o;
@@ -129,30 +133,37 @@ export function drawLeds(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderin
   const cell = Math.min(w / cells.w, h / cells.h);
   const ox = x + (w - cell * cells.w) / 2;
   const oy = y + (h - cell * cells.h) / 2;
+  // A ring is drawn to scale: the board's face spans the drawing, so this many pixels per mm.
+  const ring = layout === 'ring' ? { mm: Math.min(w, h) / p.look.activeWidthMm, hole: p.enclosure?.body.hole ?? 0 } : null;
+  const ringR = ring && p.look.leds?.radiusMm ? p.look.leds.radiusMm * ring.mm : (Math.min(w, h) / 2) * 0.78;
   ctx.save();
   ctx.fillStyle = board;
-  if (layout === 'ring') {
+  if (ring) {
     ctx.beginPath();
     ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
-    ctx.fill();
+    if (ring.hole) ctx.arc(x + w / 2, y + h / 2, ring.hole * ring.mm, 0, Math.PI * 2, true);
+    ctx.fill('evenodd');
   } else ctx.fillRect(x, y, w, h);
 
   const centre = (i: number): [number, number] => {
-    if (layout === 'ring') {
-      const r = (Math.min(w, h) / 2) * 0.78;
+    if (ring) {
       const a = -Math.PI / 2 + (i / n) * Math.PI * 2; // LED 0 at the top, clockwise
-      return [x + w / 2 + Math.cos(a) * r, y + h / 2 + Math.sin(a) * r];
+      return [x + w / 2 + Math.cos(a) * ringR, y + h / 2 + Math.sin(a) * ringR];
     }
     const cx = i % p.width;
     const cy = Math.floor(i / p.width);
     return [ox + (cx + 0.5) * cell, oy + (cy + 0.5) * cell];
   };
-  const size = layout === 'ring' ? Math.min(cell, ((Math.min(w, h) / 2) * 0.78 * 2 * Math.PI) / n) : cell;
+  // A cell per LED; on a ring, the gap from one LED to the next.
+  const size = ring ? (2 * Math.PI * ringR) / n : cell;
+  // The package: to scale on a ring, otherwise most of the cell.
+  const s = ring ? LED_PACKAGE_MM * ring.mm : size * 0.62;
+  // A ring's LEDs are close together: a tighter glow keeps each one its own.
+  const [glow0, glowK] = ring ? [0.45, 0.5] : [0.7, 1.1];
 
   // Packages (5050: a pale square with a round window), then light on top.
   for (let i = 0; i < n; i++) {
     const [cx, cy] = centre(i);
-    const s = size * 0.62;
     ctx.fillStyle = '#d9d6cc';
     ctx.fillRect(cx - s / 2, cy - s / 2, s, s);
     ctx.fillStyle = '#4a4740';
@@ -175,12 +186,11 @@ export function drawLeds(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderin
     const [cx, cy] = centre(i);
     // The lit die: covers the package window, white-hot in the middle when bright.
     ctx.globalCompositeOperation = 'source-over';
-    const s = size * 0.62;
     ctx.fillStyle = `rgba(${hr},${hg},${hb},${0.35 + 0.65 * lum})`;
     ctx.fillRect(cx - s / 2, cy - s / 2, s, s);
     // The glow around it.
     ctx.globalCompositeOperation = 'lighter';
-    const glow = size * (0.7 + lum * 1.1);
+    const glow = size * (glow0 + lum * glowK);
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glow);
     grad.addColorStop(0, `rgba(${Math.min(255, hr + 140 * lum)},${Math.min(255, hg + 140 * lum)},${Math.min(255, hb + 140 * lum)},${Math.min(1, 0.25 + lum)})`);
     grad.addColorStop(0.3, `rgba(${hr},${hg},${hb},${0.75 * lum})`);

@@ -24,7 +24,8 @@ export type EnclosurePart =
 export interface Enclosure {
   /** 'case' = a moulded device (rounded, bevelled); 'pcb' = a bare board with the display module on top. */
   style: 'case' | 'pcb';
-  body: { w: number; h: number; d: number; r: number };
+  /** `hole`: a round hole through the board's centre, radius in mm (a NeoPixel ring); the body is then a disc. */
+  body: { w: number; h: number; d: number; r: number; hole?: number };
   /** pcb style: the display module (glass + frame) sitting on the board's front. */
   module?: { w: number; h: number; d: number; r: number; x: number; y: number };
   /** Centre of the active area relative to the body centre. */
@@ -75,7 +76,8 @@ export interface DeviceProfile {
     accentRows?: number;
     accentColor?: string;
     /** LEDs: how the chain is laid out (width × height LEDs, in chain order, row by row). */
-    leds?: { layout: 'line' | 'ring' | 'grid'; pitchMm: number };
+    /** `radiusMm`: a ring's LEDs sit on a circle of this radius (mm), centred on the board. */
+    leds?: { layout: 'line' | 'ring' | 'grid'; pitchMm: number; radiusMm?: number };
   };
 
   epaper?: {
