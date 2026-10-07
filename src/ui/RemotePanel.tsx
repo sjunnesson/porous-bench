@@ -42,10 +42,7 @@ export function RemotePanel({ device, board, app, source }: Props) {
         ) : undefined
       }
     >
-      <p className="dim small">
-        Run this app on a Resident device on your desk, driven by the inputs on this bench: turn the virtual encoder, wave at the
-        virtual PIR, and the real display follows. No Resident firmware on it yet? The firmware prompt gets it there.
-      </p>
+      <p className="dim small">Mirror this app onto a Resident board, driven by this bench.</p>
       <div className="row">
         <Copy
           label="Copy firmware prompt"

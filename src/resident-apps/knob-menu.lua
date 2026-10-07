@@ -1,4 +1,4 @@
--- Knob menu: an LVGL settings menu. Turn to move (the highlight glides to the row), push to edit, B to back out; a second dial sweeps the gauge arc and Brightness sets the real backlight.
+-- Knob menu: an LVGL settings menu. Turn to move, push to edit, B to back out.
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()

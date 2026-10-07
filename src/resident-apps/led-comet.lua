@@ -1,4 +1,4 @@
--- Comet: a bright comet with a fading tail that runs along the strip and round and round a ring. Speed is an encoder, Brightness a pot; A or Next changes its colour.
+-- Comet: a comet with a fading tail running along the LEDs. A changes its colour.
 -- @output strip
 local speed = dial.new("speed", { min = 1, max = 20, start = 6 })
 local bright = dial.new("brightness", { min = 4, max = 255, step = 1, start = 100, via = "pot" })

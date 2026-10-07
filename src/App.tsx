@@ -315,7 +315,7 @@ export default function App() {
                     name: 'My bench',
                     code: benchApp(target, bench.hardware()),
                     source: 'editor',
-                    description: 'Every input on your bench, connected and shown live. Its code is below: change it and Run to make it your own.',
+                    description: 'Every input on your bench, shown live. Edit the code below to make it your own.',
                   })
                 }
                 title="Write a Lua app with a control for every part on your bench, connected and shown live: a starting point to edit"

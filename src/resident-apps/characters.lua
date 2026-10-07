@@ -1,4 +1,4 @@
--- Characters: Montserrat at a few sizes and a walking pixel-art robot, all LVGL Anims. A = jump; Walk speed can be the encoder, the pot or IMU tilt.
+-- Characters: Montserrat at a few sizes and a walking pixel-art robot. A = jump.
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()

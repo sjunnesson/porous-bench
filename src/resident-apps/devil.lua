@@ -1,4 +1,4 @@
--- Little devil: a cute chibi devil that reacts to the LD2410 radar, animated with lvgl.Anim. It naps when nobody's there, schemes when you linger, pops up with a boo when you come close and gets cozy if you stay. A pokes it.
+-- Little devil: a chibi devil that naps, schemes and says boo as you come near the radar. A pokes it.
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()

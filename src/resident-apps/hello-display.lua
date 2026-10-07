@@ -1,4 +1,4 @@
--- Hello display: device facts, colour bars and a DVD-style bouncing ball, animated with lvgl.Anim. Adapts to LCD, OLED and e-paper. A changes the colour.
+-- Hello display: device facts, colour bars and a bouncing ball. A changes the colour.
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()

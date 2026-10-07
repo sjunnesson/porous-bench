@@ -1,4 +1,4 @@
--- LD2410 radar: an LVGL presence dashboard fed by a simulated HLK-LD2410 over UART. The state badge pops on a change, the distance marker glides and the energy bars ease (lvgl.Anim, ~30 fps). Drag the character in the radar, or let it wander.
+-- LD2410 radar: a presence dashboard for the LD2410 radar. Drag the character in the radar, or let it wander.
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()

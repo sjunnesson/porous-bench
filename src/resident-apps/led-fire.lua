@@ -1,4 +1,4 @@
--- Fire: the classic Fire2012 flame rising from LED 0 along the chain. Cooling is a pot (higher = shorter flames), Sparking an encoder (higher = a livelier fire).
+-- Fire: the classic Fire2012 flame. Cooling and Sparking are dials.
 -- @output strip
 local cooling = dial.new("cooling", { min = 20, max = 100, start = 55, via = "pot" })
 local sparking = dial.new("sparking", { min = 50, max = 200, step = 5, start = 120, via = "encoder" })

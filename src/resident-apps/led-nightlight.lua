@@ -1,4 +1,4 @@
--- Night light: a warm glow that fades in when someone arrives (Presence: a PIR or the radar) and out after 10 s without motion; the darker the room (Room: the light sensor), the brighter it glows.
+-- Night light: a warm glow when someone's there, brighter the darker the room.
 -- @output strip
 -- Touch both sensors first so they're on the bench and the controls below connect to them.
 pir.read()

@@ -1,4 +1,4 @@
--- Level meter: a VU-style bar, green to yellow to red, with a falling peak LED. It shows the Level dial, which you can drive from any sensor in Connections: light, temperature, radar distance or a pot.
+-- Level meter: a VU-style bar with a falling peak, fed by any sensor through the Level dial.
 -- @output strip
 local level = dial.new("level", { min = 0, max = 100, start = 40, via = "light" })
 
