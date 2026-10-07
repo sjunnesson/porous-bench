@@ -1,10 +1,15 @@
 import { useState, useSyncExternalStore } from 'react';
+import { firmwarePrompt } from '../resident/firmware';
 import { remote } from '../resident/remote';
+import type { DeviceProfile } from '../sim/devices/types';
+import { Copy } from './Copy';
 import type { Bench } from '../sim/controls/bench';
 import type { Control } from '../sim/controls/controls';
 import { Panel } from './Panel';
 
 interface Props {
+  /** The selected output: what the firmware prompt is for. */
+  device: DeviceProfile;
   /** The app open on Bench. */
   app: { name: string; code: string };
   /** What drives it, read on every update. */
@@ -20,7 +25,7 @@ const STATUS = {
 } as const;
 
 /** Run the open app on a real Resident device, driven by this bench's virtual inputs. */
-export function RemotePanel({ app, source }: Props) {
+export function RemotePanel({ device, app, source }: Props) {
   useSyncExternalStore(remote.subscribe, remote.getVersion);
   const [draft, setDraft] = useState(remote.deviceId);
   const active = remote.active;
@@ -38,8 +43,16 @@ export function RemotePanel({ app, source }: Props) {
     >
       <p className="dim small">
         Run this app on a Resident device on your desk, driven by the inputs on this bench: turn the virtual encoder, wave at the
-        virtual PIR, and the real display follows.
+        virtual PIR, and the real display follows. No Resident firmware on it yet? The firmware prompt gets it there.
       </p>
+      <div className="row">
+        <Copy
+          label="Copy firmware prompt"
+          done="Firmware prompt copied"
+          title={`Copy a prompt for Claude Code to build Resident firmware for ${device.name} and flash it, so it gets a device ID`}
+          text={() => firmwarePrompt(device)}
+        />
+      </div>
       <div className="row">
         <input
           className="text grow mono"

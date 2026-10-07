@@ -335,7 +335,15 @@ connected. Use **new** in the Resident panel to rotate it.
 ### Drive a real device from the bench
 
 **Real device** (left column): enter the ID of a Resident device that's online (the one its screen
-shows) and press **Mirror**. Bench sends it the open app, then streams the state of the app's
+shows) and press **Mirror**.
+
+No Resident firmware on the board yet? **Copy firmware prompt** copies a prompt for Claude Code to
+build and flash it for the hardware selected in Bench. For an M5StickC Plus2 or M5StickS3 that's
+Resident's own `m5stick-demo` firmware. For other boards it follows Resident's
+[start-building guide](https://github.com/inanimate-tech/resident/blob/main/docs/start-building.md)
+in stages (bring-up, then Resident, then drivers), using the pins, offsets and quirks Bench knows
+for the part and the platform it needs (pioarduino for the ESP32-C6). For an LED output it adds a
+`leds` module that matches Bench's. It asks before flashing and ends with the device ID to paste here. Bench sends it the open app, then streams the state of the app's
 controls and the bench's sensors to it as `bench` events, up to ten times a second and only when
 something changed. Switching apps or restarting sends the new run. **Stop** leaves the device running
 the app with the last values it got.

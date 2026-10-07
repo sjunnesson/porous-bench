@@ -325,7 +325,7 @@ export default function App() {
             <WatchFolder />
           </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
-          {run && <RemotePanel app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} />}
+          {run && <RemotePanel device={device} app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} />}
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>
         {run && (
