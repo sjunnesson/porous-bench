@@ -12,7 +12,7 @@ export function findDevice(id: string): DeviceProfile | undefined {
 }
 
 function techOrder(d: DeviceProfile) {
-  return { lcd: 0, oled: 1, epaper: 2, led: 3 }[d.tech];
+  return { lcd: 0, amoled: 1, oled: 2, epaper: 3, led: 4 }[d.tech];
 }
 
 export type { DeviceProfile, Tech } from './types';

@@ -2,6 +2,16 @@
 -- @needs motion 128x128
 local h = lvgl.bind("main")
 local W, H = h.HOR_RES(), h.VER_RES()
+local s = screens.get("main")
+-- Round glass (shape "round"): lay everything out in the square inside the circle.
+local ui = h
+if s.shape == "round" then
+  local side = math.floor(math.min(W, H) * 0.7071)
+  local box = h.Object { x = (W - side) // 2, y = (H - side) // 2, w = side, h = side,
+    bg_opa = 0, border_width = 0, pad_all = 0, radius = 0 }
+  ui = setmetatable({}, { __index = function(_, kind) return function(props) return box[kind](box, props) end end })
+  W, H = side, side
+end
 local small = H < 160
 
 h:set_theme {
@@ -18,10 +28,10 @@ local DOT = small and 12 or 16
 local PERIOD = 1400 -- ms, there and back
 
 local function lane(y, caption, color)
-  h.Label { text = caption, x = 12, y = y - (small and 18 or 22), text_color = "#8a8aa6",
+  ui.Label { text = caption, x = 12, y = y - (small and 18 or 22), text_color = "#8a8aa6",
     text_font = lvgl.Font("montserrat", small and 8 or 14) }
-  h.Object { x = 12, y = y + DOT // 2 - 2, w = laneW, h = 4, bg_color = "#2a2a3a", bg_opa = 255, radius = 2 }
-  return h.Object { x = 12, y = y, w = DOT, h = DOT, bg_color = color, bg_opa = 255, radius = lvgl.RADIUS_CIRCLE }
+  ui.Object { x = 12, y = y + DOT // 2 - 2, w = laneW, h = 4, bg_color = "#2a2a3a", bg_opa = 255, radius = 2 }
+  return ui.Object { x = 12, y = y, w = DOT, h = DOT, bg_color = color, bg_opa = 255, radius = lvgl.RADIUS_CIRCLE }
 end
 
 local animDot = lane(trackY1, "lvgl.Anim  ~30 fps", "#5ac8fa")
@@ -47,7 +57,7 @@ end
 
 -- A spinner and a pulsing LED, both Anims.
 local arcSize = small and 40 or 64
-local arc = h.Arc {
+local arc = ui.Arc {
   w = arcSize, h = arcSize, align = lvgl.ALIGN.BOTTOM_LEFT, x = 12, y = -8,
   arc_width = small and 5 or 8, value = 0,
   bg_start_angle = 0, bg_end_angle = 360, rotation = 270,
@@ -61,7 +71,7 @@ arc:Anim {
   exec_cb = function(obj, v) obj:set { value = v } end, run = true,
 }
 
-local led = h.Led { w = small and 14 or 20, h = small and 14 or 20, color = "#ff5e7e",
+local led = ui.Led { w = small and 14 or 20, h = small and 14 or 20, color = "#ff5e7e",
   align = lvgl.ALIGN.BOTTOM_LEFT, x = 12 + arcSize + 18, y = -(arcSize // 2) }
 led:Anim {
   start_value = 40, end_value = 255, duration = 700, playback_time = 700,
@@ -70,7 +80,7 @@ led:Anim {
 }
 
 -- A label that bounces in once, then a counter on_tick updates (state, not motion: that's fine).
-local count = h.Label { text = "0", align = lvgl.ALIGN.BOTTOM_RIGHT, x = -12, y = -8,
+local count = ui.Label { text = "0", align = lvgl.ALIGN.BOTTOM_RIGHT, x = -12, y = -8,
   text_font = lvgl.Font("montserrat", small and 24 or 32) }
 count:Anim {
   start_value = -40, end_value = 0, duration = 900, path = "bounce",

@@ -126,6 +126,24 @@ describe('Display.show timing', () => {
   });
 });
 
+describe('AMOLED', () => {
+  it('sends a full frame over QSPI four bits a clock, and black is off', async () => {
+    const clock = pausedClock();
+    const d = new Display(device('waveshare-esp32-s3-touch-amoled-1.32'), clock);
+    expect(d.isColor()).toBe(true);
+    d.fillScreen(colors.BLACK);
+    d.fillRect(200, 200, 10, 10, color565(255, 255, 255));
+    d.invalidate();
+    const t0 = clock.now();
+    await settle(clock, d.show(), 0.1);
+    // 466 × 466 × 2 bytes + 11 command bytes, 4 bits a clock at 40 MHz ≈ 21.7 ms.
+    expect(clock.now() - t0).toBeGreaterThan(21);
+    expect(clock.now() - t0).toBeLessThan(23);
+    expect(pixel(d, 5, 5)).toEqual([0, 0, 0]); // an off pixel gives no light at all
+    expect(pixel(d, 205, 205)[0]).toBeGreaterThan(250);
+  });
+});
+
 describe('e-paper', () => {
   it('shows nothing until refreshed, does full then partial refreshes, and ghosts', async () => {
     const clock = pausedClock();

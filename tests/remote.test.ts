@@ -154,6 +154,18 @@ describe('remote mirror', () => {
     expect(t.display.stats.shows).toBeLessThan(6); // the frames in between were never refreshed
   });
 
+  it('tells apps on the round AMOLED that the screen is round and in colour', async () => {
+    const t = await device(
+      `local s = screens.get("main")
+      function init(ctx) log.info(s.shape, s.w, s.h, s.depth, s.scheme, s.tech) end`,
+      FIRMWARE,
+      'waveshare-esp32-s3-touch-amoled-1.32',
+      false,
+    );
+    expect(t.error).toBeUndefined();
+    expect(t.logs).toEqual(['round\t466\t466\t16\tdark\tamoled']);
+  });
+
   it('counts every press on a button, however quick, and sends A and B as gestures', () => {
     const clock = new SimClock();
     clock.paused = true;

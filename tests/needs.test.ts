@@ -99,6 +99,30 @@ describe('the App menu', () => {
   });
 });
 
+describe('the round AMOLED board', () => {
+  const amoled = findDevice('waveshare-esp32-s3-touch-amoled-1.32')!;
+
+  it('runs every display app that fits 466 × 466 in colour, LVGL included', () => {
+    const caps = outputCaps(amoled, boardsFor(amoled)[0]);
+    expect(caps).toMatchObject({ w: 466, h: 466, color: true, motion: true, libraries: ['screen', 'lgfx', 'lvgl'] });
+    expect(runs(amoled)).toEqual(expect.arrayContaining(['hello-display', 'patterns', 'tilt-ball', 'rainbow', 'hello']));
+  });
+
+  it('tells the app writer the glass is round AMOLED, and the firmware writer its pins and quirks', () => {
+    const app = appPrompt({ device: amoled, board: boardsFor(amoled)[0], parts: [], controls: [], app: { id: 'x', name: 'x', code: '', bundled: false }, deviceId: 'sim-1', online: false });
+    expect(app).toContain('466×466 pixels');
+    expect(app).toContain('16-bit colour');
+    expect(app).toContain('The glass is round');
+    expect(app).toContain('AMOLED: every pixel emits');
+    const fw = firmwarePrompt(amoled, boardsFor(amoled)[0]);
+    expect(fw).toContain('CO5300 over QSPI at 40 MHz');
+    expect(fw).toContain('Column offset 6');
+    expect(fw).toContain('QSPI CS 10');
+    expect(fw).toContain('GPIO18 (BAT_EN)');
+    expect(fw).toContain("Follow Resident's guide");
+  });
+});
+
 describe('prompts follow the board', () => {
   const base: PromptInput = {
     device: epaper,

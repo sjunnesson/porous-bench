@@ -56,6 +56,13 @@ export const BOARDS: Board[] = [
     note: '8 MB PSRAM: Lua and LVGL live there.',
   },
   {
+    id: 'waveshare-esp32-s3-touch-amoled-1.32',
+    name: 'ESP32-S3-PICO-1-N8R8 (on the board)',
+    libraries: ['screen', 'lgfx', 'lvgl'],
+    appRamKb: 8192,
+    note: '8 MB octal PSRAM: Lua and LVGL live there.',
+  },
+  {
     id: 'waveshare-esp32-c6-lcd-1.47',
     name: 'ESP32-C6 (on the board)',
     libraries: ['screen', 'lgfx', 'lvgl'],

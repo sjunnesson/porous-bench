@@ -28,7 +28,7 @@ import { RemotePanel } from './ui/RemotePanel';
 import { ResidentPanel } from './ui/ResidentPanel';
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
-const TECH_LABEL = { lcd: 'LCD', oled: 'OLED', epaper: 'E-paper', led: 'LED' } as const;
+const TECH_LABEL = { lcd: 'LCD', amoled: 'AMOLED', oled: 'OLED', epaper: 'E-paper', led: 'LED' } as const;
 
 const GROUPS = ['Your app', 'Bench examples', 'Resident examples'] as const;
 
@@ -223,7 +223,7 @@ export default function App() {
     if (run && remote.active) void remote.start({ name: entry.name.replace(/^▶ /, ''), code: entry.code }, mirrorSource);
   }, [run, mirrorSource]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const byTech = (['lcd', 'oled', 'epaper'] as const).map((tech) => ({ tech, list: devices.filter((d) => d.tech === tech) }));
+  const byTech = (['lcd', 'amoled', 'oled', 'epaper'] as const).map((tech) => ({ tech, list: devices.filter((d) => d.tech === tech) }));
 
   return (
     <div className="app">

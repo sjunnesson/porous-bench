@@ -375,7 +375,7 @@ export class ResidentHost {
       name: 'main',
       w: d.width(),
       h: d.height(),
-      shape: 'rect',
+      shape: p.shape ?? 'rect',
       depth: d.isColor() ? 16 : 1,
       scheme: p.tech === 'epaper' ? 'light' : 'dark',
       ...(dpi ? { dpi } : {}),
@@ -637,7 +637,7 @@ export class ResidentHost {
       },
       screens_set: (name: string, settings: Record<string, unknown>) => {
         if (name !== 'main') return `screens.set: no screen named '${name}'`;
-        const keys = d.tech === 'lcd' || d.tech === 'led' ? ['brightness'] : d.tech === 'oled' ? ['brightness', 'contrast'] : [];
+        const keys = d.tech === 'lcd' || d.tech === 'amoled' || d.tech === 'led' ? ['brightness'] : d.tech === 'oled' ? ['brightness', 'contrast'] : [];
         for (const [k, v] of Object.entries(settings)) {
           if (!keys.includes(k)) return `screens.set: screen 'main' has no setting '${k}'`;
           if (typeof v !== 'number') return `screens.set: '${k}' must be a number`;

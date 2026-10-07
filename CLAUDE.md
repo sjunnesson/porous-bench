@@ -29,8 +29,9 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   smallest screen its fixed layout fits). Libraries and memory are read from the code
   (`needs.ts`). Tests fail if an app runs nowhere or doesn't boot wrapped for a real device.
 - **A new output or board** goes in `src/sim/devices/` or `src/sim/boards.ts` with its libraries
-  and *measured* app memory (`heap_caps_get_free_size(MALLOC_CAP_8BIT)` after Wi-Fi + TLS, not
-  `ESP.getFreeHeap()`); unmeasured stays unset. Keep the Boards table in DEVICE-SKILL.md in step.
+  and its app memory: the PSRAM size on a board with PSRAM, otherwise *measured*
+  (`heap_caps_get_free_size(MALLOC_CAP_8BIT)` after Wi-Fi + TLS, not `ESP.getFreeHeap()`);
+  unmeasured stays unset. Keep the Boards table in DEVICE-SKILL.md in step.
 - **The mirror shim is compiled on the device**, often in ~70 KB: keep `lua/remote.lua` small, put
   each stand-in between `-- @@part <module>` / `-- @@end` (sent only to apps that name it). While
   Bench mirrors, the board's own keys are ignored and buttons A/B arrive as the taps and holds

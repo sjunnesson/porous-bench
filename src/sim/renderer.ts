@@ -97,7 +97,7 @@ export class PanelRenderer {
 
     if (view.grid && view.zoom >= 3) {
       // Gaps between pixels: dark on OLED, faint on LCD, almost invisible on e-paper.
-      const alpha = { oled: 0.75, lcd: 0.28, epaper: 0.06, led: 0 }[profile.tech];
+      const alpha = { oled: 0.75, amoled: 0.5, lcd: 0.28, epaper: 0.06, led: 0 }[profile.tech];
       ctx.fillStyle = `rgba(0,0,0,${alpha})`;
       const line = Math.max(1, Math.round(view.zoom / 6));
       for (let x = 1; x < profile.width; x++) ctx.fillRect(-nw / 2 + x * view.zoom - line / 2, -nh / 2, line, nh);
@@ -105,7 +105,7 @@ export class PanelRenderer {
     }
     ctx.restore();
 
-    if (profile.tech === 'lcd') {
+    if (profile.tech === 'lcd' || profile.tech === 'amoled') {
       // A hint of glass reflection.
       ctx.save();
       roundRect(ctx, BEZEL_PX, BEZEL_PX, pw, ph, radius);

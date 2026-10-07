@@ -1,0 +1,72 @@
+import type { DeviceProfile } from './types';
+
+// Pins from Waveshare's schematic (its GPIO table) and demo code (user_config.h, lvgl_port.cpp);
+// dimensions from the wiki's product drawing.
+export default {
+  id: 'waveshare-esp32-s3-touch-amoled-1.32',
+  name: 'Waveshare ESP32-S3-Touch-AMOLED-1.32',
+  tech: 'amoled',
+  shape: 'round',
+  width: 466,
+  height: 466,
+  controller: 'CO5300',
+  bus: { kind: 'qspi', hz: 40_000_000 },
+  ram: { width: 480, height: 480, offsetX: 6, offsetY: 0 },
+  boards: ['waveshare-esp32-s3-touch-amoled-1.32'],
+  wiring: {
+    'QSPI CS': 10,
+    'QSPI CLK': 11,
+    'QSPI D0': 12,
+    'QSPI D1': 13,
+    'QSPI D2': 14,
+    'QSPI D3': 15,
+    RST: 8,
+    TE: 9,
+    'Touch SDA': 47,
+    'Touch SCL': 48,
+    'Touch INT': 6,
+    'Touch RST': 7,
+    BOOT: 0,
+    PWR: 17,
+    'Power hold': 18,
+    'Battery ADC': 4,
+    'Codec EN': 16,
+    'I2S MCLK': 38,
+    'I2S SCLK': 39,
+    'I2S LRCK': 41,
+    'I2S to codec': 42,
+    'I2S from codec': 40,
+    'Speaker PA': 46,
+  },
+  porting: [
+    'CO5300 AMOLED over QSPI (four data lines) at 40 MHz, as Waveshare\'s demo runs it. It speaks the SH8601 command set: Waveshare drives it with esp_lcd_sh8601 plus CO5300 init commands (0xFE 00, 0xC4 80, 0x3A 55, 0x35 00, 0x53 20, 0x51 FF, 0x63 FF, then sleep out and display on).',
+    'Column offset 6: the 466 visible columns are 6..471 of controller RAM (CASET 0x2A 0x0006..0x01D7), rows 0..465.',
+    'Windows must start on an even column and end on an odd one: round x1 down and x2 up. Pushing the whole frame never hits this.',
+    'No backlight: brightness is command 0x51 (0..255). Black pixels are off. Pixels are RGB565 (COLMOD 0x55), sent big-endian.',
+    'Round glass: only the circle of radius 233 px around the centre is visible.',
+    'A full RGB565 frame is 466 × 466 × 2 ≈ 434 KB: keep it in PSRAM. ESP32-S3-PICO-1-N8R8: 8 MB flash, 8 MB octal PSRAM (board_build.arduino.memory_type = qio_opi).',
+    'Native USB only: build with -DARDUINO_USB_MODE=1 -DARDUINO_USB_CDC_ON_BOOT=1 or serial stays silent; hold BOOT while plugging in if the port doesn\'t show up.',
+    'GPIO18 (BAT_EN) holds the power on when running from the battery: drive it HIGH early; LOW switches the board off. PWR key on GPIO17 and BOOT on GPIO0, both active low.',
+    'Touch: CST820 at I2C 0x15 (SDA 47, SCL 48, INT 6, RST 7), on the same bus as the ES8311 codec. Bench has no touchscreen input yet.',
+    'Audio: ES8311 codec (I2S MCLK 38, SCLK 39, LRCK 41, data to codec 42, from codec 40; codec enable 16, speaker amplifier 46), onboard mic, speaker on the MX1.25 header.',
+  ],
+  url: 'https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-1.32',
+  enclosure: {
+    // A round board, Ø36.5 mm, with the panel (Ø36.4 mm, Ø33.75 mm active) on its front; ~6.5 mm
+    // from glass to the back of the board, connectors behind. BOOT and PWR sit on the rim at the top
+    // left (seen from the front), shown here on the back face near the edge.
+    style: 'pcb',
+    body: { w: 36.5, h: 36.5, d: 1.6, r: 18.25 },
+    module: { w: 36.4, h: 36.4, d: 4.9, r: 18.2, x: 0, y: 0 },
+    screen: { x: 0, y: 0 },
+    parts: [
+      { kind: 'button', face: 'back', u: -4.9, v: 15.2, w: 3.5, h: 2.5, input: 0, label: 'BOOT', color: '#d8d8d8' },
+      { kind: 'button', face: 'back', u: -10.7, v: 11.9, w: 3.5, h: 2.5, input: 1, label: 'PWR', color: '#d8d8d8' },
+      { kind: 'port', face: 'right', u: -0.8, v: 0, w: 3.2, h: 9, label: 'USB-C' },
+      { kind: 'port', face: 'back', u: -13.7, v: 0, w: 3, h: 13, label: 'SH1.0 12-pin' },
+      { kind: 'port', face: 'back', u: 8, v: -14, w: 6, h: 3, label: 'SPK' },
+      { kind: 'port', face: 'back', u: -8, v: -14, w: 6, h: 3, label: 'BAT' },
+    ],
+  },
+  look: { activeWidthMm: 33.75, activeHeightMm: 33.75, cornerRadiusPx: 233 },
+} satisfies DeviceProfile;

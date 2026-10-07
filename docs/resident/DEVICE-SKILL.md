@@ -14,13 +14,14 @@ Pass this file to the Resident plugin: `/resident:create-app --device-skill docs
 
 ```lua
 local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme = "dark" | "light", dpi?, brightness,
-                                --   model, controller, tech = "lcd" | "oled" | "epaper" }  (the last three are Bench extras)
+                                --   model, controller, tech = "lcd" | "amoled" | "oled" | "epaper" }  (the last three are Bench extras)
 ```
 
 | Display | Size seen by apps | depth | scheme | Notes |
 |---|---|---|---|---|
 | M5StickC Plus2 / M5StickS3 | 240×135 (landscape) | 16 | dark | the default Resident board |
 | Waveshare ESP32-C6-LCD-1.47 | 172×320 | 16 | dark | rounded corners: keep ~20 px clear |
+| Waveshare ESP32-S3-Touch-AMOLED-1.32 | 466×466 | 16 | dark | round (`shape = "round"`): only the circle of radius 233 shows; AMOLED, black is off |
 | 1.3" ST7789 | 240×240 | 16 | dark | |
 | SSD1306 OLED | 128×64 or 128×32 | 1 | dark | colours threshold to lit/unlit at 50% brightness |
 | 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh (0.3 s partial, 2 s full every 10th); it runs in the background and only the newest frame reaches the glass: flip only when something changed |
@@ -60,7 +61,7 @@ The board driving the output decides what an app gets. Bench shows it under the 
 
 | Board | Libraries | Memory for apps |
 |---|---|---|
-| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8 | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
+| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Waveshare ESP32-S3-Touch-AMOLED-1.32 | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
 | ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~70 KB |
 | Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`, `lvgl` | not measured yet |
 

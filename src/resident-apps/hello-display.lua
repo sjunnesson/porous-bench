@@ -2,6 +2,15 @@
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()
+-- Round glass (shape "round"): lay everything out in the square inside the circle.
+local ui = h
+if s.shape == "round" then
+  local side = math.floor(math.min(W, H) * 0.7071)
+  local box = h.Object { x = (W - side) // 2, y = (H - side) // 2, w = side, h = side,
+    bg_opa = 0, border_width = 0, pad_all = 0, radius = 0 }
+  ui = setmetatable({}, { __index = function(_, kind) return function(props) return box[kind](box, props) end end })
+  W, H = side, side
+end
 local color = s.depth == 16
 local paper = s.scheme == "light" -- e-paper: every LVGL refresh is a slow panel refresh
 local BG = paper and 0xFFFFFF or 0x000000
@@ -68,24 +77,24 @@ end
 local y = 0
 if medium or large then
   local hh = large and 26 or 18
-  local bar = h.Object { x = 0, y = 0, w = W, h = hh, bg_opa = 255, bg_color = color and 0x18408C or FG }
+  local bar = ui.Object { x = 0, y = 0, w = W, h = hh, bg_opa = 255, bg_color = color and 0x18408C or FG }
   bar:Label { text = "Bench", align = lvgl.ALIGN.CENTER, text_color = color and 0xFFFFFF or BG,
     text_font = lvgl.Font("montserrat", large and 16 or 14) }
   y = hh + (large and 6 or 2)
 end
 
 local model = s.model or "display"
-local spec = W .. "x" .. H .. ((s.controller and s.controller ~= "") and (" " .. s.controller) or "")
+local spec = h.HOR_RES() .. "x" .. h.VER_RES() .. ((s.controller and s.controller ~= "") and (" " .. s.controller) or "")
 local lineH = math.ceil(F * 1.17)
 if small then
   -- One line: as much as fits.
-  local l = h.Label { x = pad, y = 1 }
+  local l = ui.Label { x = pad, y = 1 }
   fit(l, { model .. "  " .. spec, model, spec }, W - 2 * pad)
   y = lineH + 2
 elseif not tiny then
-  local l1 = h.Label { x = pad, y = y }
+  local l1 = ui.Label { x = pad, y = y }
   fit(l1, { model }, W - 2 * pad)
-  local l2 = h.Label { x = pad, y = y + lineH, text_color = color and 0xC6C3C6 or FG }
+  local l2 = ui.Label { x = pad, y = y + lineH, text_color = color and 0xC6C3C6 or FG }
   fit(l2, { spec }, W - 2 * pad)
   y = y + 2 * lineH + 2
 end
@@ -99,10 +108,10 @@ if barsH > 0 then
   for i = 0, 7 do
     local x0, x1 = barsX + i * barsW // 8, barsX + (i + 1) * barsW // 8
     if color then
-      h.Object { x = x0, y = barsY, w = x1 - x0, h = barsH, bg_opa = 255, bg_color = hsv(i * 45, 1, 1) }
+      ui.Object { x = x0, y = barsY, w = x1 - x0, h = barsH, bg_opa = 255, bg_color = hsv(i * 45, 1, 1) }
     else
       local w = math.max(1, (x1 - x0) * (8 - i) // 8)
-      h.Object { x = x0, y = barsY, w = w, h = barsH, bg_opa = 255, bg_color = FG }
+      ui.Object { x = x0, y = barsY, w = w, h = barsH, bg_opa = 255, bg_color = FG }
     end
   end
 end
@@ -110,14 +119,14 @@ end
 -- ── footer: uptime and the pump rates (text only, set from on_tick) ────────
 
 local footColor = color and 0xB4FF2F or FG
-local uptime = h.Label { x = pad, y = 0, text_color = footColor }
+local uptime = ui.Label { x = pad, y = 0, text_color = footColor }
 uptime:set { text = paper and "up 0000 s" or "000.0 s" }
 local upW = uptime:get_width()
 local B = " " .. lvgl.SYMBOL.BULLET .. " "
 local notes = paper
   and { "e-paper" .. B .. "every 5 s", "every 5 s", "" }
   or { "anim ~30 fps" .. B .. "tick 10 Hz", "anim 30fps" .. B .. "tick 10Hz", "30fps" .. B .. "10Hz", "" }
-local note = h.Label { text_color = color and 0x8A8AA6 or FG }
+local note = ui.Label { text_color = color and 0x8A8AA6 or FG }
 local footBottom = barsY - (barsH > 0 and 2 or 0)
 local footTop
 if large then
@@ -141,7 +150,7 @@ local ay = y
 local ah = math.max(4, footTop - 2 - ay)
 local r = math.max(3, math.min(16, math.min(aw, ah) // 7))
 local D = 2 * r
-local arena = h.Object { x = ax, y = ay, w = aw, h = ah }
+local arena = ui.Object { x = ax, y = ay, w = aw, h = ah }
 local ball = arena:Object { x = 0, y = 0, w = D, h = D, radius = lvgl.RADIUS_CIRCLE, bg_opa = 255, bg_color = FG }
 local rangeX, rangeY = math.max(0, aw - D), math.max(0, ah - D)
 
@@ -184,7 +193,7 @@ local function tri(t, dur, range)
 end
 
 function init(ctx)
-  log.info("Running on " .. model .. ": " .. W .. "x" .. H)
+  log.info("Running on " .. model .. ": " .. h.HOR_RES() .. "x" .. h.VER_RES())
 end
 
 local wait = 0

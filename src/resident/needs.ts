@@ -88,7 +88,7 @@ export function outputCaps(profile: DeviceProfile, board: Board | undefined): Ou
     output: leds ? (leds.layout === 'grid' ? 'matrix' : 'strip') : 'display',
     w,
     h,
-    color: profile.tech === 'lcd' || profile.tech === 'led',
+    color: profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led',
     motion: profile.tech !== 'epaper',
     libraries,
     appRamKb: board?.appRamKb,

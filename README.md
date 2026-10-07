@@ -94,6 +94,7 @@ Everything runs locally in the browser;
 | Display | Technology | Resolution | Bus |
 |---|---|---|---|
 | Waveshare ESP32-C6-LCD-1.47 | IPS LCD, ST7789V3, rounded corners | 172×320 | SPI 80 MHz |
+| Waveshare ESP32-S3-Touch-AMOLED-1.32 | AMOLED, CO5300, round | 466×466 | QSPI 40 MHz |
 | M5StickC Plus2 | LCD, ST7789V2 | 135×240 | SPI 40 MHz |
 | M5StickS3 | LCD, ST7789P3 | 135×240 | SPI 40 MHz |
 | Generic 1.3″ IPS | LCD, ST7789 | 240×240 | SPI 40 MHz |
@@ -102,7 +103,8 @@ Everything runs locally in the browser;
 | Waveshare 2.13″ e-Paper V4 | E-paper, SSD1680, black/white | 122×250 | SPI 10 MHz |
 
 The Device panel shows each one's controller, RAM offsets, wiring and the things a driver must get
-right on hardware (the Waveshare's 34-pixel column offset and INVON, the SSD1306 charge pump, …).
+right on hardware (the Waveshare's 34-pixel column offset and INVON, the AMOLED's 6-column offset and
+even-aligned windows, the SSD1306 charge pump, …).
 
 ## Writing apps
 

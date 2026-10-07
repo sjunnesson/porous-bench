@@ -42,7 +42,7 @@ export class Display extends Gfx {
     private clock: SimClock,
     private signal?: AbortSignal,
   ) {
-    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'led' ? 'rgb565' : 'mono'));
+    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led' ? 'rgb565' : 'mono'));
     this.panel = createPanel(profile);
   }
 
@@ -160,6 +160,7 @@ export class Display extends Gfx {
   private transferBytes(r: Rect, fullEpaperRefresh: boolean): number {
     switch (this.profile.tech) {
       case 'lcd':
+      case 'amoled':
         return r.w * r.h * 2 + 11; // CASET + RASET + RAMWR, then RGB565 pixels
       case 'oled':
         return (r.w * r.h) / 8 + 6; // column/page address commands, then page bytes
@@ -177,7 +178,8 @@ export class Display extends Gfx {
     // WS2812: 1.25 µs a bit, then a ≥280 µs low to latch.
     if (kind === 'ws2812') return ((bytes * 8) / hz) * 1000 + 0.3;
     // I2C: 9 clocks per byte plus address+control bytes for every ~32-byte chunk.
-    const bits = kind === 'i2c' ? bytes * 9 + Math.ceil(bytes / 32) * 18 : bytes * 8;
+    // QSPI: four data lines, four bits a clock.
+    const bits = kind === 'i2c' ? bytes * 9 + Math.ceil(bytes / 32) * 18 : kind === 'qspi' ? bytes * 2 : bytes * 8;
     return (bits / hz) * 1000;
   }
 }

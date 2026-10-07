@@ -4,19 +4,20 @@ import type { DeviceProfile } from '../sim/devices/types';
 function maxFps(d: DeviceProfile): number {
   const n = d.width * d.height;
   if (d.tech === 'led') return 1000 / (((n * 24) / d.bus.hz) * 1000 + 0.3);
-  const bytes = d.tech === 'lcd' ? n * 2 : n / 8;
-  const bits = d.bus.kind === 'i2c' ? bytes * 9 * 1.06 : bytes * 8;
+  const bytes = d.tech === 'lcd' || d.tech === 'amoled' ? n * 2 : n / 8;
+  const bits = d.bus.kind === 'i2c' ? bytes * 9 * 1.06 : d.bus.kind === 'qspi' ? bytes * 2 : bytes * 8;
   return d.bus.hz / bits;
 }
 
 /** The display module: a picker (children), its specs, and the wiring and porting notes folded away. */
 export function DeviceInfo({ device, children }: { device: DeviceProfile; children?: ReactNode }) {
-  const diag = Math.hypot(device.look.activeWidthMm, device.look.activeHeightMm) / 25.4;
+  // Round glass is sold by its diameter; everything else by its diagonal.
+  const diag = (device.shape === 'round' ? device.look.activeWidthMm : Math.hypot(device.look.activeWidthMm, device.look.activeHeightMm)) / 25.4;
   const bus =
     device.bus.kind === 'ws2812'
       ? `one wire @ ${device.bus.hz / 1e3} kHz, GRB 24 bit/LED`
-      : device.bus.kind === 'spi'
-        ? `SPI @ ${device.bus.hz / 1e6} MHz`
+      : device.bus.kind === 'spi' || device.bus.kind === 'qspi'
+        ? `${device.bus.kind.toUpperCase()} @ ${device.bus.hz / 1e6} MHz`
         : `I2C @ ${device.bus.hz / 1e3} kHz, addr 0x${(device.bus.i2cAddress ?? 0x3c).toString(16)}`;
   const leds = device.look.leds;
   return (

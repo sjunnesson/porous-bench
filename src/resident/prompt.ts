@@ -76,7 +76,7 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
   }
   const turned = (p.firmwareRotation ?? 0) % 2 === 1;
   const [w, h] = turned ? [p.height, p.width] : [p.width, p.height];
-  const color = p.tech === 'lcd';
+  const color = p.tech === 'lcd' || p.tech === 'amoled';
   const lines = [
     `The output is the display of a ${p.name}: ${w}×${h} pixels as apps see them, ${p.tech.toUpperCase()}, ${color ? '16-bit colour' : '1-bit (pixels are lit or not)'}, ${p.tech === 'epaper' ? 'light' : 'dark'} scheme, ${p.controller} over ${p.bus.kind.toUpperCase()}.`,
     '- Read the screen\'s facts from `screens.get("main")` rather than hard-coding them, so the app adapts.',
@@ -85,7 +85,10 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
       : '- Draw with `lgfx`, or with the optional `lvgl` module. For motion, use `lvgl.Anim`: LVGL runs it on its own timer pump, smoother than the 10 Hz `on_tick`.',
     ...boardLines(board),
   ];
-  if (p.look.cornerRadiusPx) lines.push(`- The glass has rounded corners (radius ${p.look.cornerRadiusPx} px): keep content clear of them.`);
+  if (p.shape === 'round') {
+    lines.push(`- The glass is round: only the circle of radius ${Math.min(w, h) / 2} px around the centre shows (\`screens.get("main").shape\` is "round"). Lay out from the centre and keep text inside the circle.`);
+  } else if (p.look.cornerRadiusPx) lines.push(`- The glass has rounded corners (radius ${p.look.cornerRadiusPx} px): keep content clear of them.`);
+  if (p.tech === 'amoled') lines.push('- AMOLED: every pixel emits its own light and black is off, so a black background looks like no screen at all; it suits dark, high-contrast designs.');
   if (!color && p.tech !== 'epaper') lines.push('- 1-bit: use pure white on black; colours become lit or unlit at 50% brightness.');
   if (p.tech === 'epaper') lines.push('- E-paper: every `flip()` is a refresh (about 2 s full, 0.3 s partial). Change the screen rarely and don\'t animate.');
   lines.push('- Put `-- @output display` on the app\'s second line.', NEEDS_LINE);

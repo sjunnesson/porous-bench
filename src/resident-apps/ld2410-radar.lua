@@ -2,6 +2,15 @@
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()
+-- Round glass (shape "round"): lay everything out in the square inside the circle.
+local ui = h
+if s.shape == "round" then
+  local side = math.floor(math.min(W, H) * 0.7071)
+  local box = h.Object { x = (W - side) // 2, y = (H - side) // 2, w = side, h = side,
+    bg_opa = 0, border_width = 0, pad_all = 0, radius = 0 }
+  ui = setmetatable({}, { __index = function(_, kind) return function(props) return box[kind](box, props) end end })
+  W, H = side, side
+end
 local color = s.depth == 16
 local paper = s.scheme == "light" -- e-paper: no animation; update on a state change or every 10 s
 local tiny = H < 48 -- 128x32 OLED: just state + distance
@@ -72,15 +81,15 @@ local STEP, HMAX = 2, 0 -- history: px per sample, and how many samples fit
 
 if tiny then
   local bw = 68
-  badge = h.Object { x = 0, y = 0, w = bw, h = H, radius = 4,
+  badge = ui.Object { x = 0, y = 0, w = bw, h = H, radius = 4,
     transform_pivot_x = bw // 2, transform_pivot_y = H // 2 }
   badgeLabel = badge:Label { align = lvgl.ALIGN.CENTER, text = "", text_font = font(14) }
-  distance = h.Label { align = lvgl.ALIGN.RIGHT_MID, text = "-- m", text_font = font(16) }
+  distance = ui.Label { align = lvgl.ALIGN.RIGHT_MID, text = "-- m", text_font = font(16) }
 else
   -- Header.
   local hf = H >= 100 and 14 or 8
-  h.Label { x = PX, y = PY, text = "LD2410", text_color = DIM, text_font = font(hf) }
-  status = h.Label { align = lvgl.ALIGN.TOP_RIGHT, x = -PX, y = PY, text = "", text_color = DIM,
+  ui.Label { x = PX, y = PY, text = "LD2410", text_color = DIM, text_font = font(hf) }
+  status = ui.Label { align = lvgl.ALIGN.TOP_RIGHT, x = -PX, y = PY, text = "", text_color = DIM,
     text_font = font(hf) }
   local y = PY + lineH(hf) + 2
 
@@ -90,23 +99,23 @@ else
   else bf, df = (W >= 200 and 28 or W >= 160 and 24 or 20), (H >= 200 and 28 or 16) end
   local bh = lineH(bf) + (H >= 100 and 8 or 4)
   local bw = wide and CW * 5 // 9 or CW
-  badge = h.Object { x = PX, y = y, w = bw, h = bh, radius = H >= 100 and 8 or 4,
+  badge = ui.Object { x = PX, y = y, w = bw, h = bh, radius = H >= 100 and 8 or 4,
     transform_pivot_x = bw // 2, transform_pivot_y = bh // 2 }
   badgeLabel = badge:Label { align = lvgl.ALIGN.CENTER, text = "", text_font = font(bf) }
   if wide then
-    distance = h.Label { align = lvgl.ALIGN.TOP_RIGHT, x = -PX, y = y + (bh - lineH(df)) // 2,
+    distance = ui.Label { align = lvgl.ALIGN.TOP_RIGHT, x = -PX, y = y + (bh - lineH(df)) // 2,
       text = "-- m", text_font = font(df) }
     y = y + bh + 4
   else
     y = y + bh + 4
-    distance = h.Label { align = lvgl.ALIGN.TOP_MID, y = y, text = "-- m", text_font = font(df) }
+    distance = ui.Label { align = lvgl.ALIGN.TOP_MID, y = y, text = "-- m", text_font = font(df) }
     y = y + lineH(df) + 2
   end
 
   -- 0..6 m scale: one polyline for the baseline and its ticks, and a round marker on it.
   local D = H >= 100 and 10 or 6
   local sh = D + 2
-  local scale = h.Object { x = PX, y = y, w = CW, h = sh }
+  local scale = ui.Object { x = PX, y = y, w = CW, h = sh }
   gw = CW - D
   local mid, tk, x0 = sh // 2, H >= 100 and 3 or 2, D // 2
   local pts = { { x0, mid } }
@@ -130,9 +139,9 @@ else
     local rowH = math.max(lineH(ef), ebh)
     local inset = color and 0 or 1 -- mono: an outlined track, the fill inside the border
     for i, name in ipairs { "move", "still" } do
-      local label = h.Label { x = PX, y = y + (rowH - lineH(ef)) // 2, text = name .. " 0",
+      local label = ui.Label { x = PX, y = y + (rowH - lineH(ef)) // 2, text = name .. " 0",
         text_color = DIM, text_font = font(ef) }
-      local track = h.Object { x = PX + lw, y = y + (rowH - ebh) // 2, w = CW - lw, h = ebh,
+      local track = ui.Object { x = PX + lw, y = y + (rowH - ebh) // 2, w = CW - lw, h = ebh,
         radius = ebh // 2, bg_color = "#1e1e28", bg_opa = color and 255 or 0,
         border_width = inset, border_color = FG }
       local fill = track:Object { w = 0, h = ebh - 2 * inset, radius = ebh // 2, bg_opa = 255,
@@ -145,7 +154,7 @@ else
   -- Distance history, newest on the right: a few Lines, one per run of samples with a target.
   local hh = H - PY - y
   if hh >= 10 then
-    local frame = h.Object { x = PX, y = y, w = CW, h = hh, border_width = 1,
+    local frame = ui.Object { x = PX, y = y, w = CW, h = hh, border_width = 1,
       border_color = color and "#282830" or FG, radius = color and 4 or 0 }
     fw, fh = CW - 2, hh - 2
     LW = (color or paper) and 2 or 1

@@ -2,6 +2,15 @@
 local h = lvgl.bind("main")
 local s = screens.get("main")
 local W, H = h.HOR_RES(), h.VER_RES()
+-- Round glass (shape "round"): lay everything out in the square inside the circle.
+local ui = h
+if s.shape == "round" then
+  local side = math.floor(math.min(W, H) * 0.7071)
+  local box = h.Object { x = (W - side) // 2, y = (H - side) // 2, w = side, h = side,
+    bg_opa = 0, border_width = 0, pad_all = 0, radius = 0 }
+  ui = setmetatable({}, { __index = function(_, kind) return function(props) return box[kind](box, props) end end })
+  W, H = side, side
+end
 local color = s.depth == 16
 local paper = s.scheme == "light" -- e-paper: every LVGL refresh is a slow refresh, so nothing animates
 local canDim = not paper
@@ -111,12 +120,12 @@ h:set_theme {
 
 local titleBar, titleLabel
 if titleH > 0 then
-  titleBar = h.Object { x = 0, y = 0, w = W, h = top - gap, bg_opa = 255 }
+  titleBar = ui.Object { x = 0, y = 0, w = W, h = top - gap, bg_opa = 255 }
   titleLabel = titleBar:Label { text = "MENU", align = lvgl.ALIGN.CENTER, y = corner // 2 }
 end
 
 -- The viewport clips the list; the list slides (translate_y) when the cursor leaves the view.
-local view = h.Object { x = 0, y = top, w = listW, h = viewH }
+local view = ui.Object { x = 0, y = top, w = listW, h = viewH }
 local list = view:Object { x = 0, y = 0, w = listW, h = #items * rowH }
 -- The highlight is made first so it sits behind the rows, and glides between them.
 local hl = list:Object { x = 2, y = gap // 2, w = listW - 4, h = rowH - gap, radius = big and 5 or 3 }
@@ -135,7 +144,7 @@ local cx, cy, Ro, DOT = 0, 0, 0, 0
 if hasGauge then
   local gx, gy = side and listW or 0, side and top or top + viewH
   local gw, gh = W - gx, H - corner - gy
-  local box = h.Object { x = gx, y = gy, w = gw, h = gh }
+  local box = ui.Object { x = gx, y = gy, w = gw, h = gh }
   local AW = big and 8 or 5
   DOT = big and 8 or 6
   local knobR = AW // 2 + 1

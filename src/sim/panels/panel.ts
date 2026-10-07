@@ -11,7 +11,7 @@ import { OledPanel } from './oled';
  */
 export interface Panel {
   readonly profile: DeviceProfile;
-  /** 0..1. LCD: backlight PWM. OLED: contrast. E-paper: ignored. */
+  /** 0..1. LCD: backlight PWM. AMOLED: the brightness command. OLED: contrast. E-paper: ignored. */
   brightness: number;
   /** Copy a region of the MCU frame buffer into controller RAM (what travels over the bus). */
   write(fb: Framebuffer, r: Rect): void;
@@ -25,6 +25,8 @@ export function createPanel(profile: DeviceProfile): Panel {
   switch (profile.tech) {
     case 'lcd':
       return new LcdPanel(profile);
+    case 'amoled':
+      return new LcdPanel(profile, 0); // emissive: black is off
     case 'oled':
       return new OledPanel(profile);
     case 'epaper':
