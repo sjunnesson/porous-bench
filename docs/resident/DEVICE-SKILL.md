@@ -22,6 +22,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 | M5StickC Plus2 / M5StickS3 | 240×135 (landscape) | 16 | dark | the default Resident board |
 | Waveshare ESP32-C6-LCD-1.47 | 172×320 | 16 | dark | rounded corners: keep ~20 px clear |
 | Waveshare ESP32-S3-Touch-AMOLED-1.32 | 466×466 | 16 | dark | round (`shape = "round"`): only the circle of radius 233 shows; AMOLED, black is off; touch panel (`touchscreen`) |
+| Waveshare ESP32-S3-AMOLED-1.91 | 536×240 (landscape) | 16 | dark | AMOLED, black is off; IMU; the Touch version adds a touch panel (`touchscreen`) |
 | 1.3" ST7789 | 240×240 | 16 | dark | |
 | SSD1306 OLED | 128×64 or 128×32 | 1 | dark | colours threshold to lit/unlit at 50% brightness |
 | 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh (0.3 s partial, 2 s full every 10th); it runs in the background and only the newest frame reaches the glass: flip only when something changed |
@@ -61,7 +62,7 @@ The board driving the output decides what an app gets. Bench shows it under the 
 
 | Board | Libraries | Memory for apps |
 |---|---|---|
-| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Waveshare ESP32-S3-Touch-AMOLED-1.32 | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
+| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Waveshare ESP32-S3-Touch-AMOLED-1.32, Waveshare ESP32-S3-(Touch-)AMOLED-1.91 | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
 | ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~70 KB |
 | Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`, `lvgl` | not measured yet |
 
@@ -170,7 +171,8 @@ press": the user can then connect any part to it.
 
 ### touchscreen (Bench driver, displays with a touch panel)
 
-Only on a display with a touch panel (the Waveshare ESP32-S3-Touch-AMOLED-1.32); elsewhere
+Only on a display with a touch panel (the Waveshare ESP32-S3-Touch-AMOLED-1.32 and
+ESP32-S3-Touch-AMOLED-1.91); elsewhere
 `touchscreen` is nil, so check `if touchscreen then` or tag the app `-- @needs touch`. One finger,
 in the coordinates the app draws in. In Bench the user taps and drags on the screen with the mouse.
 

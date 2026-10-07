@@ -23,6 +23,7 @@ async function device(app: string, firmware = FIRMWARE, displayId = 'waveshare-e
   const clock = new SimClock();
   clock.paused = true;
   const display = new Display(findDevice(displayId)!, clock);
+  display.setRotation(display.profile.firmwareRotation ?? 0); // as Bench's sketch does
   const logs: string[] = [];
   const board: ResidentBoard = {
     display,
@@ -185,6 +186,25 @@ describe('remote mirror', () => {
     panel.release();
     await t.run(30);
     expect(t.logs.map((l) => l.split('\t')[0])).toEqual(['touch_down', 'touch_up']);
+  });
+
+  it('turns touches with the display on a rotated touch panel (the 1.91" AMOLED runs landscape)', async () => {
+    const t = await device(
+      `local s = screens.get("main")
+      function init(ctx) log.info("screen", s.w, s.h) end
+      function on_event(ctx, e) if e.name == "touch_tap" then log.info("tap", e.data.x, e.data.y) end end`,
+      FIRMWARE,
+      'waveshare-esp32-s3-touch-amoled-1.91',
+      false,
+    );
+    expect(t.error).toBeUndefined();
+    const panel = t.display.touch!;
+    panel.press(0, 0); // the panel's native top-left corner (portrait)
+    panel.release();
+    panel.press(239, 535); // its native bottom-right
+    panel.release();
+    await t.run(30);
+    expect(t.logs).toEqual(['screen\t536\t240', 'tap\t0\t239', 'tap\t535\t0']);
   });
 
   it('has no touchscreen module on a display without a touch panel', async () => {

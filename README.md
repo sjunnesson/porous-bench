@@ -95,6 +95,7 @@ Everything runs locally in the browser;
 |---|---|---|---|
 | Waveshare ESP32-C6-LCD-1.47 | IPS LCD, ST7789V3, rounded corners | 172×320 | SPI 80 MHz |
 | Waveshare ESP32-S3-Touch-AMOLED-1.32 | AMOLED, CO5300, round, touch (CST820) | 466×466 | QSPI 40 MHz |
+| Waveshare ESP32-S3-AMOLED-1.91 (and -Touch-, FT3168) | AMOLED, RM67162, IMU | 240×536 (536×240 landscape) | QSPI 40 MHz |
 | M5StickC Plus2 | LCD, ST7789V2 | 135×240 | SPI 40 MHz |
 | M5StickS3 | LCD, ST7789P3 | 135×240 | SPI 40 MHz |
 | Generic 1.3″ IPS | LCD, ST7789 | 240×240 | SPI 40 MHz |
@@ -257,7 +258,8 @@ header line for the rest:
 -- @needs motion color 240x135   -- animates · means nothing in 1-bit · smallest screen its layout fits
 ```
 
-`touch` joins them for an app that needs a touch panel. On a display with one (the round AMOLED),
+`touch` joins them for an app that needs a touch panel. On a display with one (the round AMOLED, the
+1.91" Touch AMOLED),
 click the screen to tap it and drag to swipe, in the flat and the 3D view; apps get `touchscreen`
 and `touch_down` / `touch_move` / `touch_up` / `touch_tap` events (see the **Touch** example).
 
