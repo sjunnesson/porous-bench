@@ -16,6 +16,7 @@ import type { Button } from './sim/inputs/button';
 import type { Knob } from './sim/inputs/knob';
 import { type LogLine, SketchRun } from './sim/runner';
 import type { InputSpecs, Sketch } from './sim/sketch';
+import { About } from './ui/About';
 import { Console } from './ui/Console';
 import { Copy } from './ui/Copy';
 import { WatchFolder } from './ui/WatchFolder';
@@ -290,6 +291,8 @@ export default function App() {
           >
             ⟳ {view.rotation === 'auto' ? 'Auto' : `${view.rotation * 90}°`}
           </button>
+          <span className="toolbar-gap" />
+          <About />
         </div>
       </header>
 
