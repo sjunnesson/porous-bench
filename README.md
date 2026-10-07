@@ -67,6 +67,8 @@ Everything runs locally in the browser;
   buzzer). Each part has a widget and a 3D model on the desk.
 - **Connections.** An app declares the controls it needs ("speed", "next"); you connect each one to a
   part on the bench, and can rewire it while the app runs.
+- **An app from your bench.** **✦ New app from my bench** writes a Lua app for the output and parts
+  you've chosen: a control for every input, connected to its part and shown live, ready to edit.
 - **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
   sensor data all follow the simulated clock.
 - **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it, or the bare
@@ -154,8 +156,8 @@ A `dial` or `trigger` describes what an app needs, not which part provides it:
 
 | Declare | Read | Channels it can connect to |
 |---|---|---|
-| `dial.new(name, { min, max, step, start, wrap, via, label, keys })` | `d:value()`, `d:delta()` (steps since last read), `d:fraction()` | encoder turn · slide pot position · IMU tilt ←→ / ↑↓ · radar distance · light level · temperature · humidity |
-| `trigger.new(name, { key, via, label })` | `t:is_pressed()`, `t:was_pressed()`, `t:was_released()`, `t:pressed_for(ms)` | button press · encoder push · touch · IMU shake · radar presence · PIR motion · light goes dark |
+| `dial.new(name, { min, max, step, start, wrap, via, connect, label, keys })` | `d:value()`, `d:delta()` (steps since last read), `d:fraction()` | encoder turn · slide pot position · IMU tilt ←→ / ↑↓ · radar distance · light level · temperature · humidity |
+| `trigger.new(name, { key, via, connect, label })` | `t:is_pressed()`, `t:was_pressed()`, `t:was_released()`, `t:pressed_for(ms)` | button press · encoder push · touch · IMU shake · radar presence · PIR motion · light goes dark |
 
 `via` says what to connect to first (`"encoder"`, `"pot"`, `"light"`, `"temperature"`, `"motion"` …);
 the first time an app runs, each control connects to a free part that fits, preferring that one (the
@@ -163,6 +165,20 @@ board's buttons A and B go to the board's own buttons). After that your choice i
 An encoder steps a dial; a pot or a sensor sets it across its range, and `delta()` counts steps either
 way, so menu code doesn't care what's turning it. One encoder can turn one dial while its push fires a
 trigger. The keyboard keys work whatever the hardware: they move the connected part itself.
+`connect = "knob-2:rotate"` asks for one specific part and channel (the ids are the ones Connections
+shows); a part the bench only picked for another control (say, Button A on a board without buttons)
+is handed over.
+
+### Start from your bench
+
+Once the bench holds what you want to build with, **App → ✦ New app from my bench** writes the Lua
+for it and runs it as *My bench*. Every input gets a control connected to its part (`connect = …`)
+and its own keys. Each one shows live on the output: a row with a bar on a display (paging through
+when they don't all fit), a run of LEDs on a strip or ring, a column on a matrix. Presses are counted,
+logged and flashed (and clicked on the buzzer, if there is one). The code is in the editor to change
+and Run: keep the inputs you need and replace `pressed()` and the drawing with what your app should
+do. Change the bench and make it again whenever you like; it's written in the browser, nothing is
+sent anywhere.
 
 ### Bench drivers
 
@@ -365,11 +381,13 @@ src/sim/            simulator core, framework-free
   display.ts          show(): bus timing   panels/          LCD, OLED, e-paper physics
   devices/            one file per display inputs/          button, knob, pot, LD2410, IMU, buzzer
   runner.ts           runs a program       renderer.ts      flat canvas view
+  controls/           the bench, dials and triggers          leds.ts   LED strips, rings, matrices
+  generate.ts         writes a Lua app for the bench
 src/resident/       Lua runtime: wasmoon host, Resident sandbox prelude, Bench drivers, relay, datetime
 src/resident-apps/  bundled Lua apps (Bench's examples and Resident's)
 src/ui/             React UI; ui/three/ builds the wireframe models from each enclosure
 tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol, Lua sandbox and
-                    drivers, every bundled app on every kind of display
+                    drivers, every bundled and generated app on every kind of output
 docs/resident/      DEVICE-SKILL.md for Resident's agent skills
 ```
 

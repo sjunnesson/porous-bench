@@ -4,11 +4,12 @@ import { ResidentHost, resetScreen, type ResidentBoard } from '../src/resident/h
 import { AppStore } from '../src/resident/store';
 import { Zone } from '../src/resident/zone';
 import { SimClock } from '../src/sim/clock';
-import { Bench, DEFAULT_PARTS } from '../src/sim/controls/bench';
+import { Bench, DEFAULT_PARTS, PART_KINDS, type PartSpec } from '../src/sim/controls/bench';
 import { Dial, Trigger } from '../src/sim/controls/controls';
 import { findDevice } from '../src/sim/devices';
 import type { DeviceProfile } from '../src/sim/devices/types';
 import { Display } from '../src/sim/display';
+import { benchApp } from '../src/sim/generate';
 import { ledProfile, MATRIX_SIZES } from '../src/sim/leds';
 import { Imu } from '../src/sim/inputs/imu';
 import { LD2410 } from '../src/sim/inputs/ld2410';
@@ -29,13 +30,13 @@ const apps = Object.entries(files).map(([path, code]) => ({
 }));
 const factory = new LuaFactory();
 
-async function runApp(code: string, device: DeviceProfile, ms: number) {
+async function runApp(code: string, device: DeviceProfile, ms: number, parts: PartSpec[] = DEFAULT_PARTS, controls: (Dial | Trigger)[] = []) {
   const clock = new SimClock();
   clock.paused = true;
   const display = new Display(device, clock);
   display.setRotation(device.firmwareRotation ?? 0);
   const bench = new Bench(clock);
-  bench.load(DEFAULT_PARTS);
+  bench.load(parts);
   const problems: string[] = [];
   const board: ResidentBoard = {
     display,
@@ -44,8 +45,16 @@ async function runApp(code: string, device: DeviceProfile, ms: number) {
     buttons: [new Trigger({}, bench), new Trigger({}, bench)],
     imu: new Imu({}, clock),
     store: new AppStore('apps-test', false),
-    dial: (_name, opts) => new Dial(opts, bench),
-    trigger: (_name, opts) => new Trigger(opts, bench),
+    dial: (_name, opts) => {
+      const d = new Dial(opts, bench);
+      controls.push(d);
+      return d;
+    },
+    trigger: (_name, opts) => {
+      const t = new Trigger(opts, bench);
+      controls.push(t);
+      return t;
+    },
     radar: (opts) => new LD2410(opts, clock),
     sensor: (kind) => bench.ensure(kind).part,
     log: (level, text) => level === 'error' && problems.push(text),
@@ -81,4 +90,36 @@ describe('bundled apps', () => {
       }
     }, 60_000);
   }
+});
+
+describe('apps generated from the bench', () => {
+  // One of everything, and two encoders, so each control has to find its own part.
+  const parts: PartSpec[] = [
+    ...PART_KINDS.map(({ kind, label }) => ({ id: `${kind}-1`, kind, label: `${label} 1` })),
+    { id: 'knob-2', kind: 'knob', label: 'Encoder 2' },
+  ];
+  for (const target of ['display', 'strip', 'matrix'] as const) {
+    it(`runs on every kind of ${target}`, async () => {
+      const code = benchApp(target, parts);
+      for (const device of OUTPUTS[target]) {
+        expect(await runApp(code, device, 600, parts), `bench app on ${device.id}`).toEqual([]);
+      }
+    }, 60_000);
+  }
+
+  it('connects each control to the part it was written for', async () => {
+    const controls: (Dial | Trigger)[] = [];
+    expect(await runApp(benchApp('display', parts), OUTPUTS.display[0], 100, parts, controls)).toEqual([]);
+    const sources = controls.map((c) => c.source);
+    expect(sources).toContain('knob-2:rotate');
+    expect(sources).toContain('knob-2:push');
+    expect(sources).toContain('imu-1:tilt-y');
+    expect(sources).toContain('climate-1:humidity');
+    expect(sources).not.toContain('none');
+    expect(new Set(sources).size).toBe(sources.length);
+  });
+
+  it('still runs with an empty bench', async () => {
+    expect(await runApp(benchApp('matrix', []), OUTPUTS.matrix[0], 200, [])).toEqual([]);
+  });
 });

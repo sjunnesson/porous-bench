@@ -161,6 +161,22 @@ describe('Bench', () => {
     expect(new Trigger({ builtin: 0 }, board).source).toBe('builtin-button-0:press');
   });
 
+  it('gives a part picked for one control to a control that asks for it by name', () => {
+    const { bench } = setup();
+    const a = new Trigger({ label: 'A', builtin: 0 }, bench); // no board buttons: the bench picks button-1
+    expect(a.source).toBe('button-1:press');
+    const mine = new Trigger({ label: 'Mine', connect: 'button-1:press' }, bench);
+    expect(mine.source).toBe('button-1:press');
+    expect(a.source).toBe('none');
+    const turn = new Dial({ connect: 'pot-1:position' }, bench);
+    expect(turn.source).toBe('pot-1:position');
+    // Something you chose in Connections stays put.
+    const chosen = new Trigger({ label: 'Chosen' }, bench);
+    chosen.bind('knob-1:push');
+    new Trigger({ label: 'Asks', connect: 'knob-1:push' }, bench);
+    expect(chosen.source).toBe('knob-1:push');
+  });
+
   it('disconnects controls when their part is taken off, and only offers channels that fit', () => {
     const { bench } = setup();
     const d = new Dial({}, bench);

@@ -42,6 +42,12 @@ export const TRIGGER_VIA: Record<string, Preference> = {
   dark: { kind: 'light', channel: 'dark' },
 };
 
+/** A `connect` option as a preference: that part's channel first. */
+function asked(connect?: string): Preference {
+  const c = connect ? parseConnection(connect) : null;
+  return c ? { part: c.part, channel: c.channel } : {};
+}
+
 /** Something with a button's edges: a push button, an encoder's push, a touch pad. */
 interface Pushable {
   isPressed(): boolean;
@@ -135,6 +141,8 @@ export interface DialOptions {
   wrap?: boolean;
   /** Hardware to ask for first: a DIAL_VIA name. */
   via?: string;
+  /** A specific part and channel to connect to, as 'part:channel' (wins over `via`). */
+  connect?: string;
   keys?: { down?: string; up?: string };
 }
 
@@ -164,7 +172,8 @@ export class Dial extends SimInput {
     this.wrap = opts.wrap ?? false;
     this.keys = { down: 'ArrowLeft', up: 'ArrowRight', ...opts.keys };
     this.v = this.clamp(opts.start ?? (Number.isFinite(this.min) ? this.min : 0));
-    this.connect(bench.suggest('dial', this, DIAL_VIA[opts.via ?? 'encoder'] ?? {}));
+    const c = bench.suggest('dial', this, { ...(DIAL_VIA[opts.via ?? 'encoder'] ?? {}), ...asked(opts.connect) });
+    this.connect(c, connectionId(c) !== opts.connect);
   }
 
   get value(): number {
@@ -195,8 +204,9 @@ export class Dial extends SimInput {
   get source(): string {
     return connectionId(this.connection);
   }
-  connect(c: Connection | null): void {
-    this.bench.link(this, c);
+  /** `auto`: picked by the bench rather than asked for, so it gives way to a control that asks. */
+  connect(c: Connection | null, auto = false): void {
+    this.bench.link(this, c, auto);
     const hw = this.bench.resolve(c);
     // An encoder steps from where it is now.
     this.knobBase = hw?.channel.kind === 'relative' ? (hw.part as Knob) : null;
@@ -302,6 +312,8 @@ export interface TriggerOptions {
   via?: string;
   /** Ask for the board's n-th button first (Resident's A and B). */
   builtin?: number;
+  /** A specific part and channel to connect to, as 'part:channel' (wins over `via`). */
+  connect?: string;
 }
 
 /** A momentary action. Same API as a button, so code written for one works with any source. */
@@ -323,7 +335,10 @@ export class Trigger extends SimInput {
   ) {
     super(opts.label ?? 'Trigger');
     this.key = opts.key;
-    this.connect(bench.suggest('trigger', this, { ...(TRIGGER_VIA[opts.via ?? 'button'] ?? {}), builtin: opts.builtin }));
+    const c = bench.suggest('trigger', this, { ...(TRIGGER_VIA[opts.via ?? 'button'] ?? {}), builtin: opts.builtin, ...asked(opts.connect) });
+    // Its own board button, or the part the app named, is what it asked for; anything else was picked for it.
+    const own = opts.builtin !== undefined && !!c && bench.part(c.part) === bench.builtinButton(opts.builtin);
+    this.connect(c, !own && connectionId(c) !== opts.connect);
   }
 
   // ---- sketch side (Button-compatible) ----
@@ -357,8 +372,9 @@ export class Trigger extends SimInput {
   get source(): string {
     return connectionId(this.connection);
   }
-  connect(c: Connection | null): void {
-    this.bench.link(this, c);
+  /** `auto`: picked by the bench rather than asked for, so it gives way to a control that asks. */
+  connect(c: Connection | null, auto = false): void {
+    this.bench.link(this, c, auto);
     this.prev = false;
     // Ignore edges that happened before this connection.
     const hw = this.bench.resolve(c);

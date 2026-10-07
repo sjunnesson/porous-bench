@@ -78,17 +78,21 @@ button.press_count()    -- taps since the app loaded
 ### dial, trigger, ld2410 (Bench drivers)
 
 Declare these at the top of the app (or in `init`): each declaration puts the part on the desk.
-Which hardware drives a dial or trigger is the user's choice in Bench's Controls panel, so write
-against the API, not a specific part.
+Which hardware drives a dial or trigger is the user's choice in Bench's Connections panel, so write
+against the API, not a specific part: use `via` for the kind of hardware, and `connect` only when the
+app is written for one particular bench.
 
 ```lua
 local speed = dial.new("speed", { min = 1, max = 10, step = 1, start = 3 })
---   options: label, min, max, step, start, wrap, via = "encoder" | "pot" | "imu-x" | "imu-y" | "buttons" | "radar",
+--   options: label, min, max, step, start, wrap,
+--            via = "encoder" | "pot" | "imu-x" | "imu-y" | "radar" | "light" | "temperature" | "humidity",
+--            connect = "pot-1:position" (one specific part and channel, as Connections names them),
 --            keys = { down = "ArrowLeft", up = "ArrowRight" }
 speed:value()   speed:delta()   -- steps since the last call   speed:fraction()   -- 0..1 in the range
 
 local fire = trigger.new("fire", { key = "Space" })
---   options: label, key (a KeyboardEvent.code), via = "button" | "external-button" | "encoder-push" | "shake" | "presence"
+--   options: label, key (a KeyboardEvent.code), connect = "button-1:press",
+--            via = "button" | "external-button" | "encoder-push" | "touch" | "shake" | "presence" | "motion" | "dark"
 fire:is_pressed()   fire:was_pressed()   fire:was_released()   fire:pressed_for(ms)
 
 ld2410.begin({ mode = "wander" })   -- "wander" | "approach" | "empty" | "manual"

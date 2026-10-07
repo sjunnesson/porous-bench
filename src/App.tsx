@@ -4,6 +4,7 @@ import { residentSketch } from './resident/sketch';
 import { residentApps } from './resident-apps';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
+import { benchApp } from './sim/generate';
 import { ledProfile, MATRIX_SIZES, type OutputKind, RING_COUNTS, STRIP_COUNTS } from './sim/leds';
 import { devices, findDevice } from './sim/devices';
 import type { Button } from './sim/inputs/button';
@@ -262,6 +263,21 @@ export default function App() {
               ))}
             </select>
             {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
+            <div className="row">
+              <button
+                onClick={() =>
+                  session.setLive({
+                    name: 'My bench',
+                    code: benchApp(target, bench.hardware()),
+                    source: 'editor',
+                    description: 'Every input on your bench, connected and shown live. Its code is below: change it and Run to make it your own.',
+                  })
+                }
+                title="Write a Lua app with a control for every part on your bench, connected and shown live: a starting point to edit"
+              >
+                ✦ New app from my bench
+              </button>
+            </div>
           </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
           <Console lines={logs} onClear={() => setLogs([])} />

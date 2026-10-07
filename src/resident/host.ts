@@ -438,7 +438,7 @@ export class ResidentHost {
       dial_new: (name: string, opts: Record<string, unknown>) => {
         if (!b.dial) return 'dial: this board has no dial driver';
         if (this.dials.has(name)) return undefined;
-        const o = checkOpts('dial.new', opts, { label: 'string', min: 'number', max: 'number', step: 'number', start: 'number', wrap: 'boolean', via: 'string', keys: 'object' });
+        const o = checkOpts('dial.new', opts, { label: 'string', min: 'number', max: 'number', step: 'number', start: 'number', wrap: 'boolean', via: 'string', connect: 'string', keys: 'object' });
         if (typeof o === 'string') return o;
         if (o.via !== undefined && !(String(o.via) in DIAL_VIA)) return `dial.new: via must be one of ${Object.keys(DIAL_VIA).map((v) => `"${v}"`).join(', ')}`;
         try {
@@ -455,7 +455,7 @@ export class ResidentHost {
       trig_new: (name: string, opts: Record<string, unknown>) => {
         if (!b.trigger) return 'trigger: this board has no trigger driver';
         if (this.triggers.has(name)) return undefined;
-        const o = checkOpts('trigger.new', opts, { label: 'string', key: 'string', via: 'string' });
+        const o = checkOpts('trigger.new', opts, { label: 'string', key: 'string', via: 'string', connect: 'string' });
         if (typeof o === 'string') return o;
         if (o.via !== undefined && !(String(o.via) in TRIGGER_VIA)) return `trigger.new: via must be one of ${Object.keys(TRIGGER_VIA).map((v) => `"${v}"`).join(', ')}`;
         try {

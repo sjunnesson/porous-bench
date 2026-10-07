@@ -149,6 +149,8 @@ interface Entry {
 
 /** What a control would like to connect to first. */
 export interface Preference {
+  /** A specific part on the bench (`connect = "knob-2:rotate"`), with `channel`. */
+  part?: string;
   kind?: PartKind;
   channel?: string;
   /** The board's n-th button. */
@@ -160,6 +162,7 @@ export interface Preference {
 export class Bench {
   private list: Entry[] = [];
   private links = new Map<object, Connection | null>();
+  private auto = new Set<object>();
   private listeners = new Set<() => void>();
   private version = 0;
   /** Called when you add or remove parts, with what to save. */
@@ -244,6 +247,10 @@ export class Bench {
     if (found) return { part: found, added: false };
     return { part: this.add(kind) as T, added: true };
   }
+  /** Everything on the bench but what a sketch declared: the board's own hardware, then yours. */
+  hardware(): (PartSpec & { builtin: boolean })[] {
+    return this.list.filter((e) => !e.declared).map((e) => ({ id: e.id, kind: e.part.kind as PartKind, label: e.part.label, builtin: !!e.builtin }));
+  }
   /** What to save: the parts you added. */
   specs(): PartSpec[] {
     return this.list.filter((e) => !e.builtin && !e.declared).map((e) => ({ id: e.id, kind: e.part.kind as PartKind, label: e.part.label }));
@@ -262,10 +269,13 @@ export class Bench {
   /** The best connection for a new control: what it prefers, unused parts first. */
   suggest(control: 'dial' | 'trigger', owner: object, prefer: Preference = {}): Connection | null {
     const opts = this.options(control);
-    const inUse = (c: Connection) => [...this.links].some(([o, l]) => o !== owner && l?.part === c.part && l.channel === c.channel);
+    // A part asked for by id is free if the bench only picked it for another control.
+    const inUse = (c: Connection) =>
+      [...this.links].some(([o, l]) => o !== owner && l?.part === c.part && l.channel === c.channel && !(c.part === prefer.part && this.auto.has(o)));
     const builtinIndex = (id: string) => this.list.find((e) => e.id === id)?.builtin?.index;
     const score = (o: (typeof opts)[number]) => {
       let s = 0;
+      if (prefer.part && o.connection.part === prefer.part) s += 200;
       if (prefer.builtin !== undefined) s += builtinIndex(o.connection.part) === prefer.builtin ? 100 : 0;
       if (prefer.kind && o.part.kind === prefer.kind) s += 20;
       if (prefer.channel && o.channel.id === prefer.channel) s += 10;
@@ -283,14 +293,24 @@ export class Bench {
     return best?.connection ?? null;
   }
 
-  link(owner: object, c: Connection | null): void {
+  /**
+   * Connect a control. `auto`: the bench picked it, not the app or you, so it gives way: a control
+   * that asks for that part and channel (or you, in Connections) takes it over.
+   */
+  link(owner: object, c: Connection | null, auto = false): void {
     this.links.set(owner, c);
+    if (auto) this.auto.add(owner);
+    else {
+      this.auto.delete(owner);
+      if (c) for (const [o, l] of this.links) if (o !== owner && this.auto.has(o) && l?.part === c.part && l.channel === c.channel) this.links.set(o, null);
+    }
     this.changed();
   }
   linkOf(owner: object): Connection | null {
     return this.links.get(owner) ?? null;
   }
   unlink(owner: object): void {
+    this.auto.delete(owner);
     if (this.links.delete(owner)) this.changed();
   }
   /** The part and channel a connection points at, if both still exist. */
