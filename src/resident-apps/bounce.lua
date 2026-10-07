@@ -1,5 +1,6 @@
 -- From inanimate-tech/resident examples/m5stick-demo/device-apps/bounce.lua (MIT)
 -- Bounce: a ball bouncing around the screen
+-- @needs motion
 local x, y = 60, 40
 local vx, vy = 80, 60
 local radius = 8

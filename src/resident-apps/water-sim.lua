@@ -1,5 +1,6 @@
 -- From inanimate-tech/resident examples/m5stick-demo/device-apps/water-sim.lua (MIT)
 -- Water Sim: lo-fi sloshing tank with fish + bubbles, driven by IMU + buttons
+-- @needs motion color
 local floor, ceil, abs, sqrt = math.floor, math.ceil, math.abs, math.sqrt
 local sin, cos, min, max = math.sin, math.cos, math.min, math.max
 local function fract(x) return x - math.floor(x) end

@@ -2,6 +2,7 @@
 // so the real device comes online on the relay with a device ID that Bench's Real device panel can
 // mirror to. Grounded in Resident's own guide (docs/start-building.md) and Bench's profile of the part.
 
+import type { Board } from '../sim/boards';
 import type { DeviceProfile } from '../sim/devices/types';
 
 const RESIDENT = 'https://github.com/inanimate-tech/resident';
@@ -17,7 +18,12 @@ const pins = (w: Record<string, number>) =>
     .map(([k, v]) => `${k} ${v}`)
     .join(', ');
 
-function hardwareSection(p: DeviceProfile): string[] {
+/** The board chosen in Bench for a bare module or an LED chain, still to be confirmed. */
+function chosenBoard(board: Board, what: string): string {
+  return `- **Board:** a ${board.name}, my choice in Bench (${board.note}). Confirm it with me, and ask ${what} before writing code.`;
+}
+
+function hardwareSection(p: DeviceProfile, board?: Board): string[] {
   const lines: string[] = [];
   const leds = p.look.leds;
   if (leds) {
@@ -25,7 +31,7 @@ function hardwareSection(p: DeviceProfile): string[] {
     const shape = leds.layout === 'grid' ? `a ${p.width}×${p.height} matrix, wired row by row from the top left` : leds.layout === 'ring' ? `a ring of ${n}` : `a strip of ${n}`;
     lines.push(
       `- **Output:** WS2812B addressable LEDs, ${shape} (${n} LEDs, 800 kHz one-wire, GRB). Bench assumes data in on **GPIO ${p.wiring?.DIN ?? 18}** of an ESP32 board.`,
-      '- **Board:** any ESP32 dev board. Ask me which one I have (and which pin the data line is on) before writing code.',
+      board ? chosenBoard(board, 'which pin the data line is on') : '- **Board:** any ESP32 dev board. Ask me which one I have (and which pin the data line is on) before writing code.',
     );
   } else {
     const turned = (p.firmwareRotation ?? 0) % 2 === 1;
@@ -38,8 +44,11 @@ function hardwareSection(p: DeviceProfile): string[] {
       const part = p.enclosure?.parts?.find((x) => x.kind === 'header');
       const header = part?.kind === 'header' ? part.label : undefined;
       lines.push(
-        `- **Board:** this is a bare display module${header ? ` (pins: ${header})` : ''}, wired to an ESP32 board. Ask me which board I have and how it's wired before writing code.`,
+        board
+          ? `- **Module:** a bare display module${header ? ` (pins: ${header})` : ''}.`
+          : `- **Board:** this is a bare display module${header ? ` (pins: ${header})` : ''}, wired to an ESP32 board. Ask me which board I have and how it's wired before writing code.`,
       );
+      if (board) lines.push(chosenBoard(board, "how it's wired"));
     }
   }
   const buttons = (p.enclosure?.parts ?? []).flatMap((x) => (x.kind === 'button' && x.input !== undefined ? [{ label: x.label ?? 'button', input: x.input }] : []));
@@ -50,7 +59,7 @@ function hardwareSection(p: DeviceProfile): string[] {
   return lines;
 }
 
-function planSection(p: DeviceProfile): string[] {
+function planSection(p: DeviceProfile, board?: Board): string[] {
   const env = M5_ENVS[p.id];
   if (env) {
     return [
@@ -70,7 +79,7 @@ function planSection(p: DeviceProfile): string[] {
       DEVICE_SKILL +
       (p.look.leds
         ? '. Implement its `leds` module exactly (`count`, `width`, `height`, `xy`, `set`, `set_rgb`, `get`, `fill`, `clear`, `hsv`, `brightness`, `show`, and `on_frame(fn, fps)` as a frame timer calling the app between ticks; if Resident can\'t call into Lua from a driver timer, say so and document `on_tick` as the fallback).'
-        : '. Start with `screen` (the M5Stick drawing calls) on a full-frame canvas pushed in one transfer by `flip()`, then the board\'s buttons as `tap` / `hold` events, then `lgfx` (the LovyanGFX-style calls Bench apps use). The `lvgl` module (luavgl) is optional: only if memory allows.'),
+        : '. Start with `screen` (the M5Stick drawing calls) on a full-frame canvas pushed in one transfer by `flip()`, then the board\'s buttons as `tap` / `hold` events, then `lgfx` (the LovyanGFX-style calls Bench apps use). ' + lvglAdvice(board)),
     '',
     'Practicalities:',
     '- Install PlatformIO if it\'s missing (`brew install platformio` or `pipx install platformio`). Put the project in a new folder here, and clone Resident next to it for the `symlink://` lib_dep, as its examples do.',
@@ -87,17 +96,24 @@ function planSection(p: DeviceProfile): string[] {
   return lines;
 }
 
-/** The firmware prompt, as Markdown. */
-export function firmwarePrompt(device: DeviceProfile): string {
+function lvglAdvice(board?: Board): string {
+  if (!board || board.appRamKb === undefined) return 'The `lvgl` module (luavgl) is optional: only if memory allows.';
+  return board.libraries.includes('lvgl')
+    ? `Then \`lvgl\` (luavgl, as Resident's \`m5stick-lvgl\` env does it): Bench lists LVGL apps for this board.`
+    : 'Skip `lvgl`: this board has no PSRAM and LVGL doesn\'t fit next to Wi-Fi and TLS; Bench lists only `screen` and `lgfx` apps for it.';
+}
+
+/** The firmware prompt, as Markdown. `board`: the board chosen in Bench for a bare module or LEDs. */
+export function firmwarePrompt(device: DeviceProfile, board?: Board): string {
   return [
     `Put Resident firmware on my ${device.look.leds ? `ESP32 driving a ${device.name}` : device.name}, so it comes online on Resident's relay with a device ID. I'll then drive it from porous.systems Bench (${SITE}): its Real device panel mirrors an app onto the device and streams the virtual inputs to it.`,
     '',
     '## The hardware (from Bench)',
-    ...hardwareSection(device),
+    ...hardwareSection(device, board),
     '- Sensors and controls (encoder, PIR, light …) come from Bench while it mirrors, so the firmware needs no drivers for them.',
     '',
     '## Plan',
-    ...planSection(device),
+    ...planSection(device, board),
     '',
     '## First boot',
     '- The board opens a "Resident …" Wi-Fi hotspot: tell me to join it from my phone and enter my Wi-Fi. Then watch the serial monitor (`pio device monitor`) until it connects and prints its device ID.',

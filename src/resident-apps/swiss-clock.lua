@@ -1,5 +1,6 @@
 -- From inanimate-tech/resident examples/m5stick-clock/device-apps/swiss-clock.lua (MIT)
 -- Swiss railway clock (Mondaine-style): white face, bar markers, red lollipop
+-- @needs motion
 local PI = 3.14159265
 local CX, CY, R
 

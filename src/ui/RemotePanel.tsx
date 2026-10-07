@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { firmwarePrompt } from '../resident/firmware';
 import { remote } from '../resident/remote';
+import type { Board } from '../sim/boards';
 import type { DeviceProfile } from '../sim/devices/types';
 import { Copy } from './Copy';
 import type { Bench } from '../sim/controls/bench';
@@ -10,6 +11,8 @@ import { Panel } from './Panel';
 interface Props {
   /** The selected output: what the firmware prompt is for. */
   device: DeviceProfile;
+  /** The board chosen to drive it. */
+  board?: Board;
   /** The app open on Bench. */
   app: { name: string; code: string };
   /** What drives it, read on every update. */
@@ -25,7 +28,7 @@ const STATUS = {
 } as const;
 
 /** Run the open app on a real Resident device, driven by this bench's virtual inputs. */
-export function RemotePanel({ device, app, source }: Props) {
+export function RemotePanel({ device, board, app, source }: Props) {
   useSyncExternalStore(remote.subscribe, remote.getVersion);
   const [draft, setDraft] = useState(remote.deviceId);
   const active = remote.active;
@@ -50,7 +53,7 @@ export function RemotePanel({ device, app, source }: Props) {
           label="Copy firmware prompt"
           done="Firmware prompt copied"
           title={`Copy a prompt for Claude Code to build Resident firmware for ${device.name} and flash it, so it gets a device ID`}
-          text={() => firmwarePrompt(device)}
+          text={() => firmwarePrompt(device, board)}
         />
       </div>
       <div className="row">

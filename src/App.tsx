@@ -5,6 +5,8 @@ import { remote } from './resident/remote';
 import { folderWatch } from './resident/watch';
 import { residentSketch } from './resident/sketch';
 import { appHeader, residentApps } from './resident-apps';
+import { type AppNeeds, misfits, outputCaps } from './resident/needs';
+import { boardsFor } from './sim/boards';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
 import { benchApp } from './sim/generate';
@@ -37,8 +39,8 @@ interface Entry {
   group: (typeof GROUPS)[number];
   sketch: Sketch<InputSpecs>;
   code: string;
-  /** The output it's written for (your own app runs on whatever is chosen). */
-  target?: 'display' | 'strip' | 'matrix';
+  /** What it needs from the output and its board (your own app runs on whatever is chosen). */
+  needs?: AppNeeds;
 }
 
 /** The parts you put on the bench, kept in this browser (first visit: a starter set). */
@@ -80,7 +82,7 @@ const bundled: Entry[] = residentApps.map((a) => ({
   group: a.origin === 'resident' ? 'Resident examples' : 'Bench examples',
   sketch: residentSketch({ name: a.name, code: a.code, description: a.description || undefined }),
   code: a.code,
-  target: a.target,
+  needs: a.needs,
 }));
 
 export default function App() {
@@ -93,6 +95,8 @@ export default function App() {
   const [stripCount, setStripCount] = usePersisted('output-strip', 30);
   const [ringCount, setRingCount] = usePersisted('output-ring', 16);
   const [matrixSize, setMatrixSize] = usePersisted('output-matrix', '8x8');
+  // The board driving each output, by output id (unset: the output's default board).
+  const [boardChoice, setBoardChoice] = usePersisted<Record<string, string>>('boards', {});
   const [view, setView] = usePersisted<ViewState>('view', { zoom: 'fit', grid: true, rotation: 'auto' });
   const [restarts, setRestarts] = useState(0);
   const [logs, setLogs] = useState<LogLine[]>([]);
@@ -131,11 +135,21 @@ export default function App() {
     return findDevice(deviceId) ?? devices[0];
   }, [outputKind, deviceId, stripCount, ringCount, matrixSize]);
 
-  // The App menu shows what fits the output: display apps, strip apps (strips and rings), matrix apps.
+  // The board driving the output decides the libraries and memory an app gets.
+  const boards = boardsFor(device);
+  const board = boards.find((b) => b.id === boardChoice[device.id]) ?? boards[0];
+  const caps = useMemo(() => outputCaps(device, board), [device, board]);
+
+  // The App menu shows what this output and its board can run (see src/resident/needs.ts).
   const target = outputKind === 'ring' ? 'strip' : outputKind;
   const allEntries: Entry[] = [...(liveEntry ? [liveEntry] : []), ...bundled];
-  const fitting = allEntries.filter((e) => !e.target || e.target === target);
+  const fitting = allEntries.filter((e) => !e.needs || misfits(e.needs, caps).length === 0);
   const entries = fitting.length ? fitting : allEntries;
+  // The examples left out, with why: written for another output kind doesn't count, it's expected.
+  const leftOut = allEntries
+    .filter((e) => e.needs && e.needs.output === caps.output)
+    .map((e) => ({ name: e.name, why: misfits(e.needs!, caps) }))
+    .filter((e) => e.why.length);
   const entry = entries.find((s) => s.id === sketchId) ?? entries[0];
 
   // The bench: the board's own hardware plus your parts. It outlives app switches (a new board
@@ -288,6 +302,11 @@ export default function App() {
                 </optgroup>
               ))}
             </select>
+            {leftOut.length > 0 && (
+              <p className="sketch-hidden" title={leftOut.map((e) => `${e.name}: ${e.why.join(', ')}`).join('\n')}>
+                {leftOut.length} more {leftOut.length === 1 ? "example doesn't" : "examples don't"} fit this output and board
+              </p>
+            )}
             {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
             <div className="row">
               <button
@@ -312,6 +331,7 @@ export default function App() {
                 text={() =>
                   appPrompt({
                     device,
+                    board,
                     parts: bench.hardware(),
                     controls: (run?.controls ?? []).map((c) => ({ label: c.label, kind: c.kind, source: c.source })),
                     app: { id: entry.id, name: entry.name.replace(/^▶ /, ''), description: entry.sketch.description, code: entry.code, bundled: entry.id !== 'resident:live' },
@@ -325,7 +345,7 @@ export default function App() {
             <WatchFolder />
           </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
-          {run && <RemotePanel device={device} app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} />}
+          {run && <RemotePanel device={device} board={board} app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} />}
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>
         {run && (
@@ -390,6 +410,27 @@ export default function App() {
                           </option>
                         ))}
                       </select>
+                    )}
+                    {boards.length > 1 ? (
+                      <select
+                        className="wide"
+                        value={board.id}
+                        onChange={(e) => (setBoardChoice({ ...boardChoice, [device.id]: e.target.value }), e.target.blur())}
+                        aria-label="Board"
+                        title={board.note}
+                      >
+                        {boards.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                    {board && (
+                      <p className="board-caps" title={board.note}>
+                        {boards.length === 1 ? `${board.name} · ` : ''}
+                        {caps.libraries.join(', ')} · {board.appRamKb === undefined ? 'app memory not measured' : board.appRamKb >= 1024 ? `${board.appRamKb / 1024} MB PSRAM` : `~${board.appRamKb} KB for apps`}
+                      </p>
                     )}
                   </div>
                 </DeviceInfo>

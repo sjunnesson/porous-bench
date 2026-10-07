@@ -1,4 +1,5 @@
 -- LVGL motion: lvgl.Anim vs on_tick, side by side. Anims run on LVGL's own timer pump (~30 fps here), on_tick only at 10 Hz.
+-- @needs motion 128x128
 local h = lvgl.bind("main")
 local W, H = h.HOR_RES(), h.VER_RES()
 local small = H < 160

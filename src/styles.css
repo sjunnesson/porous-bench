@@ -225,6 +225,13 @@ select.wide {
   font-size: 13px;
   line-height: 1.5;
 }
+/* How many examples the output and board can't run; hover for why. */
+.panel p.sketch-hidden {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: help;
+}
 
 /* The display block heads the Hardware panel; its pinout and notes fold away. */
 .display-info {
@@ -912,6 +919,13 @@ textarea.code {
   display: grid;
   gap: 6px;
   margin-bottom: 10px;
+}
+/* What the board driving the output offers apps: libraries and memory. */
+.output-pick p.board-caps {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: help;
 }
 .add-part {
   display: flex;

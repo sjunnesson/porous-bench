@@ -1,5 +1,6 @@
 -- From inanimate-tech/resident examples/m5stick-demo/device-apps/accel.lua (MIT)
 -- Accel: visualize accelerometer data as a moving dot
+-- @needs motion
 function on_tick(ctx, dt_ms)
   local ax, ay, az = imu.accel()
   local w = screen.width()

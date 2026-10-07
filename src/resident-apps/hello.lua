@@ -1,5 +1,6 @@
 -- From inanimate-tech/resident examples/m5stick-demo/device-apps/hello.lua (MIT)
 -- Hello World: displays text on screen
+-- @needs 196x96
 function init(ctx)
   screen.clear(0, 0, 0)
   screen.text(40, 50, "Hello World!")

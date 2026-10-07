@@ -9,6 +9,7 @@ export default {
   controller: 'ST7789V3',
   bus: { kind: 'spi', hz: 80_000_000 },
   ram: { width: 240, height: 320, offsetX: 34, offsetY: 0 },
+  boards: ['waveshare-esp32-c6-lcd-1.47'],
   wiring: { MOSI: 6, SCLK: 7, CS: 14, DC: 15, RST: 21, BL: 22, 'SD MISO': 5, 'SD CS': 4, 'RGB LED': 8, BOOT: 9 },
   porting: [
     'Column offset 34: the 172 visible columns sit in the middle of the 240-wide ST7789 RAM.',

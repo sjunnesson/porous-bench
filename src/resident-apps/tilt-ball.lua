@@ -1,4 +1,5 @@
 -- Tilt ball: roll a ball with the IMU, bounce off the walls with a click. Hold a button to reset.
+-- @needs motion
 local g = lgfx.bind("main")
 local W, H = g:width(), g:height()
 local R = math.max(4, math.min(W, H) // 12)

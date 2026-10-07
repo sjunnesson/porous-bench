@@ -1,4 +1,5 @@
 -- From inanimate-tech/resident examples/m5stick-demo/device-apps/daisy.lua (MIT)
+-- @needs motion 230x126
 local notes = {
   {523, 600}, {440, 300}, {349, 700},
   {523, 600}, {440, 300}, {349, 700},

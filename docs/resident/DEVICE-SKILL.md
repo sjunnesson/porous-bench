@@ -124,6 +124,9 @@ press": the user can then connect any part to it.
 When the user picks an LED strip, ring or matrix as the output (instead of a display), the board
 drives a WS2812B chain. Start the file with `-- @output strip` (strips and rings) or
 `-- @output matrix` so it's listed for that output.
+On any output, an app that animates, only makes sense in colour, or has a fixed layout says so on
+the next line, `-- @needs motion color 240x135` (any of the three; WxH is the smallest screen it
+fits), so Bench lists it only where it can run.
 
 ```lua
 leds.count()  leds.width()  leds.height()  leds.xy(x, y)   -- LEDs from 0, chain order, a matrix row by row

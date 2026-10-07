@@ -9,6 +9,7 @@ export default {
   controller: 'SSD1680',
   bus: { kind: 'spi', hz: 10_000_000 },
   ram: { width: 176, height: 296, offsetX: 0, offsetY: 0 },
+  boards: ['waveshare-esp32-epaper-driver', 'esp32-s3-devkitc-1-n16r8'],
   porting: [
     'Wait on BUSY (high = busy) after every refresh; full refresh ≈ 2 s, partial ≈ 0.3 s.',
     'Partial refresh needs the previous image in the "old" RAM (0x26): write the base image to both RAMs after a full refresh.',

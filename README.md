@@ -236,6 +236,28 @@ between 10 Hz ticks. A matrix is also an `lgfx` display (`lgfx.bind("main")`, 8 
 `-- @output display|strip|matrix` line decides where it appears in the App menu (strip apps run on
 rings too).
 
+### Which apps an output lists
+
+The App menu lists only the apps the chosen output and the board driving it can run; a line under
+it counts the examples left out, and hovering it says why. The board comes from the output: a
+board with a built-in display (M5StickC Plus2, M5StickS3, Waveshare ESP32-C6-LCD-1.47) is fixed,
+and a bare module or an LED chain gets a **Board** menu (`src/sim/boards.ts`: the 2.13" e-paper
+offers the Waveshare ESP32 e-Paper Driver Board and an ESP32-S3 DevKitC-1 N16R8). A board brings
+its drawing libraries and the memory an app gets; the output brings its kind, size, colour, and
+whether it can animate (e-paper can't).
+
+An app's needs come from its code (the libraries it binds, and the memory it takes to receive,
+compile and start on a real board, estimated from its size as the mirror sends it) and from a
+header line for the rest:
+
+```lua
+-- Tilt ball: roll a ball with the IMU
+-- @needs motion color 240x135   -- animates · means nothing in 1-bit · smallest screen its layout fits
+```
+
+Inputs never leave an app out: every control and sensor is on the bench, and a real device gets
+them from Bench through the mirror. The rules and the memory model are in `src/resident/needs.ts`.
+
 ### How it matches Resident
 
 Bench runs apps in a real Lua 5.4 VM ([wasmoon](https://github.com/ceifa/wasmoon)) with Resident's

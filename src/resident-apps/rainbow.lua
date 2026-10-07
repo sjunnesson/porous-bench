@@ -1,5 +1,6 @@
 -- From inanimate-tech/resident examples/m5stick-demo/device-apps/rainbow.lua (MIT)
 -- Rainbow: animated color cycling across the display
+-- @needs motion color
 function on_tick(ctx, dt_ms)
   local t = ctx.time_ms / 1000
   for x = 0, screen.width() - 1, 4 do

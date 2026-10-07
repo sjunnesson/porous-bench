@@ -1,4 +1,5 @@
 -- From inanimate-tech/resident examples/m5stick-demo/device-apps/buttons-buzzer.lua (MIT)
+-- @needs color 184x124
 local mode = 0
 local hue = 0
 local colors = {{255,80,80},{80,255,120},{80,160,255}}
