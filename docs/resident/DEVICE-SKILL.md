@@ -49,6 +49,8 @@ the header:
 -- @needs motion color touch 240x135     -- only the ones that apply
 ```
 
+- `@output`: an app that names its output and arrives (pushed, dropped or run) while Bench shows
+  another kind switches Bench to that kind: a matrix app pushed at a display gets the LED matrix.
 - `motion`: it animates (so not e-paper). `color`: it means nothing in 1-bit. `touch`: it needs a
   touch panel. `WxH`: the smallest screen, as apps see it, that its fixed layout fits. An app that adapts through `screens.get`
   needs none of these.

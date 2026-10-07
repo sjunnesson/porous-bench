@@ -5,7 +5,7 @@ import { remote } from './resident/remote';
 import { folderWatch } from './resident/watch';
 import { residentSketch } from './resident/sketch';
 import { appHeader, residentApps } from './resident-apps';
-import { type AppNeeds, misfits, outputCaps } from './resident/needs';
+import { type AppNeeds, appNeeds, misfits, outputCaps } from './resident/needs';
 import { boardsFor } from './sim/boards';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
@@ -121,9 +121,17 @@ export default function App() {
   );
   const lastLive = useRef(live);
   useEffect(() => {
-    if (live && live !== lastLive.current) setSketchId('resident:live');
+    if (live && live !== lastLive.current) {
+      setSketchId('resident:live');
+      // An app that names its output (`-- @output matrix`) and arrives while another kind is chosen
+      // switches Bench to it: an LED app pushed at a display would only crash on its first leds call.
+      if (/^--\s*@output\s+/m.test(live.code)) {
+        const want = appNeeds(live.code).output;
+        setOutputKind((k) => (want === (k === 'ring' ? 'strip' : k) ? k : want));
+      }
+    }
     lastLive.current = live;
-  }, [live, setSketchId]);
+  }, [live, setSketchId, setOutputKind]);
 
   const device = useMemo(() => {
     if (outputKind === 'strip') return ledProfile({ kind: 'strip', count: stripCount });
