@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { session } from './resident/session';
 import { appPrompt } from './resident/prompt';
+import { remote } from './resident/remote';
 import { folderWatch } from './resident/watch';
 import { residentSketch } from './resident/sketch';
 import { appHeader, residentApps } from './resident-apps';
@@ -21,6 +22,7 @@ import { DeviceView, type ViewState } from './ui/DeviceView';
 import { useClockState, usePersisted } from './ui/hooks';
 import { InputPanel } from './ui/InputPanel';
 import { Panel } from './ui/Panel';
+import { RemotePanel } from './ui/RemotePanel';
 import { ResidentPanel } from './ui/ResidentPanel';
 
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4];
@@ -197,6 +199,16 @@ export default function App() {
     };
   }, [run]);
 
+  // Mirroring on a real device: it reads this run's controls, and a new run (another app, a
+  // restart) is sent to the device too.
+  const mirrorSource = useCallback(
+    () => ({ controls: run?.controls ?? [], bench, buttons: { a: run?.inputs.a, b: run?.inputs.b } }),
+    [run, bench],
+  );
+  useEffect(() => {
+    if (run && remote.active) void remote.start({ name: entry.name.replace(/^▶ /, ''), code: entry.code }, mirrorSource);
+  }, [run, mirrorSource]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const byTech = (['lcd', 'oled', 'epaper'] as const).map((tech) => ({ tech, list: devices.filter((d) => d.tech === tech) }));
 
   return (
@@ -313,6 +325,7 @@ export default function App() {
             <WatchFolder />
           </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
+          {run && <RemotePanel app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} />}
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>
         {run && (

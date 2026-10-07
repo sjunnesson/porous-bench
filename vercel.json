@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/relay/devices/:id/send", "destination": "https://resident.inanimate.tech/devices/:id/send" }]
+}

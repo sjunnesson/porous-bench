@@ -74,6 +74,9 @@ Everything runs locally in the browser;
   that app as a reference, the Resident plugin skills and Bench's device skill to use, and how to
   deliver it: into a folder Bench watches, or pushed over the relay.
 - **Watch a folder.** Point Bench at a folder and any `.lua` saved there runs immediately.
+- **Drive a real device.** **Real device → Mirror** runs the open app on a Resident device on your
+  desk and drives it with the inputs on this bench: turn the virtual encoder, wave at the virtual PIR,
+  and the real display follows.
 - **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
   sensor data all follow the simulated clock.
 - **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it, or the bare
@@ -328,6 +331,26 @@ The last app that boots is restored on reload. To have agents write apps for Ben
 
 The device ID is a random secret: anyone who knows it can push apps to your browser while you're
 connected. Use **new** in the Resident panel to rotate it.
+
+### Drive a real device from the bench
+
+**Real device** (left column): enter the ID of a Resident device that's online (the one its screen
+shows) and press **Mirror**. Bench sends it the open app, then streams the state of the app's
+controls and the bench's sensors to it as `bench` events, up to ten times a second and only when
+something changed. Switching apps or restarting sends the new run. **Stop** leaves the device running
+the app with the last values it got.
+
+The app reaches the device wrapped in a small shim (`src/resident/lua/remote.lua`). Where the firmware
+has none of Bench's drivers, the shim defines `dial`, `trigger`, `light`, `pir`, `climate`, `touch`,
+`ld2410` and `imu`, and feeds them from those events. It also raises the driver events the app would
+get on Bench (`dial`, `trigger`, `motion`, `touch`, and a `tap` when Bench's button A or B fires).
+Every other event still reaches the app. A driver the firmware does have, like an M5Stick's own IMU,
+stays the real one. Error line numbers on the device are offset by the shim's length.
+
+The relay doesn't accept calls from web pages, so Bench sends through its own origin: `/relay/…`
+is proxied to `resident.inanimate.tech` (by Vite in development, by a rewrite in `vercel.json` in
+production, which forwards `/devices/<id>/send` only). The device ID is all it takes to push to a
+device, so treat it like a password.
 
 ## Keyboard
 
