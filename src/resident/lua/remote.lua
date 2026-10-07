@@ -1,9 +1,12 @@
 -- porous.systems Bench remote: this app's inputs come from Bench (bench.porous.systems), which sends
 -- their state over the relay as "bench" events. Bench's drivers (dial, trigger, light, pir,
--- climate, touch, ld2410, imu) are defined here only where this firmware has none.
+-- climate, touch, ld2410, imu, and a silent buzzer) are defined here only where this firmware has
+-- none. Each sits between "@@part <module>" and "@@end" lines: Bench sends only the parts the app
+-- names, since every line here costs compile memory on the device.
 local __bench = { d = {}, t = {}, s = {} }
 local __now = function() return (time and time.ticks_ms) and time.ticks_ms() or 0 end
 
+-- @@part dial
 if not dial then
   local D = {}
   D.__index = D
@@ -25,7 +28,9 @@ if not dial then
     end,
   }
 end
+-- @@end
 
+-- @@part trigger
 if not trigger then
   local T = {}
   T.__index = T
@@ -57,28 +62,38 @@ if not trigger then
     end,
   }
 end
+-- @@end
 __bench.since = {}
 
 local function sensor(key, default)
   return function() return __bench.s[key] or default end
 end
+-- @@part light
 if not light then
   light = { read = sensor("light", { level = 0.5, lux = 300, raw = 2048 }) }
   function light.level() return light.read().level end
 end
+-- @@end
+-- @@part pir
 if not pir then
   pir = { read = sensor("pir", { motion = false }) }
   function pir.motion() return pir.read().motion end
 end
+-- @@end
+-- @@part climate
 if not climate then
   climate = { read = sensor("climate", { temperature = 21, humidity = 40 }) }
   function climate.temperature() return climate.read().temperature end
   function climate.humidity() return climate.read().humidity end
 end
+-- @@end
+-- @@part touch
 if not touch then
   touch = { read = sensor("touch", { touched = false, raw = 0 }) }
   function touch.touched() return touch.read().touched end
 end
+-- @@end
+-- @@part ld2410
 if not ld2410 then
   ld2410 = {
     begin = function() end,
@@ -86,6 +101,8 @@ if not ld2410 then
       moving_energy = 0, still_cm = 0, still_energy = 0, out = false }),
   }
 end
+-- @@end
+-- @@part imu
 if not imu then
   imu = {
     accel = function() local a = __bench.s.imu or { 0, 0, 1 } return a[1], a[2], a[3] end,
@@ -93,6 +110,12 @@ if not imu then
     temp = function() return 0 end,
   }
 end
+-- @@end
+-- @@part buzzer
+if not buzzer then
+  buzzer = { beep = function() end, tone = function() end, stop = function() end }
+end
+-- @@end
 
 -- Apply one update from Bench, and raise the driver events the app would get on Bench itself.
 local function __bench_apply(ctx, data, deliver)

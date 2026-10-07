@@ -11,13 +11,23 @@ import type { LD2410 } from '../sim/inputs/ld2410';
 import type { LightSensor } from '../sim/inputs/light';
 import type { Pir } from '../sim/inputs/pir';
 import type { Touch } from '../sim/inputs/touch';
+import { minifyLua } from './minify';
 import remoteSrc from './lua/remote.lua?raw';
 
-const [HEAD, FOOT] = remoteSrc.split('-- @@APP@@');
+/** The shim with only the stand-ins `code` names: an app that never mentions `pir` doesn't pay for it. */
+function shimFor(code: string): string {
+  return remoteSrc.replace(/^-- @@part (\w+)\n([\s\S]*?)^-- @@end\n/gm, (_, name: string, body: string) =>
+    new RegExp(`\\b${name}\\b`).test(code) ? body : '',
+  );
+}
 
-/** The app as the real device runs it: Bench's driver shim around it. */
+/**
+ * The app as the real device runs it: Bench's driver shim around it, trimmed to the stand-ins the app
+ * uses and minified. A board without PSRAM has ~70 KB to receive and compile it in.
+ */
 export function remoteApp(code: string): string {
-  return `${HEAD}\n${code}\n${FOOT}`;
+  const [head, foot] = shimFor(code).split('-- @@APP@@');
+  return minifyLua(`${head}\n${code}\n${foot}`);
 }
 
 export interface Snapshot {

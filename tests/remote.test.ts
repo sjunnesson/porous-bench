@@ -18,7 +18,7 @@ const factory = new LuaFactory();
 /** A real Resident device, as far as the shim can tell: none of Bench's drivers. */
 const FIRMWARE = 'dial, trigger, light, pir, climate, touch, ld2410 = nil, nil, nil, nil, nil, nil, nil\n';
 
-async function device(app: string) {
+async function device(app: string, firmware = FIRMWARE) {
   const clock = new SimClock();
   clock.paused = true;
   const display = new Display(findDevice('waveshare-esp32-c6-lcd-1.47')!, clock);
@@ -33,7 +33,7 @@ async function device(app: string) {
     telemetry: () => {},
     publish: () => 'sent',
   };
-  const { host, error } = await ResidentHost.boot(factory, board, { code: FIRMWARE + remoteApp(app) });
+  const { host, error } = await ResidentHost.boot(factory, board, { code: firmware + remoteApp(app) });
   const run = async (ms: number) => {
     for (let i = 0; i < ms; i += 10) {
       clock.advance(10);
@@ -83,6 +83,25 @@ describe('remote mirror', () => {
     t.host.queue({ name: 'note', data: {}, from: 'phone', channel: 'app' });
     await t.run(100);
     expect(t.logs).toEqual(['got\tnote']);
+  });
+
+  it('sends only the stand-ins the app names', () => {
+    const plain = remoteApp('function init(ctx) log.info("hi") end');
+    for (const name of ['dial', 'trigger', 'light', 'pir', 'climate', 'touch', 'ld2410', 'imu', 'buzzer']) {
+      expect(plain, name).not.toContain(`if not ${name} then`);
+    }
+    expect(plain).toContain('__bench_apply'); // Bench's buttons still arrive as taps
+    const knob = remoteApp('local d = dial.new("speed")\nfunction on_tick(ctx) log.info(pir.motion()) end');
+    expect(knob).toContain('if not dial then');
+    expect(knob).toContain('if not pir then');
+    expect(knob).not.toContain('if not trigger then');
+  });
+
+  it('gives a board without a buzzer a silent one', async () => {
+    const t = await device(`function init(ctx) buzzer.beep(440, 50) buzzer.tone(880) buzzer.stop() log.info("beeped") end`, `buzzer = nil\n${FIRMWARE}`);
+    expect(t.error).toBeUndefined();
+    await t.run(50);
+    expect(t.logs).toEqual(['beeped']);
   });
 
   it("reads Bench's controls and sensors into an update, counting dial steps", () => {
