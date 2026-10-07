@@ -105,6 +105,8 @@ export class ResidentHost {
   private tickErrors = 0;
   private lastTickErrorReport = -Infinity;
   private taps = 0;
+  /** Per button: the taps, holds started and holds ended recognised so far (what a mirror replays). */
+  private gestureTotals: [number, number, number][] = [];
   /** Per button: when it went down, whether it became a hold, and the edges taken so far. */
   private gestures: { downAt: number; held: boolean; presses: number; releases: number }[] = [];
   // Bench drivers the app declared, with what their events last reported.
@@ -127,6 +129,7 @@ export class ResidentHost {
     this.lastTick = this.loadedAt;
     // Edges from before the app started aren't its gestures.
     this.gestures = board.buttons.map((b) => (b.isPressed(), { downAt: -1, held: false, presses: b.presses, releases: b.releases }));
+    this.gestureTotals = board.buttons.map(() => [0, 0, 0]);
   }
 
   /** Compile and init an app. Resolves with the host, or with the compile/init error. */
@@ -274,7 +277,7 @@ export class ResidentHost {
         } else if (g.releases < b.releases) {
           g.releases++;
           if (g.downAt >= 0) {
-            if (g.held) this.queue({ name: 'hold', channel: 'driver', data: { index, held: false } });
+            if (g.held) this.hold(index, false);
             else this.tap(index);
           }
           g.downAt = -1;
@@ -283,12 +286,23 @@ export class ResidentHost {
       }
       if (g.downAt >= 0 && !g.held && now - g.downAt >= 500) {
         g.held = true;
-        this.queue({ name: 'hold', channel: 'driver', data: { index, held: true } });
+        this.hold(index, true);
       }
     });
   }
 
+  /** Taps, holds started and holds ended on each button so far: [A, B]. */
+  gestureCounts(): [number, number, number][] {
+    return this.gestureTotals.map((t) => [...t] as [number, number, number]);
+  }
+
+  private hold(index: number, held: boolean) {
+    this.gestureTotals[index][held ? 1 : 2]++;
+    this.queue({ name: 'hold', channel: 'driver', data: { index, held } });
+  }
+
   private tap(index: number) {
+    this.gestureTotals[index][0]++;
     this.taps++;
     const data = { index, count: this.taps };
     this.queue({ name: 'tap', channel: 'driver', data });

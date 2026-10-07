@@ -33,8 +33,11 @@ export function remoteApp(code: string): string {
 export interface Snapshot {
   /** Dials: [value, fraction, steps so far]. */
   d: Record<string, [number, number, number]>;
-  /** Triggers: [presses, releases, down]. Bench's buttons A and B are "@a" and "@b". */
+  /** The app's triggers: [presses, releases, down]. */
   t: Record<string, [number, number, 0 | 1]>;
+  /** Bench's buttons A and B: [taps, holds started, holds ended] as Bench itself recognised them, so
+   *  the device replays the same gestures rather than judging press lengths again. */
+  g?: [number, number, number][];
   /** Sensor readings, as their Lua modules return them. */
   s: Record<string, unknown>;
 }
@@ -45,8 +48,9 @@ const round = (v: number, places = 3) => Math.round(v * 10 ** places) / 10 ** pl
 export class SnapshotReader {
   private steps = new Map<Dial, { last: number; total: number }>();
 
-  read(controls: Control[], bench: Bench, buttons: { a?: unknown; b?: unknown }): Snapshot {
+  read(controls: Control[], bench: Bench, buttons: { a?: unknown; b?: unknown }, gestures?: [number, number, number][]): Snapshot {
     const snap: Snapshot = { d: {}, t: {}, s: {} };
+    if (gestures) snap.g = gestures;
     for (const c of controls) {
       if (c.kind === 'dial') {
         const d = c as Dial;
@@ -61,10 +65,10 @@ export class SnapshotReader {
         s.last = v;
         snap.d[c.name] = [round(v), round(d.fraction), s.total];
       } else {
+        if (c === buttons.a || c === buttons.b) continue; // A and B travel as gestures (g)
         const t = c as Trigger;
         const down = t.isPressed() ? 1 : 0; // also brings the edge counts up to date
-        const name = c === buttons.a ? '@a' : c === buttons.b ? '@b' : c.name;
-        snap.t[name] = [t.presses, t.releases, down];
+        snap.t[c.name] = [t.presses, t.releases, down];
       }
     }
     const light = bench.first<LightSensor>('light');
@@ -96,6 +100,15 @@ export class SnapshotReader {
   }
 }
 
+/** What a mirror reads on every update. */
+export interface MirrorSource {
+  controls: Control[];
+  bench: Bench;
+  buttons: { a?: unknown; b?: unknown };
+  /** Bench's own taps and holds on A and B, from the app's host. */
+  gestures?: [number, number, number][];
+}
+
 export type RemoteStatus = 'off' | 'pushing' | 'live' | 'offline' | 'error';
 
 const KEY = 'bench:remote-device';
@@ -119,7 +132,7 @@ export class RemoteMirror {
   message = '';
   sent = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private source: (() => { controls: Control[]; bench: Bench; buttons: { a?: unknown; b?: unknown } }) | null = null;
+  private source: (() => MirrorSource) | null = null;
   private reader = new SnapshotReader();
   private last = '';
   private lastAt = 0;
@@ -178,8 +191,8 @@ export class RemoteMirror {
 
   private async tick(): Promise<void> {
     if (!this.source || this.inFlight) return;
-    const { controls, bench, buttons } = this.source();
-    const snap = this.reader.read(controls, bench, buttons);
+    const { controls, bench, buttons, gestures } = this.source();
+    const snap = this.reader.read(controls, bench, buttons, gestures);
     let json = JSON.stringify(snap);
     if (json.length > MAX_BYTES) {
       delete snap.s.radar; // the biggest part; dials and triggers matter most

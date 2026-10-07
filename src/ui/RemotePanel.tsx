@@ -1,11 +1,9 @@
 import { useState, useSyncExternalStore } from 'react';
 import { firmwarePrompt } from '../resident/firmware';
-import { remote } from '../resident/remote';
+import { type MirrorSource, remote } from '../resident/remote';
 import type { Board } from '../sim/boards';
 import type { DeviceProfile } from '../sim/devices/types';
 import { Copy } from './Copy';
-import type { Bench } from '../sim/controls/bench';
-import type { Control } from '../sim/controls/controls';
 import { Panel } from './Panel';
 
 interface Props {
@@ -16,7 +14,7 @@ interface Props {
   /** The app open on Bench. */
   app: { name: string; code: string };
   /** What drives it, read on every update. */
-  source: () => { controls: Control[]; bench: Bench; buttons: { a?: unknown; b?: unknown } };
+  source: () => MirrorSource;
 }
 
 const STATUS = {

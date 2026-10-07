@@ -18,7 +18,8 @@ const factory = new LuaFactory();
 /** A real Resident device, as far as the shim can tell: none of Bench's drivers. */
 const FIRMWARE = 'dial, trigger, light, pir, climate, touch, ld2410 = nil, nil, nil, nil, nil, nil, nil\n';
 
-async function device(app: string, firmware = FIRMWARE, displayId = 'waveshare-esp32-c6-lcd-1.47') {
+/** `wrap: false` runs the app as Bench itself does, without the mirror's shim. */
+async function device(app: string, firmware = FIRMWARE, displayId = 'waveshare-esp32-c6-lcd-1.47', wrap = true) {
   const clock = new SimClock();
   clock.paused = true;
   const display = new Display(findDevice(displayId)!, clock);
@@ -33,7 +34,7 @@ async function device(app: string, firmware = FIRMWARE, displayId = 'waveshare-e
     telemetry: () => {},
     publish: () => 'sent',
   };
-  const { host, error } = await ResidentHost.boot(factory, board, { code: firmware + remoteApp(app) });
+  const { host, error } = await ResidentHost.boot(factory, board, { code: wrap ? firmware + remoteApp(app) : app });
   const run = async (ms: number) => {
     for (let i = 0; i < ms; i += 10) {
       clock.advance(10);
@@ -63,19 +64,42 @@ describe('remote mirror', () => {
       end
       function on_event(ctx, e) log.info("event", e.name, e.channel, tostring(e.data.name or e.data.index or e.data.moving)) end`);
     expect(t.error).toBeUndefined();
-    send(t.host, { d: { speed: [3, 0.3, 0] }, t: { go: [0, 0, 0] }, s: { pir: { motion: false } } });
+    send(t.host, { d: { speed: [3, 0.3, 0] }, t: { go: [0, 0, 0] }, s: { pir: { motion: false } }, g: [[0, 0, 0], [0, 0, 0]] });
     await t.run(150);
     expect(t.logs).toEqual([]); // the first update is a baseline: nothing fires
-    send(t.host, { d: { speed: [5, 0.5, 2] }, t: { go: [1, 1, 0], '@a': [0, 0, 0] }, s: { pir: { motion: true } } });
+    send(t.host, { d: { speed: [5, 0.5, 2] }, t: { go: [1, 1, 0] }, s: { pir: { motion: true } }, g: [[0, 0, 0], [0, 0, 0]] });
     await t.run(150);
     expect(t.logs).toContain('event\tdial\tdriver\tspeed');
     expect(t.logs).toContain('event\ttrigger\tdriver\tgo');
     expect(t.logs).toContain('event\tmotion\tdriver\ttrue');
     expect(t.logs).toContain('tick\t5\t2\ttrue');
     t.logs.length = 0;
-    send(t.host, { d: { speed: [5, 0.5, 2] }, t: { go: [1, 1, 0], '@a': [1, 1, 0] }, s: { pir: { motion: true } } });
+    send(t.host, { d: { speed: [5, 0.5, 2] }, t: { go: [1, 1, 0] }, s: { pir: { motion: true } }, g: [[1, 0, 0], [0, 0, 0]] });
     await t.run(150);
     expect(t.logs).toContain('event\ttap\tdriver\t0'); // Bench's button A: a tap on the device
+  });
+
+  it("replays Bench's taps and holds, and ignores the board's own keys while mirroring", async () => {
+    const t = await device(`
+      function on_event(ctx, e)
+        if e.name == "tap" then log.info("tap", e.data.index, button.press_count()) end
+        if e.name == "hold" then log.info("hold", e.data.index, tostring(e.data.held)) end
+      end`);
+    expect(t.error).toBeUndefined();
+    const g = (a: number[], b: number[]) => send(t.host, { d: {}, t: {}, s: {}, g: [a, b] });
+    g([0, 0, 0], [0, 0, 0]); // baseline
+    await t.run(50);
+    g([2, 0, 0], [0, 1, 0]); // two taps on A; B held down
+    await t.run(50);
+    g([2, 0, 0], [0, 1, 1]); // B let go
+    await t.run(50);
+    expect(t.logs).toEqual(['tap\t0\t1', 'tap\t0\t2', 'hold\t1\ttrue', 'hold\t1\tfalse']);
+    // The board's own key: its driver's events don't reach the app, and don't count.
+    t.logs.length = 0;
+    t.host.queue({ name: 'tap', channel: 'driver', data: { index: 0, count: 1 } });
+    t.host.queue({ name: 'hold', channel: 'driver', data: { index: 0, held: true } });
+    await t.run(50);
+    expect(t.logs).toEqual([]);
   });
 
   it("leaves the device's own events to the app", async () => {
@@ -104,7 +128,7 @@ describe('remote mirror', () => {
     expect(t.logs).toEqual(['beeped']);
   });
 
-  it('counts every quick tap on e-paper, refreshing in the background as the board does', async () => {
+  it('counts every quick tap on Bench\'s e-paper, refreshing in the background as the board does', async () => {
     const t = await device(
       `local g = lgfx.bind("main")
       local taps = 0
@@ -113,6 +137,7 @@ describe('remote mirror', () => {
       function on_event(ctx, e) if e.name == "tap" then taps = taps + 1 draw() log.info("taps", taps) end end`,
       FIRMWARE,
       'waveshare-epd-2.13-v4',
+      false,
     );
     expect(t.error).toBeUndefined();
     const a = t.board.buttons[0] as Button;
@@ -129,7 +154,7 @@ describe('remote mirror', () => {
     expect(t.display.stats.shows).toBeLessThan(6); // the frames in between were never refreshed
   });
 
-  it('gives the mirror every press, however quick', () => {
+  it('counts every press on a button, however quick, and sends A and B as gestures', () => {
     const clock = new SimClock();
     clock.paused = true;
     const bench = new Bench(clock);
@@ -141,7 +166,11 @@ describe('remote mirror', () => {
       button.setDown(true);
       button.setDown(false);
     }
-    expect(new SnapshotReader().read([a], bench, { a }).t['@a']).toEqual([3, 3, 0]);
+    a.isPressed();
+    expect([a.presses, a.releases]).toEqual([3, 3]);
+    const snap = new SnapshotReader().read([a], bench, { a }, [[3, 0, 0], [0, 0, 0]]);
+    expect(snap.t).toEqual({}); // A travels as Bench's gestures, not raw presses
+    expect(snap.g).toEqual([[3, 0, 0], [0, 0, 0]]);
   });
 
   it("reads Bench's controls and sensors into an update, counting dial steps", () => {
@@ -159,7 +188,7 @@ describe('remote mirror', () => {
     pir.wave();
     const snap = reader.read([speed, a], bench, { a });
     expect(snap.d.speed).toEqual([8, 0.8, 3]);
-    expect(snap.t['@a']).toEqual([0, 0, 0]);
+    expect(snap.t['@a']).toBeUndefined();
     expect(snap.s.pir).toEqual({ motion: true });
   });
 

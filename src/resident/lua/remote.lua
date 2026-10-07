@@ -2,8 +2,9 @@
 -- their state over the relay as "bench" events. Bench's drivers (dial, trigger, light, pir,
 -- climate, touch, ld2410, imu, and a silent buzzer) are defined here only where this firmware has
 -- none. Each sits between "@@part <module>" and "@@end" lines: Bench sends only the parts the app
--- names, since every line here costs compile memory on the device.
-local __bench = { d = {}, t = {}, s = {} }
+-- names, since every line here costs compile memory on the device. Bench's buttons A and B arrive
+-- as the taps and holds Bench recognised; the board's own keys are ignored while it mirrors.
+local __bench = { d = {}, t = {}, s = {}, g = {} }
 local __now = function() return (time and time.ticks_ms) and time.ticks_ms() or 0 end
 
 -- @@part dial
@@ -64,6 +65,10 @@ if not trigger then
 end
 -- @@end
 __bench.since = {}
+
+-- While Bench mirrors, its buttons A and B are the only ones: the board's own keys are ignored (see
+-- on_event below), so taps counted here are Bench's.
+if button then pcall(function() button.press_count = function() return __bench.taps or 0 end end) end
 
 local function sensor(key, default)
   return function() return __bench.s[key] or default end
@@ -129,20 +134,24 @@ local function __bench_apply(ctx, data, deliver)
     __bench.t[name] = v
     if v[3] == 1 and not (was and was[3] == 1) then __bench.since[name] = __now() end
     if was then
-      local button = name == "@a" and 0 or name == "@b" and 1 or nil
+      for _ = was[1] + 1, v[1] do deliver(ctx, "trigger", { name = name, pressed = true }) end
+      for _ = was[2] + 1, v[2] do deliver(ctx, "trigger", { name = name, pressed = false }) end
+    end
+  end
+  -- Bench's buttons A and B: the taps and holds Bench recognised, replayed as they are, so both
+  -- screens see the same gestures.
+  for i, v in ipairs(data.g or {}) do
+    local was = __bench.g[i]
+    __bench.g[i] = v
+    if was then
+      local index = i - 1
+      for _ = was[2] + 1, v[2] do deliver(ctx, "hold", { index = index, held = true }) end
       for _ = was[1] + 1, v[1] do
-        if button then
-          -- Bench's button A or B, driven by a part there: a tap here.
-          __bench.taps = (__bench.taps or 0) + 1
-          deliver(ctx, "tap", { index = button, count = __bench.taps })
-          deliver(ctx, "button", { index = button, count = __bench.taps })
-        else
-          deliver(ctx, "trigger", { name = name, pressed = true })
-        end
+        __bench.taps = (__bench.taps or 0) + 1
+        deliver(ctx, "tap", { index = index, count = __bench.taps })
+        deliver(ctx, "button", { index = index, count = __bench.taps })
       end
-      if not button then
-        for _ = was[2] + 1, v[2] do deliver(ctx, "trigger", { name = name, pressed = false }) end
-      end
+      for _ = was[3] + 1, v[3] do deliver(ctx, "hold", { index = index, held = false }) end
     end
   end
   local s = data.s or {}
@@ -166,6 +175,8 @@ do
       __bench_apply(ctx, e.data or {}, deliver)
       return
     end
+    -- The board's own keys: Bench's buttons stand in for them, or the two screens would drift.
+    if (e.name == "tap" or e.name == "hold" or e.name == "button") and e.channel ~= "app" then return end
     if app_on_event then return app_on_event(ctx, e) end
   end
 end
