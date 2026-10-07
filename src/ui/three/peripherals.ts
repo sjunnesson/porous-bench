@@ -1,15 +1,19 @@
 // The sketch's external hardware as parts on the desk next to the device, drawn in the same ghosted
-// linework: a rotary encoder, tactile buttons, a slide pot, a piezo buzzer and an LD2410 radar with
-// its detection fan. Each one is live: it shows its input's state and you can work it with the mouse.
+// linework: a rotary encoder, tactile buttons, a slide pot, a piezo buzzer, an LD2410 radar with
+// its detection fan, an LDR light sensor, a PIR, a DHT22 and a touch pad. Each one is live: it shows its input's state and you can work it with the mouse.
 // Units are mm; the desk is the xy plane and +z points up out of it, towards the viewer.
 
 import * as THREE from 'three';
 import type { Button } from '../../sim/inputs/button';
 import type { Buzzer } from '../../sim/inputs/buzzer';
+import { type Climate, TEMP_RANGE } from '../../sim/inputs/climate';
 import type { SimInput } from '../../sim/inputs/input';
 import type { Knob } from '../../sim/inputs/knob';
 import { FOV_DEG, type LD2410, MAX_RANGE_M } from '../../sim/inputs/ld2410';
+import type { LightSensor } from '../../sim/inputs/light';
+import type { Pir } from '../../sim/inputs/pir';
 import type { Pot } from '../../sim/inputs/pot';
+import type { Touch } from '../../sim/inputs/touch';
 
 const BLUE = 0x1b4b7a;
 const NOW = 0x8c3b1e;
@@ -464,6 +468,267 @@ function radar(input: LD2410): Peripheral {
   };
 }
 
+/** A flat polyline lying at height z, from [x, y] pairs. */
+function polyline(pts: [number, number][], z: number, material = LINE, closed = false): THREE.Line {
+  const geo = new THREE.BufferGeometry().setFromPoints(pts.map(([x, y]) => new THREE.Vector3(x, y, z)));
+  return closed ? new THREE.LineLoop(geo, material) : new THREE.Line(geo, material);
+}
+
+/** A circle outline lying at height z. */
+function ring(r: number, z: number, material = LINE): THREE.LineLoop {
+  const l = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(new THREE.EllipseCurve(0, 0, r, r).getPoints(40)), material);
+  l.position.z = z;
+  return l;
+}
+
+/** A vertical drag over a part: the pointer's travel along the part's y axis, in mm, since the press. */
+function dragY(root: THREE.Group, ray: THREE.Ray, z: number, onDelta: (dy: number) => void): Grab {
+  const start = onPlane(root, ray, z);
+  return {
+    move(r) {
+      const p = onPlane(root, r, z);
+      if (start && p) onDelta(p.y - start.y);
+    },
+    up() {},
+  };
+}
+
+/** Wheel deltas arrive in pixels (mouse) or small steps (trackpad): turn them into whole clicks. */
+function wheelClicks(perClick = 40) {
+  let acc = 0;
+  return (dy: number) => {
+    acc -= dy / perClick; // scrolling up is "more"
+    const n = Math.trunc(acc);
+    acc -= n;
+    return n;
+  };
+}
+
+const WARM = 0xe0a03a;
+
+/** LDR module: a light-dependent resistor on a small board with its comparator pot and LEDs. */
+function ldr(input: LightSensor): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(20, 14, 1.6));
+  // Trim pot and the two status LEDs, on the wire side.
+  root.add(place(block(5, 5, 2.4, 0, LINE_DIM), -4.5, 2.5, 1.6 + 1.2));
+  root.add(place(cylinder(1.6, 0.6, 0, false, LINE_DIM), -4.5, 2.5, 4 + 0.3));
+  for (const y of [-3, -5]) root.add(place(block(1.6, 0.9, 0.5, 0, LINE_DIM), -6.5, y, 1.6 + 0.25));
+  // The LDR: a 5 mm disc on its legs, with the squiggly CdS track on its face.
+  const R = 2.6;
+  const ldrX = 5;
+  const sensor = new THREE.Group();
+  sensor.position.set(ldrX, 0, 3.2);
+  sensor.add(cylinder(R, 1.8, 0));
+  const top = disc(R, 1.85);
+  sensor.add(top);
+  const track: [number, number][] = [];
+  for (let i = 0; i <= 6; i++) {
+    const x = -1.6 + (i * 3.2) / 6;
+    const side = i % 2 ? 1 : -1;
+    track.push([x, side * 1.7], [x, -side * 1.7]);
+  }
+  sensor.add(polyline(track, 1.9));
+  for (const x of [-1.2, 1.2]) root.add(place(block(0.5, 0.5, 1.6, 0, LINE_DIM), ldrX + x, 0, 1.6 + 0.8)); // its legs
+  root.add(sensor);
+  // Rays around the LDR: the light falling on it.
+  const rayMat = new THREE.LineBasicMaterial({ color: WARM, transparent: true, opacity: 0, depthWrite: false });
+  const rays = new THREE.Group();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    rays.add(polyline([[Math.cos(a) * (R + 1), Math.sin(a) * (R + 1)], [Math.cos(a) * (R + 3), Math.sin(a) * (R + 3)]], 0, rayMat));
+  }
+  rays.position.set(ldrX, 0, 5.1);
+  root.add(rays);
+  // A generous pick target over the sensor end, so dragging and scrolling are easy to start.
+  const pad = fillMesh(new THREE.PlaneGeometry(10, 14), BLUE, 0);
+  pad.position.set(ldrX, 0, 5.2);
+  root.add(pad);
+  withLabel(root, input.label, -10.5);
+  const wheel = wheelClicks();
+  const glow = new THREE.Color();
+  return {
+    root,
+    w: 24,
+    h: 24,
+    anchor: new THREE.Vector3(-10, 0, 0.8),
+    targets: [top, pad],
+    handles: [handleOf(root, 20, 14, 5)],
+    grab(_hit, ray) {
+      const start = input.level;
+      return dragY(root, ray, 5.2, (dy) => input.set(start + dy / 25)); // ~25 mm from dark to sunlight
+    },
+    wheel: (_hit, dy) => {
+      const n = wheel(dy);
+      if (n) input.set(input.level + n * 0.025);
+    },
+    title: () => `${input.label}: drag up/down or scroll · ${input.lux()} lx`,
+    update() {
+      const l = input.level;
+      // Dim blue in the dark, a warm glow in sunlight.
+      const mat = top.material as THREE.MeshBasicMaterial;
+      mat.color.copy(glow.setHex(BLUE).lerp(new THREE.Color(WARM), Math.min(1, l * 1.4)));
+      mat.opacity = 0.06 + l * 0.8;
+      rayMat.opacity = Math.max(0, l - 0.3) * 1.2;
+      rays.scale.setScalar(0.8 + l * 0.5);
+    },
+  };
+}
+
+/** HC-SR501 PIR: a board with a faceted Fresnel dome. Press and hold the dome to move in front of it. */
+function pirSensor(input: Pir): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(32, 24, 1.6));
+  // Square lens collar, then the dome.
+  root.add(block(23, 23, 2.2, 1.6));
+  const R = 11;
+  const domeZ = 3.8;
+  const domeGeo = () => new THREE.SphereGeometry(R, 12, 4, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2);
+  const dome = edges(domeGeo(), LINE_DIM, 10); // every facet edge: the Fresnel lens
+  dome.position.z = domeZ;
+  root.add(dome);
+  for (const r of [R * 0.45, R * 0.8]) {
+    // A couple of the lens rings, around the dome at their heights.
+    const l = ring(r, domeZ + Math.sqrt(R * R - r * r) + 0.05, LINE);
+    root.add(l);
+  }
+  const shell = fillMesh(domeGeo(), BLUE, 0.06);
+  shell.position.z = domeZ;
+  root.add(shell);
+  // The three pins (VCC, OUT, GND) on the wire side.
+  for (const y of [-2.54, 0, 2.54]) root.add(place(block(1, 1, 2, 0, LINE_DIM), -14.5, y, 1.6 + 1));
+  withLabel(root, input.label, -15.5);
+  let held = false;
+  return {
+    root,
+    w: 36,
+    h: 34,
+    anchor: new THREE.Vector3(-16, 0, 0.8),
+    targets: [shell],
+    handles: [handleOf(root, 32, 24, 3.8)],
+    grab() {
+      held = true;
+      input.setMoving(true);
+      return {
+        move: () => {},
+        up: () => {
+          held = false;
+          input.setMoving(false);
+        },
+      };
+    },
+    title: () => `${input.label}: wave at it (press and hold) · ${input.motion() ? 'MOTION' : 'still'}`,
+    update() {
+      const on = input.motion();
+      setFill(shell, on ? NOW : BLUE, on ? (held ? 0.45 : 0.3) : 0.06);
+    },
+  };
+}
+
+/**
+ * DHT22: the white box with its vent grille, lying on its back, pins towards the wire. Drag or
+ * scroll over the grille for temperature, over the plain band by the pins for humidity.
+ */
+function dht(input: Climate): Peripheral {
+  const root = new THREE.Group();
+  const L = 20; // body, along x; the mounting tab adds 5 mm
+  const W = 15;
+  const D = 7.7;
+  root.add(place(block(L, W, D), -2.5, 0, D / 2));
+  // Mounting tab with its hole, at the far end.
+  root.add(place(block(5, 9, 1.4), L / 2, 0, 0.7));
+  root.add(place(ring(1.4, 0), L / 2 + 0.3, 0, 1.45));
+  // Pins out of the near end.
+  for (const y of [-3.81, -1.27, 1.27, 3.81]) root.add(polyline([[-L / 2 - 2.5, y], [-L / 2 - 6, y]], 0.6));
+  // The grille: rows of slots on the top face.
+  const gx0 = -L / 2 - 2.5 + 7; // the plain band by the pins is 7 mm
+  const gx1 = L / 2 - 2.5 - 1.5;
+  const slots = 6;
+  for (let i = 0; i < slots; i++) {
+    const x = gx0 + 0.6 + ((i + 0.5) * (gx1 - gx0 - 1.2)) / slots;
+    for (const y of [-3.6, 3.6]) root.add(place(block(1.1, 5, 0.1, 0, LINE_DIM), x, y, D + 0.05));
+  }
+  // Fills: the grille tints cold blue → warm rust with temperature, the band darkens with humidity.
+  const grille = fillMesh(new THREE.PlaneGeometry(gx1 - gx0, W - 1.5));
+  grille.position.set((gx0 + gx1) / 2, 0, D + 0.05);
+  root.add(grille);
+  const band = fillMesh(new THREE.PlaneGeometry(7 - 1, W - 1.5));
+  band.position.set(-L / 2 - 2.5 + 3.5, 0, D + 0.05);
+  root.add(band);
+  root.add(place(polyline([[gx0, -W / 2], [gx0, W / 2]], 0, LINE_DIM), 0, 0, D + 0.02));
+  withLabel(root, input.label, -W / 2 - 3);
+  const wheelT = wheelClicks();
+  const wheelH = wheelClicks();
+  const halfStep = (c: number) => Math.round(c * 2) / 2;
+  const readout = () => `${input.temperature.toFixed(1)} °C · ${Math.round(input.humidity)} %`;
+  const tint = new THREE.Color();
+  return {
+    root,
+    w: 32,
+    h: 24,
+    anchor: new THREE.Vector3(-L / 2 - 6, 0, 0.6),
+    targets: [grille, band],
+    handles: [handleOf(root, L + 5, W, D)],
+    grab(hit, ray) {
+      if (hit === band) {
+        const start = input.humidity;
+        return dragY(root, ray, D, (dy) => input.setHumidity(Math.round(start + dy * 2.5)));
+      }
+      const start = input.temperature;
+      return dragY(root, ray, D, (dy) => input.setTemperature(halfStep(start + dy * 1.5)));
+    },
+    wheel(hit, dy) {
+      if (hit === band) {
+        const n = wheelH(dy);
+        if (n) input.setHumidity(Math.round(input.humidity) + n);
+      } else {
+        const n = wheelT(dy);
+        if (n) input.setTemperature(halfStep(input.temperature) + n * 0.5);
+      }
+    },
+    title: (hit) => `${input.label}: ${readout()} · drag or scroll for ${hit === band ? 'humidity' : 'temperature'}`,
+    update() {
+      const f = (input.temperature - TEMP_RANGE[0]) / (TEMP_RANGE[1] - TEMP_RANGE[0]);
+      const mat = grille.material as THREE.MeshBasicMaterial;
+      mat.color.copy(tint.setHex(BLUE).lerp(new THREE.Color(NOW), f));
+      mat.opacity = 0.06 + Math.abs(f - 0.5) * 0.5;
+      setFill(band, BLUE, 0.03 + (input.humidity / 100) * 0.3);
+    },
+  };
+}
+
+/** A capacitive touch pad: a round copper pad on a small board. Press and hold to touch it. */
+function touchPad(input: Touch): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(20, 20, 1.6));
+  const R = 7;
+  root.add(ring(R, 1.65));
+  root.add(ring(R + 1.2, 1.65, LINE_DIM)); // the keep-out around the copper
+  const pad = disc(R, 1.7);
+  root.add(pad);
+  // Trace to the pin on the wire side.
+  root.add(polyline([[-R - 1.2, 0], [-8.5, 0]], 1.65, LINE_DIM));
+  root.add(place(block(1, 1, 2, 0, LINE_DIM), -9, 0, 1.6 + 1));
+  withLabel(root, input.label, -13.5);
+  return {
+    root,
+    w: 24,
+    h: 28,
+    anchor: new THREE.Vector3(-10, 0, 0.8),
+    targets: [pad],
+    handles: [handleOf(root, 20, 20, 1.6)],
+    grab: () => {
+      input.setDown(true);
+      return { move: () => {}, up: () => input.setDown(false) };
+    },
+    title: () => `${input.label}: press and hold · touchRead ≈ ${input.touchRead()}`,
+    update() {
+      const down = input.isPressed();
+      setFill(pad, down ? NOW : BLUE, down ? 0.85 : 0.1);
+    },
+  };
+}
+
 /**
  * The radar's target: a small round-headed character with an antenna. Walks (legs and arms swing,
  * body bobs) when it moves, turns to face where it's going, breathes, blinks and looks around when
@@ -729,6 +994,18 @@ export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>):
         break;
       case 'ld2410':
         add(radar(input as LD2410), input);
+        break;
+      case 'light':
+        add(ldr(input as LightSensor), input);
+        break;
+      case 'pir':
+        add(pirSensor(input as Pir), input);
+        break;
+      case 'climate':
+        add(dht(input as Climate), input);
+        break;
+      case 'touch':
+        add(touchPad(input as Touch), input);
         break;
     }
   }

@@ -11,6 +11,7 @@ export default {
   bus: { kind: 'spi', hz: 40_000_000 },
   ram: { width: 240, height: 320, offsetX: 52, offsetY: 40 },
   firmwareRotation: 1, // M5.Display.setRotation(1): apps see 240×135 landscape
+  builtins: ['imu', 'buzzer'], // MPU6886 and a passive buzzer on the board
   wiring: { MOSI: 15, SCLK: 13, CS: 5, DC: 14, RST: 12, BL: 27, BtnA: 37, BtnB: 39, Buzzer: 2, 'IMU SDA': 21, 'IMU SCL': 22 },
   porting: [
     'Resident firmware: examples/m5stick-demo in inanimate-tech/resident (screen, imu, buzzer, button drivers + lgfx).',

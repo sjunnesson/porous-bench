@@ -3,7 +3,6 @@ import type { DeviceProfile } from './devices/types';
 import { Bench } from './controls/bench';
 import { type Control, isControl } from './controls/controls';
 import { Display } from './display';
-import type { Button } from './inputs/button';
 import type { SimInput } from './inputs/input';
 import type { InputSpec } from './inputs/input';
 import type { InputSpecs, Sketch, SketchContext } from './sketch';
@@ -25,7 +24,7 @@ export interface RunCallbacks {
 export class SketchRun {
   readonly display: Display;
   readonly inputs: Record<string, SimInput>;
-  /** Every physical part on the desk (declared hardware + whatever the controls use). */
+  /** The parts on the desk: yours (shared across runs when the app passes one in) plus declared ones. */
   readonly bench: Bench;
   /** Abstract controls (dial, trigger), whose hardware the user can swap. */
   readonly controls: Control[] = [];
@@ -40,11 +39,12 @@ export class SketchRun {
     readonly device: DeviceProfile,
     private clock: SimClock,
     private cb: RunCallbacks = {},
+    bench?: Bench,
   ) {
     this.startMs = clock.now();
     this.display = new Display(device, clock, this.abort.signal);
     this.inputs = {};
-    this.bench = new Bench(clock);
+    this.bench = bench ?? new Bench(clock);
     for (const [name, spec] of Object.entries(sketch.inputs ?? {})) this.addInput(name, spec);
     this.ctx = {
       display: this.display,
@@ -53,6 +53,7 @@ export class SketchRun {
       millis: () => Math.floor(this.clock.now() - this.startMs),
       delay: (ms) => this.clock.sleep(ms, this.abort.signal),
       declare: (name, spec) => this.addInput(name, spec),
+      bench: this.bench,
       log: (...args) => this.log('log', args),
       warn: (...args) => this.log('warn', args),
       error: (...args) => this.log('error', args),
@@ -82,16 +83,6 @@ export class SketchRun {
       this.bench.addDeclared(input);
     }
     return input;
-  }
-
-  /**
-   * Button-like inputs in declaration order, each with the push button behind it (if any). The
-   * n-th one is what a device's n-th physical button presses.
-   */
-  pressables(): { input: SimInput; button?: Button }[] {
-    return Object.values(this.inputs)
-      .filter((i) => i.kind === 'button' || i.kind === 'trigger')
-      .map((i) => ({ input: i, button: i.kind === 'button' ? (i as Button) : (i as Control & { buttonPart?: Button }).buttonPart }));
   }
 
   get stopped(): boolean {
@@ -128,6 +119,8 @@ export class SketchRun {
 
   stop(): void {
     this.abort.abort();
+    // The bench outlives the run: let go of its parts.
+    for (const c of this.controls) c.detach();
   }
 
   private async flush() {

@@ -11,6 +11,7 @@ export default {
   bus: { kind: 'spi', hz: 40_000_000 },
   ram: { width: 240, height: 320, offsetX: 52, offsetY: 40 },
   firmwareRotation: 1,
+  builtins: ['imu', 'buzzer'],
   wiring: { BtnA: 11, BtnB: 12 },
   porting: [
     'Resident firmware: examples/m5stick-demo, BOARD_M5STICKS3 (buttons on GPIO 11/12).',

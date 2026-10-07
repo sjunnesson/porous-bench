@@ -145,18 +145,15 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
 
     const hardware = run.bench.parts();
     const imu = hardware.find((i) => i.kind === 'imu') as Imu | undefined;
-    // The device's n-th physical button presses the sketch's n-th button-like input (a button, or a
-    // trigger whose hardware is a push button).
-    const pressables = run.pressables();
-    const inputFor = (b: ModelButton) => (b.input === undefined ? undefined : pressables[b.input]?.button);
-    const onDevice = new Set(model.buttons.map(inputFor).filter((b) => b !== undefined));
+    // The device's n-th physical button is the bench's built-in button n; built-in parts have no
+    // part of their own on the desk.
+    const inputFor = (b: ModelButton) => (b.input === undefined ? undefined : run.bench.builtinButton(b.input));
+    const onDevice = new Set(hardware.filter((p) => run.bench.isBuiltin(p)));
 
     // External parts on the desk, plus wires back to the device.
     const parts: Peripheral[] = buildPeripherals(hardware, onDevice);
-    const partKeys = parts.map((p, i) => {
-      const key = `${p.input?.kind ?? 'part'}:${p.input?.label ?? i}`;
-      return parts.slice(0, i).some((q) => `${q.input?.kind ?? 'part'}:${q.input?.label}` === key) ? `${key}:${i}` : key;
-    });
+    // Where you put a part is remembered by its id on the bench.
+    const partKeys = parts.map((p, i) => (p.input && run.bench.idOf(p.input)) ?? `part:${i}`);
     const desk = new THREE.Group();
     content.add(desk);
     for (const p of parts) desk.add(p.root);
@@ -164,7 +161,8 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     content.add(wires);
     const base = hardware.some((h) => h.kind === 'ld2410') ? BASE_DIORAMA : BASE;
 
-    const deskKey = `bench:desk:${device.id}:${run.sketch.name}`;
+    // The desk belongs to the bench, not the app: the layout stays when you switch apps.
+    const deskKey = `bench:desk:${device.id}`;
     const placed = loadDesk(deskKey);
     const savePlaced = () => {
       saveDesk(deskKey, placed);
@@ -541,13 +539,14 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       const hit = pick(e, e.altKey);
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
-        const mapped = hit.button.input === undefined ? undefined : pressables[hit.button.input]?.input;
+        const id = input && run.bench.idOf(input);
+        const drives = run.controls.filter((c) => c.connection?.part === id).map((c) => c.label);
         el.style.cursor = input ? 'pointer' : 'move';
-        el.title = input
-          ? `${hit.button.label}${input.key ? ` (${input.key.replace(/^Key/, '')})` : ''}`
-          : mapped
-            ? `${hit.button.label}: "${mapped.label}" is on other hardware right now`
-            : `${hit.button.label} (not used by this app)`;
+        el.title = !input
+          ? `${hit.button.label}`
+          : drives.length
+            ? `${hit.button.label} → ${drives.join(', ')}`
+            : `${hit.button.label} (not connected to anything in this app)`;
       } else if (hit?.kind === 'part') {
         el.style.cursor = 'pointer';
         el.title = hit.part.title(hit.object);

@@ -881,6 +881,40 @@ textarea.code {
   }
 }
 
+/* ---- hardware: the parts on the bench --------------------------------------------------- */
+
+.part-row {
+  position: relative;
+}
+.part-row + .part-row {
+  border-top: 1px solid var(--rule);
+}
+.part-row > .widget + .widget {
+  border-top: none;
+}
+/* Top right of each part: take it off the bench, or a quiet "built-in" tag. */
+.part-remove,
+.part-tag {
+  position: absolute;
+  top: 14px;
+  right: 0;
+  font: 400 9px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.part-remove {
+  color: var(--muted);
+}
+.part-remove:hover {
+  color: var(--now);
+}
+.add-part {
+  margin-top: 12px;
+}
+.panel-body > h3 {
+  margin-top: 20px;
+}
+
 /* ---- controls ------------------------------------------------------------------------------ */
 
 .control-row {

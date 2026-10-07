@@ -3,6 +3,7 @@ import { session } from './resident/session';
 import { residentSketch } from './resident/sketch';
 import { residentApps } from './resident-apps';
 import { SimClock } from './sim/clock';
+import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
 import { devices, findDevice } from './sim/devices';
 import type { Button } from './sim/inputs/button';
 import type { Knob } from './sim/inputs/knob';
@@ -30,7 +31,24 @@ interface Entry {
   code: string;
 }
 
-/** Which hardware the user picked for a sketch's control, kept across reloads. */
+/** The parts you put on the bench, kept in this browser (first visit: a starter set). */
+function loadParts(): PartSpec[] {
+  try {
+    const raw = localStorage.getItem('bench:parts');
+    return raw ? (JSON.parse(raw) as PartSpec[]) : DEFAULT_PARTS;
+  } catch {
+    return DEFAULT_PARTS;
+  }
+}
+function saveParts(parts: PartSpec[]) {
+  try {
+    localStorage.setItem('bench:parts', JSON.stringify(parts));
+  } catch {
+    /* not persisted */
+  }
+}
+
+/** What the user connected each of an app's controls to, kept across reloads. */
 function loadBinding(sketchId: string, control: string): string | null {
   try {
     return localStorage.getItem(`bench:binding:${sketchId}:${control}`);
@@ -81,6 +99,14 @@ export default function App() {
   const entry = entries.find((s) => s.id === sketchId) ?? entries[0];
   const device = findDevice(deviceId) ?? devices[0];
 
+  // The bench: the board's own hardware plus your parts. It outlives app switches (a new board
+  // brings its own built-ins), and every add or remove is saved in this browser.
+  const bench = useMemo(() => {
+    const b = boardBench(device, clock, loadParts());
+    b.onEdit = saveParts;
+    return b;
+  }, [device, clock]);
+
   const [run, setRun] = useState<SketchRun | null>(null);
   useEffect(() => {
     const r = new SketchRun(entry.sketch, device, clock, {
@@ -88,14 +114,14 @@ export default function App() {
       onError: (err) => setError(err instanceof Error ? (err.stack ?? err.message) : String(err)),
       // Controls appear as the app declares them; each picks up the hardware chosen last time.
       bindingFor: (control) => loadBinding(entry.id, control),
-    });
+    }, bench);
     setRun(r);
     setLogs([]);
     setError(null);
     session.log = (level, text) => r.stopped || setLogs((l) => [...l.slice(-299), { t: r.millis(), text, level: level === 'info' ? 'log' : level }]);
     void r.start();
     return () => r.stop();
-  }, [entry.sketch, device, clock, restarts]);
+  }, [entry.sketch, device, clock, bench, restarts]);
 
   // Keyboard → buttons and knobs declared by the sketch.
   useEffect(() => {
@@ -232,7 +258,7 @@ export default function App() {
           {run && (
             <InputPanel
               run={run}
-              display={
+              output={
                 <DeviceInfo device={device}>
                   <select className="wide" value={device.id} onChange={(e) => (setDeviceId(e.target.value), e.target.blur())} aria-label="Display">
                     {byTech.map(({ tech, list }) => (

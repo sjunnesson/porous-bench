@@ -1,55 +1,108 @@
 import { type ReactNode, useCallback, useState, useSyncExternalStore } from 'react';
-import { type Control, DIAL_SOURCES, type Dial, TRIGGER_SOURCES, type Trigger } from '../sim/controls/controls';
+import { type Bench, CHANNELS, type PartKind, PART_KINDS } from '../sim/controls/bench';
+import type { Control, Dial, Trigger } from '../sim/controls/controls';
 import type { Button } from '../sim/inputs/button';
 import type { Buzzer } from '../sim/inputs/buzzer';
+import type { Climate } from '../sim/inputs/climate';
 import type { Imu } from '../sim/inputs/imu';
 import type { SimInput } from '../sim/inputs/input';
 import type { Knob } from '../sim/inputs/knob';
 import type { LD2410 } from '../sim/inputs/ld2410';
+import type { LightSensor } from '../sim/inputs/light';
+import type { Pir } from '../sim/inputs/pir';
 import type { Pot } from '../sim/inputs/pot';
+import type { Touch } from '../sim/inputs/touch';
 import type { SketchRun } from '../sim/runner';
 import { useAnimationFrame, useInput } from './hooks';
 import { Panel } from './Panel';
 import { ButtonWidget } from './widgets/ButtonWidget';
 import { BuzzerWidget } from './widgets/BuzzerWidget';
+import { ClimateWidget } from './widgets/ClimateWidget';
 import { ImuWidget } from './widgets/ImuWidget';
 import { keyLabel } from './widgets/keys';
 import { KnobWidget } from './widgets/KnobWidget';
+import { LightWidget } from './widgets/LightWidget';
+import { PirWidget } from './widgets/PirWidget';
 import { PotWidget } from './widgets/PotWidget';
 import { RadarWidget } from './widgets/RadarWidget';
+import { TouchWidget } from './widgets/TouchWidget';
 
 interface Props {
   run: SketchRun;
-  /** The display block (picker and specs), in its own section after Controls. */
-  display?: ReactNode;
-  /** Remember the hardware the user picked for a control. */
+  /** The output block: what the app draws on (picker and specs). */
+  output: ReactNode;
+  /** Remember what the user connected a control to. */
   onBind(control: Control, source: string): void;
 }
 
-export function InputPanel({ run, display, onBind }: Props) {
-  useSyncExternalStore(run.bench.subscribe, run.bench.getVersion);
-  const parts = run.bench.parts();
+/**
+ * The right column: Hardware (the output and the parts you put on the bench) and Connections
+ * (which part drives each of the app's controls).
+ */
+export function InputPanel({ run, output, onBind }: Props) {
+  const bench = run.bench;
+  useSyncExternalStore(bench.subscribe, bench.getVersion);
   return (
     <>
-      {run.controls.length > 0 && (
-        <Panel id="controls" title="Controls">
-          {run.controls.map((c) => (
-            <ControlRow key={c.name} control={c} onBind={onBind} builtIn={hasBuiltInButton(run, c)} />
-          ))}
-        </Panel>
-      )}
-      {display && (
-        <Panel id="display" title="Display">
-          {display}
-        </Panel>
-      )}
-      <Panel id="parts" title="Parts">
-        {parts.length === 0 && <p className="dim">This app uses no inputs.</p>}
-        {parts.map((input, i) => (
-          <Widget key={`${input.kind}-${i}-${input.label}`} input={input} />
+      <Panel id="hardware" title="Hardware">
+        <h3>Output</h3>
+        {output}
+        <h3>Inputs</h3>
+        {bench.parts().map((p) => (
+          <PartRow key={bench.idOf(p) ?? p.label} bench={bench} part={p} />
+        ))}
+        <AddPart bench={bench} />
+      </Panel>
+      <Panel id="connections" title="Connections">
+        {run.controls.length === 0 && <p className="dim">This app has no controls to connect.</p>}
+        {run.controls.map((c) => (
+          <ControlRow key={c.name} control={c} bench={bench} onBind={onBind} />
         ))}
       </Panel>
     </>
+  );
+}
+
+/** A part on the bench: its widget, and a way to take it off (unless it's built into the board). */
+function PartRow({ bench, part }: { bench: Bench; part: SimInput }) {
+  const builtin = bench.isBuiltin(part);
+  const id = bench.idOf(part);
+  return (
+    <div className="part-row">
+      <Widget input={part} />
+      {builtin ? (
+        <span className="part-tag dim" title="Built into the board">
+          built-in
+        </span>
+      ) : (
+        <button className="part-remove link" onClick={() => id && bench.remove(id)} title={`Take ${part.label} off the bench`} aria-label={`Remove ${part.label}`}>
+          remove
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AddPart({ bench }: { bench: Bench }) {
+  return (
+    <div className="control-via add-part">
+      <select
+        className="wide"
+        value=""
+        onChange={(e) => {
+          if (e.target.value) bench.add(e.target.value as PartKind);
+          e.target.blur();
+        }}
+        aria-label="Add an input"
+      >
+        <option value="">+ Add an input…</option>
+        {PART_KINDS.map((k) => (
+          <option key={k.kind} value={k.kind}>
+            {k.label}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
@@ -67,30 +120,34 @@ function Widget({ input }: { input: SimInput }) {
       return <ImuWidget input={input as Imu} />;
     case 'buzzer':
       return <BuzzerWidget input={input as Buzzer} />;
+    case 'light':
+      return <LightWidget input={input as LightSensor} />;
+    case 'pir':
+      return <PirWidget input={input as Pir} />;
+    case 'climate':
+      return <ClimateWidget input={input as Climate} />;
+    case 'touch':
+      return <TouchWidget input={input as Touch} />;
     default:
       return null;
   }
 }
 
-/** Whether the device has a physical button of its own for this control (its n-th button-like input). */
-function hasBuiltInButton(run: SketchRun, control: Control): boolean {
-  if (control.kind !== 'trigger') return false;
-  const n = run.pressables().findIndex((p) => p.input === control);
-  return n >= 0 && !!run.device.enclosure?.parts?.some((p) => p.kind === 'button' && p.input === n);
-}
-
-/** One abstract control: its live value and the hardware driving it. */
-function ControlRow({ control, onBind, builtIn }: { control: Control; onBind: Props['onBind']; builtIn: boolean }) {
+/** One of the app's controls: its live value and the part channel that drives it. */
+function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench; onBind: Props['onBind'] }) {
   useInput(control);
   const [reading, setReading] = useState('');
-  // Absolute sources (pot, tilt, distance) change without telling the control, so poll it.
+  // Absolute channels (pot, tilt, light …) change without telling the control, so poll it.
   const tick = useCallback(() => {
     const next = control.kind === 'dial' ? formatValue(control as Dial) : (control as Trigger).isPressed() ? 'on' : 'off';
     setReading((prev) => (prev === next ? prev : next));
   }, [control]);
   useAnimationFrame(tick);
 
-  const sources = control.kind === 'dial' ? DIAL_SOURCES : TRIGGER_SOURCES;
+  const options = bench.options(control.kind);
+  // Kinds that could drive it but aren't on the bench: offer to add one and connect it.
+  const fits = (k: PartKind) => CHANNELS[k].some((c) => (control.kind === 'trigger' ? c.kind === 'momentary' : c.kind !== 'momentary'));
+  const addable = PART_KINDS.filter((k) => fits(k.kind) && !bench.first(k.kind));
   const keys =
     control.kind === 'dial'
       ? [(control as Dial).keys.down, (control as Dial).keys.up]
@@ -108,20 +165,36 @@ function ControlRow({ control, onBind, builtIn }: { control: Control; onBind: Pr
         )}
       </div>
       <div className="control-via">
-        <span className="dim">via</span>
+        <span className="dim">from</span>
         <select
           value={control.source}
           onChange={(e) => {
-            onBind(control, e.target.value);
+            const v = e.target.value;
+            if (v.startsWith('add:')) {
+              const kind = v.slice(4) as PartKind;
+              const part = bench.add(kind);
+              const ch = CHANNELS[kind].find((c) => (control.kind === 'trigger' ? c.kind === 'momentary' : c.kind !== 'momentary'));
+              if (ch) onBind(control, `${bench.idOf(part)}:${ch.id}`);
+            } else onBind(control, v);
             e.target.blur();
           }}
-          aria-label={`Hardware for ${control.label}`}
+          aria-label={`What drives ${control.label}`}
         >
-          {sources.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.id === 'button' && builtIn ? 'Built-in button' : s.label}
+          {options.map((o) => (
+            <option key={`${o.connection.part}:${o.connection.channel}`} value={`${o.connection.part}:${o.connection.channel}`}>
+              {o.part.label} · {o.channel.label}
             </option>
           ))}
+          <option value="none">Keyboard only</option>
+          {addable.length > 0 && (
+            <optgroup label="Add to the bench">
+              {addable.map((k) => (
+                <option key={k.kind} value={`add:${k.kind}`}>
+                  + {k.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         {keys.map((k) => (
           <kbd key={k}>{keyLabel(k)}</kbd>

@@ -12,7 +12,7 @@ export interface InputSpec<T extends SimInput = SimInput> {
   create(ctx: InputContext): T;
 }
 
-export type InputKind = 'button' | 'knob' | 'pot' | 'ld2410' | 'imu' | 'buzzer' | 'dial' | 'trigger';
+export type InputKind = 'button' | 'knob' | 'pot' | 'ld2410' | 'imu' | 'buzzer' | 'light' | 'pir' | 'climate' | 'touch' | 'dial' | 'trigger';
 
 /** Shared by the sketch (reads it) and the UI widget (drives it). */
 export abstract class SimInput {

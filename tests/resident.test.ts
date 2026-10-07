@@ -7,7 +7,7 @@ import { Zone } from '../src/resident/zone';
 import { SimClock } from '../src/sim/clock';
 import { findDevice } from '../src/sim/devices';
 import { Display } from '../src/sim/display';
-import { Bench } from '../src/sim/controls/bench';
+import { Bench, DEFAULT_PARTS } from '../src/sim/controls/bench';
 import { Dial, Trigger } from '../src/sim/controls/controls';
 import { Button } from '../src/sim/inputs/button';
 import type { Knob } from '../src/sim/inputs/knob';
@@ -25,6 +25,7 @@ async function boot(code: string, deviceId = 'm5stickc-plus2') {
   const telemetry: string[] = [];
   const buttons = [new Button({}, clock), new Button({}, clock)];
   const bench = new Bench(clock);
+  bench.load(DEFAULT_PARTS);
   const declared: Record<string, Dial | Trigger | LD2410> = {};
   const board: ResidentBoard = {
     display,
@@ -35,6 +36,7 @@ async function boot(code: string, deviceId = 'm5stickc-plus2') {
     dial: (name, opts) => (declared[name] = new Dial(opts, bench)) as Dial,
     trigger: (name, opts) => (declared[name] = new Trigger(opts, bench)) as Trigger,
     radar: (opts) => (declared.radar = new LD2410(opts, clock)) as LD2410,
+    sensor: (kind) => bench.ensure(kind).part,
     log: (level, text) => logs.push(`${level}: ${text}`),
     telemetry: (name, data) => telemetry.push(data?.error ? `${name}: ${data.error}` : name),
     publish: () => 'sent',
@@ -225,7 +227,7 @@ describe('Bench drivers', () => {
       function on_event(ctx, e) if e.name == "trigger" then log.info(e.data.name, e.data.pressed) end end
       function on_tick(ctx) if fire:was_pressed() then log.info("polled") end end`);
     expect(t.error).toBeUndefined();
-    const b = (t.declared.fire as Trigger).buttonPart!;
+    const b = (t.declared.fire as Trigger).parts()[0] as Button;
     b.setDown(true);
     b.setDown(false); // a tap shorter than one pass
     await run(t, 120);

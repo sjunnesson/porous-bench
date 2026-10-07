@@ -6,11 +6,16 @@
 import qrcode from 'qrcode-generator';
 import type { LuaEngine, LuaFactory } from 'wasmoon';
 import { color565, colors } from '../sim/color';
-import { DIAL_SOURCES, type Dial, type DialOptions, TRIGGER_SOURCES, type Trigger, type TriggerOptions } from '../sim/controls/controls';
+import { DIAL_VIA, type Dial, type DialOptions, TRIGGER_VIA, type Trigger, type TriggerOptions } from '../sim/controls/controls';
 import type { LD2410, LD2410Options } from '../sim/inputs/ld2410';
 import type { Display } from '../sim/display';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
+import type { Climate } from '../sim/inputs/climate';
+import type { SimInput } from '../sim/inputs/input';
+import type { LightSensor } from '../sim/inputs/light';
+import type { Pir } from '../sim/inputs/pir';
+import type { Touch } from '../sim/inputs/touch';
 import datetimeSrc from './lua/datetime.lua?raw';
 import lvglSrc from './lua/lvgl.lua?raw';
 import preludeSrc from './lua/prelude.lua?raw';
@@ -52,6 +57,8 @@ export interface ResidentBoard {
   dial?(name: string, opts: DialOptions): Dial;
   trigger?(name: string, opts: TriggerOptions): Trigger;
   radar?(opts: LD2410Options): LD2410;
+  /** Bench drivers for the other sensors: the part of that kind on the bench (added if missing). */
+  sensor?(kind: 'light' | 'pir' | 'climate' | 'touch'): SimInput;
   log(level: 'info' | 'warn' | 'error', text: string): void;
   telemetry(name: string, data?: Record<string, unknown>): void;
   publish(name: string, dataJson: string, keep: boolean): SendResult;
@@ -97,6 +104,8 @@ export class ResidentHost {
   private dials = new Map<string, { dial: Dial; last: number }>();
   private triggers = new Map<string, { trigger: Trigger; presses: number; releases: number }>();
   private radar: { r: LD2410; state: number } | null = null;
+  /** Sensors the app has read, with what their events last reported. */
+  private sensors = new Map<string, { part: SimInput; last: boolean }>();
   // One panel, one library: whoever bound last presents; the other's frames are dropped.
   private owner: 'lgfx' | 'lvgl' | null = null;
   private lv: LvglScreen | null = null;
@@ -264,6 +273,14 @@ export class ResidentHost {
         this.queue({ name: 'trigger', channel: 'driver', data: { name, pressed: press } });
       }
     }
+    // PIR and touch report their edges as driver events too.
+    for (const [kind, s] of this.sensors) {
+      const on = kind === 'pir' ? (s.part as Pir).motion() : kind === 'touch' ? (s.part as Touch).isPressed() : false;
+      if (on !== s.last && (kind === 'pir' || kind === 'touch')) {
+        s.last = on;
+        this.queue({ name: kind === 'pir' ? 'motion' : 'touch', channel: 'driver', data: kind === 'pir' ? { moving: on } : { touched: on } });
+      }
+    }
     if (this.radar) {
       const r = this.radar.r;
       r.read();
@@ -419,7 +436,7 @@ export class ResidentHost {
         if (this.dials.has(name)) return undefined;
         const o = checkOpts('dial.new', opts, { label: 'string', min: 'number', max: 'number', step: 'number', start: 'number', wrap: 'boolean', via: 'string', keys: 'object' });
         if (typeof o === 'string') return o;
-        if (o.via !== undefined && !DIAL_SOURCES.some((s) => s.id === o.via)) return `dial.new: via must be one of ${DIAL_SOURCES.map((s) => `"${s.id}"`).join(', ')}`;
+        if (o.via !== undefined && !(String(o.via) in DIAL_VIA)) return `dial.new: via must be one of ${Object.keys(DIAL_VIA).map((v) => `"${v}"`).join(', ')}`;
         try {
           const dial = b.dial(name, { label: titleCase(name), ...o } as DialOptions);
           this.dials.set(name, { dial, last: dial.value });
@@ -436,7 +453,7 @@ export class ResidentHost {
         if (this.triggers.has(name)) return undefined;
         const o = checkOpts('trigger.new', opts, { label: 'string', key: 'string', via: 'string' });
         if (typeof o === 'string') return o;
-        if (o.via !== undefined && !TRIGGER_SOURCES.some((s) => s.id === o.via)) return `trigger.new: via must be one of ${TRIGGER_SOURCES.map((s) => `"${s.id}"`).join(', ')}`;
+        if (o.via !== undefined && !(String(o.via) in TRIGGER_VIA)) return `trigger.new: via must be one of ${Object.keys(TRIGGER_VIA).map((v) => `"${v}"`).join(', ')}`;
         try {
           const trigger = b.trigger(name, { label: titleCase(name), ...o } as TriggerOptions);
           this.triggers.set(name, { trigger, presses: trigger.presses, releases: trigger.releases });
@@ -512,6 +529,29 @@ export class ResidentHost {
         this.lv!.dirty = true;
       },
       lv_theme: (theme: Record<string, Record<string, unknown>> | null | undefined) => this.lv!.setTheme(theme ?? null),
+
+      // light, pir, climate, touch: the part on the bench (put there if missing), read as a table.
+      sensor_read: (kind: 'light' | 'pir' | 'climate' | 'touch') => {
+        if (!b.sensor) return undefined;
+        let s = this.sensors.get(kind);
+        if (!s) {
+          const part = b.sensor(kind);
+          s = { part, last: kind === 'pir' ? (part as Pir).motion() : kind === 'touch' ? (part as Touch).isPressed() : false };
+          this.sensors.set(kind, s);
+        }
+        const p = s.part;
+        switch (kind) {
+          case 'light':
+            return { level: (p as LightSensor).level, lux: (p as LightSensor).lux(), raw: (p as LightSensor).read() };
+          case 'pir':
+            return { motion: (p as Pir).motion() };
+          case 'climate':
+            return { temperature: (p as Climate).readTemperature(), humidity: (p as Climate).readHumidity() };
+          case 'touch':
+            return { touched: (p as Touch).isPressed(), raw: (p as Touch).touchRead() };
+        }
+        return undefined;
+      },
 
       // screens
       screens_list: () => [this.screenInfo()],

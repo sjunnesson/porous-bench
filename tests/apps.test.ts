@@ -4,7 +4,7 @@ import { ResidentHost, resetScreen, type ResidentBoard } from '../src/resident/h
 import { AppStore } from '../src/resident/store';
 import { Zone } from '../src/resident/zone';
 import { SimClock } from '../src/sim/clock';
-import { Bench } from '../src/sim/controls/bench';
+import { Bench, DEFAULT_PARTS } from '../src/sim/controls/bench';
 import { Dial, Trigger } from '../src/sim/controls/controls';
 import { findDevice } from '../src/sim/devices';
 import { Display } from '../src/sim/display';
@@ -25,6 +25,7 @@ async function runApp(code: string, deviceId: string, ms: number) {
   const display = new Display(device, clock);
   display.setRotation(device.firmwareRotation ?? 0);
   const bench = new Bench(clock);
+  bench.load(DEFAULT_PARTS);
   const problems: string[] = [];
   const board: ResidentBoard = {
     display,
@@ -36,6 +37,7 @@ async function runApp(code: string, deviceId: string, ms: number) {
     dial: (_name, opts) => new Dial(opts, bench),
     trigger: (_name, opts) => new Trigger(opts, bench),
     radar: (opts) => new LD2410(opts, clock),
+    sensor: (kind) => bench.ensure(kind).part,
     log: (level, text) => level === 'error' && problems.push(text),
     telemetry: () => {},
     publish: () => 'sent',

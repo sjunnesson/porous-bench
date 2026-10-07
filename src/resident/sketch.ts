@@ -4,9 +4,11 @@
 
 import type { Display } from '../sim/display';
 import { dial, trigger } from '../sim/controls/controls';
-import { buzzer } from '../sim/inputs/buzzer';
-import { imu } from '../sim/inputs/imu';
-import { ld2410 } from '../sim/inputs/ld2410';
+import type { PartKind } from '../sim/controls/bench';
+import type { Buzzer } from '../sim/inputs/buzzer';
+import type { Imu } from '../sim/inputs/imu';
+import type { SimInput } from '../sim/inputs/input';
+import type { LD2410 } from '../sim/inputs/ld2410';
 import { defineSketch, type Sketch } from '../sim/sketch';
 import { type ResidentBoard, ResidentHost, resetScreen } from './host';
 import { luaFactory } from './lua';
@@ -31,14 +33,21 @@ export function residentSketch(app: ResidentAppSource): Sketch {
     description: app.description ?? 'Resident Lua app. Buttons: A / B keys (tap, or hold ½ s). Drag a .lua file onto the device to load another.',
     autoShow: false, // nothing reaches the glass until the app flips
     inputs: {
-      // Triggers, so you can swap a button for an encoder push, a shake or the radar.
-      a: trigger({ label: 'Button 0 (A)', key: 'KeyA' }),
-      b: trigger({ label: 'Button 1 (B)', key: 'KeyB' }),
-      imu: imu(),
-      buzzer: buzzer(),
+      // Triggers, so they can connect to the board's own buttons or any part on the bench.
+      a: trigger({ label: 'Button A', key: 'KeyA', builtin: 0 }),
+      b: trigger({ label: 'Button B', key: 'KeyB', builtin: 1 }),
     },
 
-    async setup({ display, device, inputs, millis, declare, log, warn, error }) {
+    async setup({ display, device, inputs, millis, declare, bench, log, warn, error }) {
+      // A sensor the app asks for: the one on the bench, or a new one put there for it.
+      const sensor = <T extends SimInput>(kind: PartKind, setup?: (part: T) => void): T => {
+        const { part, added } = bench.ensure<T>(kind);
+        if (added) {
+          setup?.(part);
+          log(`added ${part.label} to the bench for this app`);
+        }
+        return part;
+      };
       display.setRotation(device.firmwareRotation ?? 0);
       await resetScreen(display);
       const board: ResidentBoard = {
@@ -46,11 +55,17 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         now: () => millis(),
         zone: () => session.zone,
         buttons: [inputs.a, inputs.b],
-        imu: inputs.imu,
-        buzzer: inputs.buzzer,
+        // The board's IMU and buzzer, or ones you put on the bench (read each time: you can add one later).
+        get imu() {
+          return bench.first<Imu>('imu');
+        },
+        get buzzer() {
+          return bench.first<Buzzer>('buzzer');
+        },
         dial: (name, opts) => declare(name, dial(opts)),
         trigger: (name, opts) => declare(name, trigger(opts)),
-        radar: (opts) => declare('radar', ld2410(opts)),
+        radar: (opts) => sensor<LD2410>('ld2410', (r) => opts.mode && r.setMode(opts.mode)),
+        sensor: (kind) => sensor(kind),
         store: new AppStore(app.storeNs ?? 'app', true, (key) => {
           warn(`store: '${key}' rejected, over the 2048-byte budget`);
           session.telemetry('store_full', { error: key });

@@ -44,6 +44,8 @@ export interface DeviceProfile {
   ram?: { width: number; height: number; offsetX: number; offsetY: number };
   /** setRotation() the board's firmware applies (e.g. M5StickC Plus2 runs landscape). Used for Resident apps. */
   firmwareRotation?: number;
+  /** Hardware built into the board besides its buttons (those come from the enclosure). */
+  builtins?: ('imu' | 'buzzer')[];
   /** Function → GPIO on boards with a built-in display. */
   wiring?: Record<string, number>;
   /** Things a driver must get right on real hardware. */

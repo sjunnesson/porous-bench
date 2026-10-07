@@ -232,6 +232,25 @@ ld2410 = {
   end,
 }
 
+-- light, pir, climate, touch: Bench drivers for the sensors on the desk. The first read puts the
+-- part on the bench if it isn't there. PIR and touch also send `motion` / `touch` driver events.
+local function sensor(kind)
+  return function()
+    local r = H.sensor_read(kind)
+    if r == nil then error(kind .. ": this board has no " .. kind .. " driver", 3) end
+    return r
+  end
+end
+light = { read = sensor("light") }
+function light.level() return light.read().level end
+pir = { read = sensor("pir") }
+function pir.motion() return pir.read().motion end
+climate = { read = sensor("climate") }
+function climate.temperature() return climate.read().temperature end
+function climate.humidity() return climate.read().humidity end
+touch = { read = sensor("touch") }
+function touch.touched() return touch.read().touched end
+
 -- screens
 local SCREEN_KEYS = { name = 1, w = 1, h = 1, shape = 1, depth = 1, scheme = 1, dpi = 1, group = 1 }
 screens = {

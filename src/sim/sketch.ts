@@ -1,3 +1,4 @@
+import type { Bench } from './controls/bench';
 import type { DeviceProfile } from './devices/types';
 import type { Display } from './display';
 import type { InputSpec, SimInput } from './inputs/input';
@@ -18,6 +19,8 @@ export interface SketchContext<I = Record<string, SimInput>> {
    * `name` is already declared with the same kind.
    */
   declare<T extends SimInput>(name: string, spec: InputSpec<T>): T;
+  /** The parts on the desk (an app can ask for a sensor that isn't there yet). */
+  bench: Bench;
   /** Shows up in the console panel. */
   log(...args: unknown[]): void;
   warn(...args: unknown[]): void;

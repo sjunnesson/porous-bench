@@ -1,32 +1,129 @@
-// Abstract controls: what a sketch *means* ("a speed", "next"), not which part provides it.
-// The user picks the hardware per control in the sidebar and can swap it while the sketch runs.
+// Abstract controls: what an app *means* ("a speed", "next"), not which part provides it. Each one
+// connects to a channel of a part on the bench (a slide pot's position, an encoder's push, the
+// light level), chosen in the Connections panel and changeable while the app runs. Unconnected,
+// a control still answers to its keyboard keys.
 //
-//   inputs: {
-//     speed: dial({ label: 'Speed', min: 1, max: 20, start: 6 }),   // encoder by default
-//     next: trigger({ label: 'Next', key: 'Space' }),              // push button by default
-//   }
-//   inputs.speed.value · inputs.speed.delta() · inputs.next.wasPressed()
+//   local speed = dial.new("speed", { min = 1, max = 20, start = 6 })   -- Lua (Bench driver)
+//   local next = trigger.new("next", { key = "Space" })
+//   speed:value() · speed:delta() · next:was_pressed()
 
-import { Button } from '../inputs/button';
-import { Imu } from '../inputs/imu';
+import type { Button } from '../inputs/button';
+import { type Climate, TEMP_RANGE } from '../inputs/climate';
+import type { Imu } from '../inputs/imu';
 import { type InputContext, type InputSpec, SimInput } from '../inputs/input';
-import { Knob } from '../inputs/knob';
-import { LD2410, MAX_RANGE_M } from '../inputs/ld2410';
-import { Pot } from '../inputs/pot';
-import type { Bench } from './bench';
+import type { Knob } from '../inputs/knob';
+import { type LD2410, MAX_RANGE_M } from '../inputs/ld2410';
+import type { LightSensor } from '../inputs/light';
+import type { Pir } from '../inputs/pir';
+import type { Pot } from '../inputs/pot';
+import type { Touch } from '../inputs/touch';
+import { type Bench, type Connection, connectionId, parseConnection, type Preference } from './bench';
+
+/** Hardware a dial asks for first (`via`). Any absolute or relative channel on the bench will do. */
+export const DIAL_VIA: Record<string, Preference> = {
+  encoder: { kind: 'knob', channel: 'rotate' },
+  pot: { kind: 'pot', channel: 'position' },
+  'imu-x': { kind: 'imu', channel: 'tilt-x' },
+  'imu-y': { kind: 'imu', channel: 'tilt-y' },
+  radar: { kind: 'ld2410', channel: 'distance' },
+  light: { kind: 'light', channel: 'level' },
+  temperature: { kind: 'climate', channel: 'temperature' },
+  humidity: { kind: 'climate', channel: 'humidity' },
+};
+/** Hardware a trigger asks for first (`via`). */
+export const TRIGGER_VIA: Record<string, Preference> = {
+  button: { kind: 'button' },
+  'external-button': { kind: 'button', external: true },
+  'encoder-push': { kind: 'knob', channel: 'push' },
+  touch: { kind: 'touch' },
+  shake: { kind: 'imu', channel: 'shake' },
+  presence: { kind: 'ld2410', channel: 'presence' },
+  motion: { kind: 'pir', channel: 'motion' },
+  dark: { kind: 'light', channel: 'dark' },
+};
+
+/** Something with a button's edges: a push button, an encoder's push, a touch pad. */
+interface Pushable {
+  isPressed(): boolean;
+  wasPressed(): boolean;
+  wasReleased(): boolean;
+  setDown(down: boolean): void;
+}
+
+/** A 0..1 reading from an absolute channel, or null when the part has nothing to say (radar: no one). */
+function absolute(part: SimInput, channel: string): number | null {
+  switch (part.kind) {
+    case 'pot':
+      return (part as Pot).value;
+    case 'imu': {
+      const t = (part as Imu).getTilt();
+      return ((channel === 'tilt-x' ? t.x : t.y) + 1) / 2;
+    }
+    case 'ld2410': {
+      const r = part as LD2410;
+      r.outPin(); // pumps the sensor model
+      const rep = r.latest().report;
+      return rep.state ? rep.detectionDistance / (MAX_RANGE_M * 100) : null;
+    }
+    case 'light':
+      return (part as LightSensor).level;
+    case 'climate': {
+      const c = part as Climate;
+      return channel === 'humidity' ? c.humidity / 100 : (c.temperature - TEMP_RANGE[0]) / (TEMP_RANGE[1] - TEMP_RANGE[0]);
+    }
+  }
+  return null;
+}
+
+/** Move a part so an absolute channel reads `f` (keyboard nudges move the hardware itself). */
+function setAbsolute(part: SimInput, channel: string, f: number): void {
+  f = Math.min(1, Math.max(0, f));
+  switch (part.kind) {
+    case 'pot':
+      (part as Pot).set(f);
+      break;
+    case 'imu': {
+      const imu = part as Imu;
+      const t = imu.getTilt();
+      imu.setTilt(channel === 'tilt-x' ? f * 2 - 1 : t.x, channel === 'tilt-y' ? f * 2 - 1 : t.y);
+      break;
+    }
+    case 'light':
+      (part as LightSensor).set(f);
+      break;
+    case 'climate': {
+      const c = part as Climate;
+      if (channel === 'humidity') c.setHumidity(f * 100);
+      else c.setTemperature(TEMP_RANGE[0] + f * (TEMP_RANGE[1] - TEMP_RANGE[0]));
+      break;
+    }
+  }
+}
+
+/** The button behind a momentary channel, if it has real press/release edges. */
+function pushableOf(part: SimInput, channel: string): Pushable | undefined {
+  if (part.kind === 'button' || part.kind === 'touch') return part as Button | Touch;
+  if (part.kind === 'knob' && channel === 'push') return (part as Knob).button;
+  return undefined;
+}
+
+/** Is a level-style momentary channel (shake, presence, motion, dark) active right now? */
+function levelOn(part: SimInput, channel: string): boolean {
+  switch (part.kind) {
+    case 'imu':
+      // A shake is a flick: a short press at its start, so it reads as a tap rather than a hold.
+      return (part as Imu).shakeAge() < 150;
+    case 'ld2410':
+      return !!(part as LD2410).outPin();
+    case 'pir':
+      return (part as Pir).motion();
+    case 'light':
+      return channel === 'dark' && (part as LightSensor).level < 0.15;
+  }
+  return false;
+}
 
 // ---- dial ----------------------------------------------------------------------------------
-
-export type DialSource = 'encoder' | 'pot' | 'imu-x' | 'imu-y' | 'buttons' | 'radar';
-
-export const DIAL_SOURCES: { id: DialSource; label: string }[] = [
-  { id: 'encoder', label: 'Rotary encoder' },
-  { id: 'pot', label: 'Slide pot' },
-  { id: 'imu-x', label: 'IMU tilt ←→' },
-  { id: 'imu-y', label: 'IMU tilt ↑↓' },
-  { id: 'buttons', label: 'Buttons − / +' },
-  { id: 'radar', label: 'LD2410 distance' },
-];
 
 export interface DialOptions {
   label?: string;
@@ -36,14 +133,14 @@ export interface DialOptions {
   step?: number;
   /** Wrap past min/max (relative sources only). */
   wrap?: boolean;
-  /** Hardware to start with. */
-  via?: DialSource;
+  /** Hardware to ask for first: a DIAL_VIA name. */
+  via?: string;
   keys?: { down?: string; up?: string };
 }
 
 /**
- * A value in a range. Relative sources (encoder, buttons) step it; absolute ones (pot, tilt,
- * distance) set it from where the hardware is. `delta()` counts steps either way.
+ * A value in a range. A relative channel (encoder) steps it; an absolute one (pot, tilt, light,
+ * distance, temperature) sets it across the range. `delta()` counts steps either way.
  */
 export class Dial extends SimInput {
   readonly kind = 'dial';
@@ -52,10 +149,9 @@ export class Dial extends SimInput {
   readonly step: number;
   readonly wrap: boolean;
   readonly keys: { down: string; up: string };
-  source: DialSource;
   private v: number;
   private pending = 0;
-  private hw: { knob?: Knob; pot?: Pot; imu?: Imu; minus?: Button; plus?: Button; radar?: LD2410 } = {};
+  private knobBase: Knob | null = null;
 
   constructor(
     opts: DialOptions,
@@ -68,11 +164,9 @@ export class Dial extends SimInput {
     this.wrap = opts.wrap ?? false;
     this.keys = { down: 'ArrowLeft', up: 'ArrowRight', ...opts.keys };
     this.v = this.clamp(opts.start ?? (Number.isFinite(this.min) ? this.min : 0));
-    this.source = opts.via ?? 'encoder';
-    this.attach();
+    this.connect(bench.suggest('dial', this, DIAL_VIA[opts.via ?? 'encoder'] ?? {}));
   }
 
-  // ---- sketch side ----
   get value(): number {
     this.poll();
     return this.v;
@@ -94,22 +188,32 @@ export class Dial extends SimInput {
   }
 
   // ---- UI side ----
-  setSource(source: DialSource): void {
-    if (source === this.source) return;
-    this.bench.release(this);
-    this.hw = {};
-    this.source = source;
-    this.attach();
+  get connection(): Connection | null {
+    return this.bench.linkOf(this);
+  }
+  /** As a string for a <select>: 'part:channel', or 'none'. */
+  get source(): string {
+    return connectionId(this.connection);
+  }
+  connect(c: Connection | null): void {
+    this.bench.link(this, c);
+    const hw = this.bench.resolve(c);
+    // An encoder steps from where it is now.
+    this.knobBase = hw?.channel.kind === 'relative' ? (hw.part as Knob) : null;
+    this.knobBase?.delta();
     this.changed();
   }
-  /** setSource from a stored or UI string; ignores unknown ids. */
+  /** A stored or UI string: 'part:channel' or 'none'. Ignores connections the bench can't make. */
   bind(id: string): void {
-    const s = DIAL_SOURCES.find((x) => x.id === id);
-    if (s) this.setSource(s.id);
+    if (id === 'none') return this.connect(null);
+    const c = parseConnection(id);
+    const hw = this.bench.resolve(c);
+    if (c && hw && hw.channel.kind !== 'momentary') this.connect(c);
   }
-  /** The parts this control uses right now. */
+  /** The part this control reads right now. */
   parts(): SimInput[] {
-    return Object.values(this.hw).filter(Boolean) as SimInput[];
+    const hw = this.bench.resolve(this.connection);
+    return hw ? [hw.part] : [];
   }
   /** Keyboard: move the hardware itself, so the widget and the 3D part follow. */
   handleKey(code: string, down: boolean): boolean {
@@ -118,94 +222,33 @@ export class Dial extends SimInput {
     return true;
   }
   detach(): void {
-    this.bench.release(this);
-  }
-
-  private attach() {
-    const b = this.bench;
-    const label = this.label;
-    switch (this.source) {
-      case 'encoder':
-        this.hw.knob = b.claim(this, 'rotate', 'knob', () => new Knob({ label, keys: { left: this.keys.down, right: this.keys.up } }, b.clock));
-        this.hw.knob.delta(); // start counting from here
-        break;
-      case 'pot':
-        this.hw.pot = b.claim(this, 'pot', 'pot', () => new Pot({ label, noise: 0 }));
-        this.hw.pot.set(this.fractionOf(this.v)); // take over at the current value
-        break;
-      case 'imu-x':
-      case 'imu-y': {
-        const imu = (this.hw.imu = b.claim(this, 'imu', 'imu', () => new Imu({}, b.clock)));
-        // Take over at the current value: tilt the board along this axis to match it.
-        const t = imu.getTilt();
-        const want = this.fractionOf(this.v) * 2 - 1;
-        imu.setTilt(this.source === 'imu-x' ? want : t.x, this.source === 'imu-y' ? want : t.y);
-        break;
-      }
-      case 'buttons':
-        this.hw.minus = b.claim(this, 'minus', 'button', () => new Button({ label: `${label} −`, key: this.keys.down }, b.clock));
-        this.hw.plus = b.claim(this, 'plus', 'button', () => new Button({ label: `${label} +`, key: this.keys.up }, b.clock));
-        break;
-      case 'radar':
-        this.hw.radar = b.claim(this, 'radar', 'ld2410', () => new LD2410({}, b.clock));
-        break;
-    }
+    this.bench.unlink(this);
   }
 
   private poll() {
-    const { knob, pot, imu, minus, plus, radar } = this.hw;
-    switch (this.source) {
-      case 'encoder':
-        if (knob) this.stepBy(knob.delta());
-        break;
-      case 'buttons':
-        if (minus?.wasPressed()) this.stepBy(-1);
-        if (plus?.wasPressed()) this.stepBy(1);
-        break;
-      case 'pot':
-        if (pot) this.setAbsolute(pot.value);
-        break;
-      case 'imu-x':
-      case 'imu-y':
-        if (imu) {
-          const t = imu.getTilt();
-          this.setAbsolute(((this.source === 'imu-x' ? t.x : t.y) + 1) / 2);
-        }
-        break;
-      case 'radar':
-        if (radar) {
-          radar.outPin(); // pumps the sensor model
-          const r = radar.latest().report;
-          if (r.state) this.setAbsolute(r.detectionDistance / (MAX_RANGE_M * 100));
-        }
-        break;
+    const hw = this.bench.resolve(this.connection);
+    if (!hw) return;
+    if (hw.channel.kind === 'relative') {
+      const knob = hw.part as Knob;
+      if (knob !== this.knobBase) {
+        knob.delta(); // reconnected to another encoder: count from here
+        this.knobBase = knob;
+      }
+      this.stepBy(knob.delta());
+    } else {
+      const f = absolute(hw.part, hw.channel.id);
+      if (f !== null) this.setFraction(f);
     }
   }
 
   private nudge(steps: number) {
-    const { knob, pot, imu, minus, plus } = this.hw;
-    const { span } = this.range();
-    switch (this.source) {
-      case 'encoder':
-        knob?.turn(steps);
-        break;
-      case 'buttons':
-        (steps > 0 ? plus : minus)?.setDown(true);
-        (steps > 0 ? plus : minus)?.setDown(false);
-        break;
-      case 'pot':
-        pot?.set(pot.value + (steps * this.step) / span);
-        break;
-      case 'imu-x':
-      case 'imu-y':
-        if (imu) {
-          const t = imu.getTilt();
-          const d = (2 * steps * this.step) / span;
-          imu.setTilt(this.source === 'imu-x' ? t.x + d : t.x, this.source === 'imu-y' ? t.y + d : t.y);
-        }
-        break;
-      case 'radar':
-        break; // the distance is wherever the person is
+    const hw = this.bench.resolve(this.connection);
+    if (!hw) this.stepBy(steps);
+    else if (hw.channel.kind === 'relative') (hw.part as Knob).turn(steps);
+    else {
+      const { span } = this.range();
+      const f = absolute(hw.part, hw.channel.id) ?? this.fraction;
+      setAbsolute(hw.part, hw.channel.id, f + (steps * this.step) / span);
     }
     this.changed();
   }
@@ -224,7 +267,7 @@ export class Dial extends SimInput {
     this.v = next;
   }
 
-  private setAbsolute(f: number) {
+  private setFraction(f: number) {
     const { base, span } = this.range();
     const next = this.clamp(base + Math.round((Math.min(1, Math.max(0, f)) * span) / this.step) * this.step);
     if (next === this.v) return;
@@ -232,17 +275,12 @@ export class Dial extends SimInput {
     this.v = next;
   }
 
-  /** Where absolute sources map: the range, or ±12 steps around the start for open ranges. */
+  /** Where absolute channels map: the range, or ±12 steps around the start for open ranges. */
   private range(): { base: number; span: number } {
     if (Number.isFinite(this.min) && Number.isFinite(this.max)) return { base: this.min, span: Math.max(this.step, this.max - this.min) };
     const span = 24 * this.step;
     const base = Number.isFinite(this.min) ? this.min : Number.isFinite(this.max) ? this.max - span : -span / 2;
     return { base, span };
-  }
-
-  private fractionOf(v: number): number {
-    const { base, span } = this.range();
-    return Math.min(1, Math.max(0, (v - base) / span));
   }
 
   private clamp(v: number) {
@@ -256,31 +294,20 @@ export const dial = (opts: DialOptions = {}): InputSpec<Dial> => ({
 
 // ---- trigger -------------------------------------------------------------------------------
 
-export type TriggerSource = 'button' | 'external-button' | 'encoder-push' | 'shake' | 'presence';
-
-export const TRIGGER_SOURCES: { id: TriggerSource; label: string }[] = [
-  // 'button' uses the device's own button when it has one for this trigger; 'external-button' is
-  // always a separate switch on the desk.
-  { id: 'button', label: 'Push button' },
-  { id: 'external-button', label: 'External button' },
-  { id: 'encoder-push', label: 'Encoder push' },
-  { id: 'shake', label: 'IMU shake' },
-  { id: 'presence', label: 'LD2410 presence' },
-];
-
 export interface TriggerOptions {
   label?: string;
   /** KeyboardEvent.code that fires it, whatever the hardware. */
   key?: string;
-  via?: TriggerSource;
+  /** Hardware to ask for first: a TRIGGER_VIA name. */
+  via?: string;
+  /** Ask for the board's n-th button first (Resident's A and B). */
+  builtin?: number;
 }
 
 /** A momentary action. Same API as a button, so code written for one works with any source. */
 export class Trigger extends SimInput {
   readonly kind = 'trigger';
   readonly key?: string;
-  source: TriggerSource;
-  private hw: { button?: Button; knob?: Knob; imu?: Imu; radar?: LD2410 } = {};
   private keyDown = false;
   private prev = false;
   private pressed = false;
@@ -296,8 +323,7 @@ export class Trigger extends SimInput {
   ) {
     super(opts.label ?? 'Trigger');
     this.key = opts.key;
-    this.source = opts.via ?? 'button';
-    this.attach();
+    this.connect(bench.suggest('trigger', this, { ...(TRIGGER_VIA[opts.via ?? 'button'] ?? {}), builtin: opts.builtin }));
   }
 
   // ---- sketch side (Button-compatible) ----
@@ -325,31 +351,37 @@ export class Trigger extends SimInput {
   }
 
   // ---- UI side ----
-  setSource(source: TriggerSource): void {
-    if (source === this.source) return;
-    this.bench.release(this);
-    this.hw = {};
-    this.source = source;
+  get connection(): Connection | null {
+    return this.bench.linkOf(this);
+  }
+  get source(): string {
+    return connectionId(this.connection);
+  }
+  connect(c: Connection | null): void {
+    this.bench.link(this, c);
     this.prev = false;
-    this.attach();
+    // Ignore edges that happened before this connection.
+    const hw = this.bench.resolve(c);
+    const p = hw && pushableOf(hw.part, hw.channel.id);
+    p?.wasPressed();
+    p?.wasReleased();
     this.changed();
   }
-  /** setSource from a stored or UI string; ignores unknown ids. */
   bind(id: string): void {
-    const s = TRIGGER_SOURCES.find((x) => x.id === id);
-    if (s) this.setSource(s.id);
+    if (id === 'none') return this.connect(null);
+    const c = parseConnection(id);
+    const hw = this.bench.resolve(c);
+    if (c && hw && hw.channel.kind === 'momentary') this.connect(c);
   }
   parts(): SimInput[] {
-    return Object.values(this.hw).filter(Boolean) as SimInput[];
-  }
-  /** The push button behind this trigger, when it may sit on the device (not an external one). */
-  get buttonPart(): Button | undefined {
-    return this.source === 'button' ? this.hw.button : undefined;
+    const hw = this.bench.resolve(this.connection);
+    return hw ? [hw.part] : [];
   }
   handleKey(code: string, down: boolean): boolean {
     if (!this.key || code !== this.key) return false;
-    const b = this.pushable();
-    if (b) b.setDown(down); // press the real part, so it animates
+    const hw = this.bench.resolve(this.connection);
+    const p = hw && pushableOf(hw.part, hw.channel.id);
+    if (p) p.setDown(down); // press the real part, so it animates
     else {
       this.keyDown = down;
       this.changed();
@@ -357,67 +389,33 @@ export class Trigger extends SimInput {
     return true;
   }
   detach(): void {
-    this.bench.release(this);
-  }
-
-  private pushable(): Button | undefined {
-    return this.hw.button ?? this.hw.knob?.button;
-  }
-
-  private attach() {
-    const b = this.bench;
-    const label = this.label;
-    switch (this.source) {
-      case 'button':
-      case 'external-button':
-        this.hw.button = b.claim(this, 'button', 'button', () => new Button({ label, key: this.key }, b.clock));
-        break;
-      case 'encoder-push':
-        this.hw.knob = b.claim(this, 'push', 'knob', () => new Knob({ label, keys: this.key ? { press: this.key } : undefined }, b.clock));
-        break;
-      case 'shake':
-        this.hw.imu = b.claim(this, 'imu', 'imu', () => new Imu({}, b.clock));
-        break;
-      case 'presence':
-        this.hw.radar = b.claim(this, 'radar', 'ld2410', () => new LD2410({}, b.clock));
-        break;
-    }
-    // Ignore edges that happened before this source was attached.
-    const p = this.pushable();
-    p?.wasPressed();
-    p?.wasReleased();
+    this.bench.unlink(this);
   }
 
   private poll() {
-    const p = this.pushable();
+    const hw = this.bench.resolve(this.connection);
+    const p = hw && pushableOf(hw.part, hw.channel.id);
     if (p) {
-      // Buttons keep their own edge flags, so even a tap shorter than the sketch's loop counts.
-      if (p.wasPressed()) {
-        this.pressed = true;
-        this.presses++;
-        this.since = this.bench.clock.now();
-      }
-      if (p.wasReleased()) {
-        this.released = true;
-        this.releases++;
-      }
+      // Buttons keep their own edge flags, so even a tap shorter than the app's loop counts.
+      if (p.wasPressed()) this.edge(true);
+      if (p.wasReleased()) this.edge(false);
       this.prev = p.isPressed();
       return;
     }
-    let down = this.keyDown;
-    // A shake is a flick: a short press at its start, so it reads as a tap rather than a hold.
-    if (this.source === 'shake') down ||= (this.hw.imu?.shakeAge() ?? Infinity) < 150;
-    if (this.source === 'presence') down ||= !!this.hw.radar?.outPin();
-    if (down && !this.prev) {
+    const down = this.keyDown || (hw ? levelOn(hw.part, hw.channel.id) : false);
+    if (down !== this.prev) this.edge(down);
+    this.prev = down;
+  }
+
+  private edge(down: boolean) {
+    if (down) {
       this.pressed = true;
       this.presses++;
       this.since = this.bench.clock.now();
-    }
-    if (!down && this.prev) {
+    } else {
       this.released = true;
       this.releases++;
     }
-    this.prev = down;
   }
 }
 
