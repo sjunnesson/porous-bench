@@ -40,7 +40,7 @@ describe('app needs', () => {
 
 describe('output capabilities', () => {
   it('gives e-paper no motion and no colour, and the board its libraries and memory', () => {
-    expect(outputCaps(epaper, driverBoard)).toMatchObject({ output: 'display', w: 122, h: 250, color: false, motion: false, libraries: ['screen', 'lgfx'], appRamKb: 70 });
+    expect(outputCaps(epaper, driverBoard)).toMatchObject({ output: 'display', w: 122, h: 250, color: false, motion: false, libraries: ['screen', 'lgfx'], appRamKb: 52 });
     expect(outputCaps(epaper, s3).libraries).toContain('lvgl');
   });
 
@@ -59,7 +59,7 @@ describe('output capabilities', () => {
 
   it('says why an app does not fit', () => {
     const caps = outputCaps(epaper, driverBoard);
-    expect(misfits(appNeeds('-- @needs motion color\nlocal h = lvgl.bind("main")\n'), caps)).toEqual(['needs lvgl', 'animates', 'needs colour']);
+    expect(misfits(appNeeds('-- @needs motion color\nlocal h = lvgl.bind("main")\n'), caps)).toEqual(['needs lvgl', 'animates', 'needs colour', 'needs ~46 KB']);
     expect(misfits(appNeeds('-- @needs 196x96\nscreen.text(40, 80, "from Resident")\n'), caps)).toEqual(['needs 196×96']);
     expect(misfits(appNeeds('-- @output matrix\nleds.show()\n'), caps)).toEqual(['written for an LED matrix']);
   });
@@ -70,14 +70,14 @@ describe('the App menu', () => {
     expect(residentApps[0].id).toBe('porous-systems');
     for (const d of devices.filter((d) => d.tech !== 'led')) {
       for (const b of boardsFor(d)) {
-        // ~70 KB boards can't take it with the dial stand-in the encoder needs.
+        // Boards without PSRAM can't take it with the dial stand-in the encoder needs.
         if (b.appRamKb === undefined || b.appRamKb >= 1024) expect(runs(d, b)[0], `${d.id} on ${b.id}`).toBe('porous-systems');
       }
     }
   });
 
   it('lists only e-paper apps for the 2.13" e-paper, and only what its board can run', () => {
-    // The Waveshare driver board: no LVGL, ~70 KB.
+    // The Waveshare driver board: no LVGL, ~52 KB.
     expect(runs(epaper, driverBoard)).toEqual(['lgfx-hello']);
     // An S3 with PSRAM: Bench's adaptive LVGL apps too, still nothing that animates.
     const onS3 = runs(epaper, s3);
@@ -158,7 +158,7 @@ describe('prompts follow the board', () => {
   it('tells the app writer what the board has', () => {
     const p = appPrompt({ ...base, board: driverBoard });
     expect(p).toContain('There is no `lvgl` on this board');
-    expect(p).toContain('~70 KB of heap');
+    expect(p).toContain('~52 KB of heap');
     expect(p).toContain('`-- @needs motion color touch 240x135`');
     expect(appPrompt({ ...base, board: s3 })).toContain('optional `lvgl` module');
   });

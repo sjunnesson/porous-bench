@@ -56,10 +56,18 @@ your network. The panel then shows the 8-character device ID.
 - **Memory is the limit.** `ESP.getFreeHeap()` reports ~140 KB once connected, but that counts IRAM
   only reachable with 32-bit access; Lua gets byte-addressable heap, and there is ~70 KB of it after
   Wi-Fi + TLS (TLS alone takes ~40 KB). An incoming app costs about twice its size while it is parsed,
-  and compiling costs ~3.5-4x its source. Bench now minifies what it mirrors and sends only the
-  shim parts an app uses; a load fits when ~6x its wrapped size stays under ~3/4 of the 70 KB
+  and compiling costs ~3.5-4x its source. Bench minifies what it mirrors and sends only the shim
+  parts an app uses; a load fits when ~6x its wrapped size stays under ~3/4 of the app memory
   (Bench's `src/resident/needs.ts` estimates exactly this). tilt-ball and lgfx hello fit; Bench's
   11 KB water-sim and 13 KB Hello display don't.
+- **Lua has a heap of its own** (`LuaArena`, as in `firmware/c6-lcd147`), 56 KB taken at boot before
+  Wi-Fi, ~52 KB of it free for an app. Without it, an app that grew (or scattered small blocks until
+  no 16 KB piece was left) would leave TLS unable to allocate and drop the board off the relay until
+  a reset; now it stops with "not enough memory" and the board takes the next app. Measured
+  (`heap_caps_get_free_size(MALLOC_CAP_8BIT)`): 223 KB free at boot; connected, the shared heap keeps
+  35 KB free, a 31 KB largest block, and went no lower than 23 KB through the TLS handshake. With a
+  44 KB arena the clock app's `datetime` (~35 KB) ran out every tick; at 56 KB it runs, and a memory
+  hog filled the arena while the board stayed online and loaded the next app.
 - **No `lvgl`.** `device-lvgl/` builds (2.35 MB) and `lv_init()` is cheap (2 KB), but the first
   `lvgl.bind` costs ~30 KB for good (luavgl's bindings, the display, its draw buffer), which leaves
   too little to compile and run Bench's LVGL apps over TLS. LVGL apps need a board with PSRAM.

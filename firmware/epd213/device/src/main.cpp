@@ -4,6 +4,7 @@
 // ("main": 122x250, 1-bit, light). Sensors and controls come from Bench while
 // it mirrors an app here, so there are no drivers for them.
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <Resident.h>
 #include <ResidentLgfxModule.h>
 #include "EpdFrame.h"
@@ -11,21 +12,38 @@
 #include "CanvasLgfxTarget.h"
 #include "ButtonsDriver.h"
 #include "BoardConfig.h"
+#include "LuaArena.h"
 
 static constexpr const char* RESIDENT_HOST = "resident.inanimate.tech";
 static constexpr uint16_t RESIDENT_PORT = 443;
+
+// Lua's own heap (see LuaArena.h). With a 44 KB arena the shared heap kept
+// 44 KB free once connected (largest block 39 KB) and never went below 32 KB
+// through the TLS handshake (measured), so the arena takes 12 KB more of it;
+// the rest stays for a TLS reconnect and for parsing an incoming app.
+#ifndef LUA_ARENA_KB
+#define LUA_ARENA_KB 56
+#endif
 
 ScreenDriver screenDriver;
 ButtonsDriver buttonDriver{BUTTON_A, BUTTON_B};
 CanvasLgfxTarget lgfxMain;
 Resident::LgfxModule lgfxModule;
+LuaArena luaArena{LUA_ARENA_KB * 1024};
+
+static void printMemory(const char* when) {
+  Serial.printf("[mem] %s: 8-bit free %u, largest block %u, lowest free %u\n", when,
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+}
 
 static Resident::SandboxConfig makeConfig() {
   Resident::SandboxConfig cfg;
   cfg.deviceType = "epd213";
   cfg.firmwareVersion = "epd213-0.1";
   lgfxModule.addDisplay("main", &lgfxMain);
-  cfg.extensions = {&screenDriver, &buttonDriver, &lgfxModule};
+  cfg.extensions = {&luaArena, &screenDriver, &buttonDriver, &lgfxModule};
   cfg.systemDisplay = &screenDriver;
   cfg.systemButton = &buttonDriver;  // tap = load the saved app now, hold = forget it
 
@@ -51,6 +69,9 @@ void setup() {
                 (unsigned long)(ESP.getFreeHeap() / 1024));
 
   EpdFrame::begin();  // panel up before Resident paints its first status
+  printMemory("boot");
+  if (!luaArena.reserve()) Serial.println("[lua] arena allocation FAILED: Lua shares the heap");
+  printMemory("after the Lua arena");
 
   sandbox.setIdleScreenTitle("Connected");
 
@@ -64,6 +85,9 @@ void setup() {
   });
 
   sandbox.setup();
+  Serial.printf("[lua] %u bytes stayed in the shared heap; arena %u KB, %u free for apps\n",
+                (unsigned)luaArena.before(), (unsigned)(luaArena.size() / 1024),
+                (unsigned)luaArena.freeBytes());
 }
 
 void loop() {
@@ -72,9 +96,11 @@ void loop() {
   static uint32_t lastBeat = 0;
   if (millis() - lastBeat >= 30000) {
     lastBeat = millis();
-    Serial.printf("[heartbeat] %s, app %s, heap %lu (min %lu)\n",
-                  sandbox.isConnected() ? "connected" : "offline",
-                  sandbox.isAppRunning() ? "running" : "idle",
-                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap());
+    Serial.printf("[heartbeat] %s, app %s\n", sandbox.isConnected() ? "connected" : "offline",
+                  sandbox.isAppRunning() ? "running" : "idle");
+    printMemory("now");
+    Serial.printf("[lua] arena %u KB: free %u, largest block %u, lowest free %u\n",
+                  (unsigned)(luaArena.size() / 1024), (unsigned)luaArena.freeBytes(),
+                  (unsigned)luaArena.largestFree(), (unsigned)luaArena.lowestFree());
   }
 }

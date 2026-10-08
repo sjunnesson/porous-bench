@@ -202,11 +202,12 @@ end
 - **Refresh budget**: a partial refresh takes ~0.2 s and every 10th is a 1.9 s full one. Flipping
   faster than the panel can refresh just drops the in-between frames. `on_tick` runs every 100 ms:
   never flip from it unconditionally.
-- **Memory is tight**: no PSRAM, and about 70 KB of heap is shared by the incoming app, the Lua
-  compiler (~4x the source size) and the running app. Keep apps to a few KB of source: Bench's
-  tilt-ball and lgfx-hello (~1.5 KB, ~13-16 KB to compile when mirrored) run, its 11 KB water-sim
-  doesn't. `datetime` takes ~35 KB once touched.
-  Apps that fail to compile just leave the previous screen up.
+- **Memory is tight**: no PSRAM, and apps run in a Lua heap of their own, ~52 KB of it free when an
+  app arrives, for the Lua compiler (~4x the source size) and the running app. Keep apps to a few KB
+  of source: Bench's tilt-ball and lgfx-hello (~1.5 KB, ~13-16 KB to compile when mirrored) run, its
+  11 KB water-sim doesn't. `datetime` takes ~35 KB once touched (the clock example fits).
+  An app that doesn't fit stops with "not enough memory" and the board stays online for the next
+  one; one that fails to compile just leaves the previous screen up.
 - **No `lvgl`**: LVGL apps don't run on this board.
 - One key (index 0). Code for key B (`e.data.index == 1`) only fires when Bench mirrors the app.
 
