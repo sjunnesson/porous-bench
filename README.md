@@ -137,6 +137,12 @@ Like the device, `on_tick` runs 10 times a second, so animation runs at 10 FPS; 
 motion so speeds are right whatever the timing. A tap or other event can redraw between ticks.
 Coordinates are checked like `luaL_checkinteger`, so `math.floor` anything computed.
 
+Bench opens on **Porous systems**: the porous.systems logo, its spokes sweeping in around the ring
+and the words fading in, drawn anti-aliased with `lgfx` on any display (e-paper gets the finished
+logo in one refresh). Turn the encoder to move the hollow spoke around the ring; tap A to see it
+all again. It needs a board with PSRAM (or the C6). Its shapes come from the logo's SVG:
+`node scripts/logo-app.mjs <logo.svg>` writes a new logo into it.
+
 Included, from Bench, all drawn with LVGL and moved by `lvgl.Anim` (see [LVGL](#lvgl-smooth-animation)):
 **Hello display** (device facts and a DVD-style bouncing ball; adapts to every display type),
 **Patterns** (orbits, rippling tiles, rings, an equaliser, a spinner and a test card), **Characters**
@@ -494,6 +500,7 @@ tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol
                     drivers, every bundled and generated app on every kind of output
 docs/resident/      DEVICE-SKILL.md for Resident's agent skills
 my-apps/            your own apps, ignored by this repo (npm run my-apps makes it its own repo)
+scripts/            my-apps.mjs (sets up my-apps/), logo-app.mjs (the logo SVG into its app)
 firmware/           Resident firmware for real boards Bench supports (epd213: the 2.13" e-paper)
 ```
 

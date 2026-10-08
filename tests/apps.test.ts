@@ -95,6 +95,14 @@ describe('bundled apps', () => {
   }
 });
 
+describe('the porous.systems logo', () => {
+  // The words are rasterised after the spokes, ~1.3 s in: run past the end of the intro.
+  it('runs its whole intro on every display', async () => {
+    const app = apps.find((a) => a.name === 'porous-systems.lua')!;
+    for (const device of OUTPUTS.display) expect(await runApp(app.code, device, 2500), device.id).toEqual([]);
+  }, 60_000);
+});
+
 describe('apps generated from the bench', () => {
   // One of everything, and two encoders, so each control has to find its own part.
   const parts: PartSpec[] = [

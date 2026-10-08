@@ -89,7 +89,7 @@ const bundled: Entry[] = residentApps.map((a) => ({
 export default function App() {
   const clock = useMemo(() => new SimClock(), []);
   const { paused, speed } = useClockState(clock);
-  const [sketchId, setSketchId] = usePersisted('sketch', 'resident:hello-display');
+  const [sketchId, setSketchId] = usePersisted('sketch', 'resident:porous-systems');
   const [deviceId, setDeviceId] = usePersisted('device', 'waveshare-esp32-c6-lcd-1.47');
   // The output: a display module, or an LED strip, ring or matrix (kept in this browser).
   const [outputKind, setOutputKind] = usePersisted<OutputKind>('output-kind', 'display');

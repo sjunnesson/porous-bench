@@ -66,6 +66,16 @@ describe('output capabilities', () => {
 });
 
 describe('the App menu', () => {
+  it('opens on the porous.systems logo, first on every display whose board has the memory', () => {
+    expect(residentApps[0].id).toBe('porous-systems');
+    for (const d of devices.filter((d) => d.tech !== 'led')) {
+      for (const b of boardsFor(d)) {
+        // ~70 KB boards can't take it with the dial stand-in the encoder needs.
+        if (b.appRamKb === undefined || b.appRamKb >= 1024) expect(runs(d, b)[0], `${d.id} on ${b.id}`).toBe('porous-systems');
+      }
+    }
+  });
+
   it('lists only e-paper apps for the 2.13" e-paper, and only what its board can run', () => {
     // The Waveshare driver board: no LVGL, ~70 KB.
     expect(runs(epaper, driverBoard)).toEqual(['lgfx-hello']);
