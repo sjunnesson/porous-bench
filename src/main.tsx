@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Analytics } from '@vercel/analytics/react';
 import App from './App';
 import { migrateStorage } from './migrate';
 import '@fontsource/ibm-plex-mono/400.css';
@@ -18,5 +19,10 @@ migrateStorage();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    {/* Page views only, no cookies. The query and hash never leave: they could carry a device ID. */}
+    <Analytics
+      mode={import.meta.env.DEV ? 'development' : 'production'}
+      beforeSend={(e) => ({ ...e, url: e.url.split(/[?#]/)[0] })}
+    />
   </StrictMode>,
 );

@@ -48,7 +48,8 @@ the hardware: **Hardware**, where you choose the output and put inputs on the be
 heading to fold it away. **About**, top right, says what Bench is and what it's built on. Everything you set up (the output, your parts, the connections, where things
 sit on the desk, folded sections) is saved in this browser and comes back on your next visit.
 Everything runs locally in the browser;
-`npm run build` produces a static site you can host anywhere.
+`npm run build` produces a static site you can host anywhere. bench.porous.systems counts page
+views with Vercel Web Analytics: no cookies, and nothing about your apps or your bench.
 
 ## What it does
 
