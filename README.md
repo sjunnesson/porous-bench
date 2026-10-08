@@ -304,7 +304,10 @@ sandbox:
 - **Lifecycle**: `init`, `on_tick` every 100 ms with real `dt_ms`, `on_event` from an 8-slot ring,
   `ctx.time_ms`. Apps that define no callback are rejected.
 - **Sandbox**: no `os`, `io`, `load`, `require` or `debug`. A 2,000,000-instruction budget per callback
-  aborts a runaway loop without killing the app; `on_tick` errors are rate-limited like the device.
+  (coroutines included) aborts a runaway loop without killing the app; `on_tick` errors are rate-limited
+  like the device. An app that catches that error with `pcall` and keeps going is halted: a board's
+  deadline fires once, so there it would hang. The Lua heap stops at 32 MB, a guard for the tab rather
+  than a board (the largest has 8 MB of PSRAM).
 - **Modules**: `lgfx` (LovyanGFX bindings; nothing shows until `flip()`), the M5StickC Plus2 board
   surface (`screen`, `imu`, `buzzer`, `button`), `screens`, `log`, `events`, `store` (2048-byte budget,
   kept across reloads), `time` and `datetime` (Resident's own Lua source over a ported strftime).

@@ -181,7 +181,7 @@ export function appPrompt(input: PromptInput): string {
     '## Rules',
     '- One Lua file in the Resident sandbox: `init(ctx)`, `on_tick(ctx, dt_ms)` at 10 Hz, `on_event(ctx, e)`.',
     '- First line: `-- Name: one-sentence description` (Bench shows it in the App menu).',
-    '- Keep each callback short: there is an instruction budget per call.',
+    "- Keep each callback short: there is an instruction budget per call. Don't catch its error with pcall and carry on: on a board that hangs the device, and Bench halts the app.",
     '',
     '## Deliver',
     ...deliverSection(input),

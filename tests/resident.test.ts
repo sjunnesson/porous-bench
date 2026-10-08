@@ -173,6 +173,54 @@ describe('Resident sandbox', () => {
     expect(t.logs.some((l) => l.startsWith('info: alive'))).toBe(true);
   });
 
+  it('halts an app that catches its budget error and keeps going, instead of hanging the tab', async () => {
+    for (const loop of [
+      'while true do pcall(function() while true do end end) end',
+      'while true do xpcall(function() while true do end end, function(e) return e end) end',
+      'while true do coroutine.resume(coroutine.create(function() while true do end end)) end',
+    ]) {
+      const t = await boot(`local ticks = 0
+        function on_tick(ctx) ticks = ticks + 1 log.info("tick " .. ticks) if ticks == 2 then ${loop} end end`);
+      await run(t, 500);
+      expect(t.logs.filter((l) => l.includes('app halted')), loop).toHaveLength(1);
+      expect(t.logs.filter((l) => l.startsWith('info: tick')), loop).toEqual(['info: tick 1', 'info: tick 2']);
+      t.host.close();
+    }
+  });
+
+  it('budgets coroutines too, per dispatch', async () => {
+    const t = await boot(`local gen = coroutine.wrap(function() local n = 0 while true do for i = 1, 5000 do n = n + 1 end coroutine.yield(n) end end)
+      local ticks = 0
+      function on_tick(ctx)
+        ticks = ticks + 1
+        gen() -- 5,000 steps a tick add up past 2,000,000 over the run, but never in one dispatch
+        if ticks == 3 then coroutine.wrap(function() while true do end end)() end
+        if ticks == 4 then log.info("alive") end
+      end`);
+    await run(t, 30_000);
+    expect(t.logs.filter((l) => l.includes('instruction budget exceeded'))).toHaveLength(1);
+    expect(t.logs).toContain('info: alive');
+    const bad = await boot(`function init(ctx) local ok, err = pcall(coroutine.create) log.info(err) log.info(select(2, pcall(coroutine.wrap, 1))) end`);
+    expect(bad.logs).toEqual(["info: bad argument #1 to 'create' (function expected, got no value)", "info: bad argument #1 to 'wrap' (function expected, got number)"]);
+  });
+
+  it('still lets a caught budget error pass once, like the device', async () => {
+    const t = await boot(`function init(ctx)
+      local ok, err = pcall(function() while true do end end)
+      log.info(tostring(ok) .. " " .. err)
+    end`);
+    expect(t.error).toBeUndefined();
+    expect(t.logs).toEqual(['info: false app:2: instruction budget exceeded: 2,000,000 per callback']);
+  });
+
+  it('caps the Lua heap so one app cannot take the tab down', async () => {
+    for (const grow of ['local s = string.rep("x", 1e9)', 'local t = {} for i = 1, 1e5 do t[i] = string.rep("x", 4096) .. i end']) {
+      const t = await boot(`function init(ctx) ${grow} end`);
+      expect(t.error, grow).toContain('not enough memory');
+      t.host.close();
+    }
+  });
+
   it("matches Python's datetime", async () => {
     const t = await boot(`function init(ctx)
       local dt = datetime(2026, 10, 5, 13, 5, 9)

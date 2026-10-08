@@ -477,14 +477,56 @@ datetime = setmetatable({}, {
 
 for _, k in ipairs({ "os", "io", "require", "load", "loadfile", "dofile", "debug", "package" }) do _G[k] = nil end
 
+-- A callback that runs past its budget gets an error, and the app carries on. An app that catches
+-- that error (pcall) and keeps going would hang a board: the device's deadline fires once per
+-- dispatch. Bench can't hang the tab, so it halts the app instead: on the second overrun the hook
+-- starts raising on every instruction, so no pcall can hold it, and nothing of the app runs again.
+local HALT = "app halted: it caught the instruction budget error and kept running"
+  .. " (a board's deadline fires once, so there it would hang)"
+local overrun, halted = false, false
+local dispatcher -- the thread the host called in on (wasmoon makes its own)
+-- A debug hook belongs to one thread: a coroutine doesn't get its creator's. So each coroutine the
+-- app makes sets its own when it starts, and every dispatch gives the live ones a fresh budget.
+local threads = setmetatable({}, { __mode = "k" })
+local co_create, co_wrap, co_running, co_status = coroutine.create, coroutine.wrap, coroutine.running, coroutine.status
+local run
 local function budget_hook()
-  error("instruction budget exceeded: 2,000,000 per callback", 2)
+  if getinfo(2, "f").func == run then return end -- run's own bookkeeping, once the app returned
+  if not overrun then
+    overrun = true
+    error("instruction budget exceeded: 2,000,000 per callback", 2)
+  end
+  halted = true
+  sethook(dispatcher, budget_hook, "", 1)
+  for co in pairs(threads) do
+    if co_status(co) ~= "dead" then sethook(co, budget_hook, "", 1) end
+  end
+  error(HALT, 0)
 end
+local function budgeted(fname, ...)
+  local f = ...
+  if type(f) ~= "function" then argerr(1, fname, "function expected, got " .. tname(f, 1, select("#", ...))) end
+  return function(...)
+    threads[co_running()] = true
+    sethook(budget_hook, "", halted and 1 or BUDGET)
+    return f(...)
+  end
+end
+function coroutine.create(...) return co_create(budgeted("create", ...)) end
+function coroutine.wrap(...) return co_wrap(budgeted("wrap", ...)) end
+
 local function handler(e) return tostring(e) end
-local function run(f, ...)
+function run(f, ...)
+  if halted then return true end
+  overrun = false
+  dispatcher = co_running()
   sethook(budget_hook, "", BUDGET)
+  for co in pairs(threads) do
+    if co_status(co) == "dead" then threads[co] = nil else sethook(co, budget_hook, "", BUDGET) end
+  end
   local ok, err = xpcall(f, handler, ...)
   sethook()
+  if halted then return false, HALT end
   return ok, err
 end
 
@@ -514,6 +556,7 @@ function api.chunk(code)
 end
 
 function api.has(name) return type(rawget(_G, name)) == "function" end
+function api.halted() return halted end
 
 -- leds.on_frame's timer, called on every pass of the host loop.
 function api.frame(time_ms)

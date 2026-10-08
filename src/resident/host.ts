@@ -81,6 +81,8 @@ interface Api {
   call(name: string, timeMs: number, arg?: unknown): string | null;
   lv_pump(timeMs: number, period: number): string | null;
   frame(timeMs: number): string | null;
+  /** The app caught its budget error and kept going: it's halted (see prelude.lua). */
+  halted(): boolean;
 }
 
 const RING = 8;
@@ -88,6 +90,11 @@ const TICK_MS = 100;
 /** LV_DEF_REFR_PERIOD on the reference board: LVGL's anim timer and display refresh run this often. */
 const LV_PERIOD_MS = 33;
 const EVENT_JSON_MAX = 1024;
+/**
+ * A ceiling on an app's Lua heap, to keep a runaway allocation from taking the tab down. Not a model
+ * of a board: the most memory any board Bench knows gives an app is 8 MB of PSRAM.
+ */
+const LUA_HEAP_MAX = 32 * 1024 * 1024;
 const ORDINAL_OFFSET = 719163;
 const I32 = (v: number) => v >= -2147483648 && v <= 2147483647;
 
@@ -140,7 +147,8 @@ export class ResidentHost {
 
   /** Compile and init an app. Resolves with the host, or with the compile/init error. */
   static async boot(factory: LuaFactory, board: ResidentBoard, app: ResidentApp): Promise<{ host: ResidentHost; error?: string }> {
-    const engine = await factory.createEngine({ enableProxy: false, injectObjects: false, openStandardLibs: true });
+    const engine = await factory.createEngine({ enableProxy: false, injectObjects: false, openStandardLibs: true, traceAllocations: true });
+    engine.global.setMemoryMax(LUA_HEAP_MAX);
     const host = new ResidentHost(engine, board);
     engine.global.set('__ss_host', host.bridge());
     engine.global.set('__ss_datetime_src', datetimeSrc);
@@ -246,7 +254,17 @@ export class ResidentHost {
 
   // ---- internals ---------------------------------------------------------------------------
 
+  /** Stop stepping a halted app, as a hung board would: its last frame stays on the screen. */
+  private halt(err: string) {
+    if (this.closed) return;
+    this.closed = true;
+    this.board.buzzer?.stop();
+    this.board.log('error', err);
+    this.board.telemetry('runtime_error', { error: err });
+  }
+
   private reportError(err: string, fromTick: boolean) {
+    if (this.api.halted()) return this.halt(err);
     const now = this.board.now();
     if (fromTick) {
       this.tickErrors++;
