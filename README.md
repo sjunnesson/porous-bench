@@ -48,7 +48,10 @@ the hardware: **Hardware**, where you choose the output and put inputs on the be
 heading to fold it away. **About**, top right, says what Bench is and what it's built on. Everything you set up (the output, your parts, the connections, where things
 sit on the desk, folded sections) is saved in this browser and comes back on your next visit.
 Everything runs locally in the browser;
-`npm run build` produces a static site you can host anywhere. bench.porous.systems counts page
+`npm run build` produces a static site you can host anywhere. On Vercel, `vercel.json` adds the
+relay rewrite (below) and the headers: a Content-Security-Policy that lets the page reach only its
+own origin and the relay's WebSocket (add yours to `connect-src` if you use another relay), and
+long caching for the hashed files in `assets/`. bench.porous.systems counts page
 views with Vercel Web Analytics: no cookies, and nothing about your apps or your bench.
 
 ## What it does
@@ -517,7 +520,7 @@ firmware/           Resident firmware for real boards Bench supports (epd213: th
 npm run dev        # dev server with hot reload
 npm test           # unit tests
 npm run typecheck  # TypeScript
-npm run build      # typecheck + static build into dist/
+npm run build      # typecheck, tests, then the static build into dist/
 npm run my-apps    # set up my-apps/ for your own apps
 ```
 
