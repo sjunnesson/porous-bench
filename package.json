@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Browser playground for ESP32-style displays (LCD, OLED, e-paper) and inputs",
   "license": "MIT",
+  "engines": {
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/sjunnesson/porous-bench.git"

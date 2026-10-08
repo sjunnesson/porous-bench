@@ -32,7 +32,8 @@ app to a real device. Bench can also join the Resident relay as a device.
 
 ## Quick start
 
-Requires Node.js 22 or newer.
+Requires Node.js 22.12 or newer, on an even-numbered release (22, 24, 26 and on): the test runner
+doesn't support the odd ones.
 
 ```sh
 git clone https://github.com/sjunnesson/porous-bench.git
@@ -410,7 +411,8 @@ No Resident firmware on the board yet? **Copy firmware prompt** copies a prompt 
 build and flash it for the hardware selected in Bench, and the board chosen under it. For an
 M5StickC Plus2 or M5StickS3 that's Resident's own `m5stick-demo` firmware. For the 2.13" e-paper on
 the Waveshare ESP32 e-Paper Driver Board (or an ESP32-S3 DevKitC-1 N16R8) it's the firmware in
-[`firmware/epd213/`](firmware/epd213/), built and tested on that board. For other boards it follows Resident's
+[`firmware/epd213/`](firmware/epd213/), built and tested on the driver board; the S3 build compiles
+but hasn't run on hardware yet. For other boards it follows Resident's
 [start-building guide](https://github.com/inanimate-tech/resident/blob/main/docs/start-building.md)
 in stages (bring-up, then Resident, then drivers), using the pins, offsets and quirks Bench knows
 for the part and the platform it needs (pioarduino for the ESP32-C6), plus what bringing up the
