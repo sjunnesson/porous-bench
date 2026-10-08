@@ -378,6 +378,46 @@ select.wide {
   font-size: 13px;
 }
 
+.stage-note {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  padding: 8px 12px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  font: 13px/1.5 var(--sans);
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* The whole page, when the app failed to render (ui/ErrorBoundary.tsx). */
+.crashed {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 64px 16px;
+}
+.crashed h2 {
+  margin: 0 0 16px;
+  font: 600 28px/1.2 var(--display);
+}
+.crashed pre {
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--now);
+  white-space: pre-wrap;
+  font: 12px/1.5 var(--mono);
+}
+.crashed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
 .stage.drop-target::after {
   content: 'Drop a .lua app to run it';
   position: absolute;

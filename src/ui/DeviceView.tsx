@@ -2,6 +2,7 @@ import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useCallback, us
 import type { SimClock } from '../sim/clock';
 import { canvasToNative, fitZoom, PanelRenderer, type ViewOptions } from '../sim/renderer';
 import type { SketchRun } from '../sim/runner';
+import { ErrorBoundary } from './ErrorBoundary';
 import { useAnimationFrame } from './hooks';
 
 // three.js is big: load the 3D view on demand.
@@ -23,6 +24,11 @@ interface Props {
   error: string | null;
   /** A .lua file was dropped on the device. */
   onDropApp?(name: string, code: string): void;
+  /** The 3D view couldn't start (no WebGL, or its code didn't load): switch to flat. */
+  on3dFailed?(): void;
+  /** A note from Bench over the stage, until it's dismissed. */
+  notice?: string | null;
+  onDismiss?(): void;
 }
 
 interface Stats {
@@ -31,7 +37,7 @@ interface Stats {
   frameKB: number;
 }
 
-export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
+export function DeviceView({ run, clock, view, error, onDropApp, on3dFailed, notice, onDismiss }: Props) {
   const [dragOver, setDragOver] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -42,6 +48,11 @@ export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
   const renderer = useMemo(() => new PanelRenderer(device), [device]);
   const threeD = (view.mode ?? '3d') === '3d';
   const [canvas3d, setCanvas3d] = useState<HTMLCanvasElement | null>(null);
+  // Why the 3D view gave way to the flat one, shown until 3D is picked again.
+  const [no3d, setNo3d] = useState<string | null>(null);
+  useEffect(() => {
+    if (threeD) setNo3d(null);
+  }, [threeD]);
 
   useEffect(() => {
     const el = stageRef.current;
@@ -151,9 +162,16 @@ export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
         }}
       >
         {threeD ? (
-          <Suspense fallback={null}>
-            <Device3D run={run} clock={clock} mount={() => optionsRef.current.mount()} onCanvas={setCanvas3d} />
-          </Suspense>
+          <ErrorBoundary
+            onError={(err) => {
+              setNo3d(/webgl/i.test(String(err)) ? "3D needs WebGL, which this browser didn't give Bench: showing the flat view." : "The 3D view didn't load: showing the flat view. Reload to try 3D again.");
+              on3dFailed?.();
+            }}
+          >
+            <Suspense fallback={null}>
+              <Device3D run={run} clock={clock} mount={() => optionsRef.current.mount()} onCanvas={setCanvas3d} />
+            </Suspense>
+          </ErrorBoundary>
         ) : (
           <canvas
             ref={canvasRef}
@@ -161,6 +179,18 @@ export function DeviceView({ run, clock, view, error, onDropApp }: Props) {
             title={touch ? `Touch screen (${device.touch?.controller}): click to tap, drag to swipe` : undefined}
             {...touchHandlers}
           />
+        )}
+        {notice ? (
+          <button className="stage-note" onClick={onDismiss} title="Dismiss">
+            {notice}
+          </button>
+        ) : (
+          no3d &&
+          !threeD && (
+            <button className="stage-note" onClick={() => setNo3d(null)} title="Dismiss">
+              {no3d}
+            </button>
+          )
         )}
         {error && (
           <div className="error-overlay">

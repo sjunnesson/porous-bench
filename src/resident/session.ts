@@ -23,6 +23,11 @@ function load<T>(key: string): T | null {
     return null;
   }
 }
+/** The app kept from last time, unless what's stored isn't one. */
+function savedLive(): LiveApp | null {
+  const app = load<LiveApp>('live');
+  return typeof app?.code === 'string' && typeof app.name === 'string' ? app : null;
+}
 function save(key: string, v: unknown) {
   try {
     if (v === null) localStorage.removeItem(`${KEY}:${key}`);
@@ -34,7 +39,7 @@ function save(key: string, v: unknown) {
 
 class ResidentSession {
   readonly relay: ResidentRelay;
-  live: LiveApp | null = load<LiveApp>('live');
+  live: LiveApp | null = savedLive();
   zone = new Zone();
   zoneFromHost = false;
   /** The Resident app running now, if the current sketch is one. */

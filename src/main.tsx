@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import App from './App';
 import { migrateStorage } from './migrate';
+import { Crashed, ErrorBoundary } from './ui/ErrorBoundary';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-sans/400.css';
@@ -18,7 +19,9 @@ migrateStorage();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary fallback={(error) => <Crashed error={error} />}>
+      <App />
+    </ErrorBoundary>
     {/* Page views only, no cookies. The query and hash never leave: they could carry a device ID. */}
     <Analytics
       mode={import.meta.env.DEV ? 'development' : 'production'}

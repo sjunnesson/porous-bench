@@ -6,6 +6,7 @@ import { folderWatch } from './resident/watch';
 import { residentSketch } from './resident/sketch';
 import { appHeader, residentApps } from './resident-apps';
 import { type AppNeeds, appNeeds, misfits, outputCaps } from './resident/needs';
+import { noteRunning, recoverFromFreeze } from './freeze';
 import { boardsFor } from './sim/boards';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
@@ -47,8 +48,8 @@ interface Entry {
 /** The parts you put on the bench, kept in this browser (first visit: a starter set). */
 function loadParts(): PartSpec[] {
   try {
-    const raw = localStorage.getItem('bench:parts');
-    return raw ? (JSON.parse(raw) as PartSpec[]) : DEFAULT_PARTS;
+    const parts: unknown = JSON.parse(localStorage.getItem('bench:parts') ?? 'null');
+    return Array.isArray(parts) ? (parts as PartSpec[]) : DEFAULT_PARTS;
   } catch {
     return DEFAULT_PARTS;
   }
@@ -77,6 +78,10 @@ function saveBinding(sketchId: string, control: string, source: string) {
   }
 }
 
+const FIRST_APP = 'resident:porous-systems';
+/** The app the page froze on last time, if it did: Bench starts on FIRST_APP instead (see freeze.ts). */
+const frozeOn = recoverFromFreeze(FIRST_APP);
+
 const bundled: Entry[] = residentApps.map((a) => ({
   id: `resident:${a.id}`,
   name: a.name,
@@ -89,7 +94,7 @@ const bundled: Entry[] = residentApps.map((a) => ({
 export default function App() {
   const clock = useMemo(() => new SimClock(), []);
   const { paused, speed } = useClockState(clock);
-  const [sketchId, setSketchId] = usePersisted('sketch', 'resident:porous-systems');
+  const [sketchId, setSketchId] = usePersisted('sketch', FIRST_APP);
   const [deviceId, setDeviceId] = usePersisted('device', 'waveshare-esp32-c6-lcd-1.47');
   // The output: a display module, or an LED strip, ring or matrix (kept in this browser).
   const [outputKind, setOutputKind] = usePersisted<OutputKind>('output-kind', 'display');
@@ -169,6 +174,16 @@ export default function App() {
     return b;
   }, [device, clock]);
 
+  // Why Bench didn't start the app it ran last, if the page froze on it (see freeze.ts).
+  const [notice, setNotice] = useState(() => {
+    if (!frozeOn) return null;
+    const name = frozeOn === 'resident:live' ? session.live?.name : bundled.find((e) => e.id === frozeOn)?.name;
+    return `Bench didn't start "${name ?? frozeOn}": the page froze while it ran last time. Pick it in the App menu to run it again.`;
+  });
+  useEffect(() => {
+    if (sketchId !== FIRST_APP) setNotice(null);
+  }, [sketchId]);
+
   const [run, setRun] = useState<SketchRun | null>(null);
   useEffect(() => {
     const r = new SketchRun(entry.sketch, device, clock, {
@@ -182,8 +197,12 @@ export default function App() {
     setError(null);
     session.log = (level, text) => r.stopped || setLogs((l) => [...l.slice(-299), { t: r.millis(), text, level: level === 'info' ? 'log' : level }]);
     void r.start();
-    return () => r.stop();
-  }, [entry.sketch, device, clock, bench, restarts]);
+    noteRunning(entry.id);
+    return () => {
+      r.stop();
+      noteRunning(null);
+    };
+  }, [entry.sketch, device, clock, bench, restarts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keyboard → buttons and knobs declared by the sketch.
   useEffect(() => {
@@ -367,6 +386,9 @@ export default function App() {
             view={view}
             error={error}
             onDropApp={(name, code) => session.setLive({ name: name.replace(/\.lua$/, ''), code, source: 'file' })}
+            on3dFailed={() => setView((v) => ({ ...v, mode: 'flat' }))}
+            notice={notice}
+            onDismiss={() => setNotice(null)}
           />
         )}
         {/* Right: the hardware — controls, the display, and the parts on the desk. */}
