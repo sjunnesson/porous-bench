@@ -1,7 +1,7 @@
 import { LuaFactory } from 'wasmoon';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResidentHost, type ResidentBoard } from '../src/resident/host';
-import { remoteApp, SnapshotReader } from '../src/resident/remote';
+import { RemoteMirror, remoteApp, SnapshotReader } from '../src/resident/remote';
 import { AppStore } from '../src/resident/store';
 import { Zone } from '../src/resident/zone';
 import { SimClock } from '../src/sim/clock';
@@ -293,4 +293,62 @@ describe('remote mirror', () => {
       t.host.close();
     }
   }, 60_000);
+});
+
+describe('saved boards', () => {
+  /** A fresh mirror over its own storage, with the relay answering `status`. */
+  function mirror(status: number, stored: Record<string, string> = {}) {
+    const store = new Map(Object.entries(stored));
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    });
+    vi.stubGlobal('fetch', async () => ({ status }));
+    return { m: new RemoteMirror(), store };
+  }
+  const app = { name: 'hello', code: 'function init(ctx) end' };
+  const source = () => ({ controls: [], bench: new Bench(new SimClock()), buttons: {} });
+  const c6 = { id: 'waveshare-esp32-c6-lcd-1.47', name: 'Waveshare ESP32-C6-LCD-1.47' };
+  const epaper = { id: 'waveshare-epd-2.13-v4', name: 'Waveshare 2.13" e-Paper' };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps a board once the relay has delivered to it, newest first, with its display', async () => {
+    const { m, store } = mirror(200);
+    m.setDeviceId('78bf172a');
+    await m.start(app, source, epaper);
+    m.stop();
+    m.setDeviceId('94e41dfe');
+    await m.start(app, source, c6);
+    m.stop();
+    expect(m.saved).toEqual([
+      { id: '94e41dfe', display: c6.id, displayName: c6.name },
+      { id: '78bf172a', display: epaper.id, displayName: epaper.name },
+    ]);
+    // Mirroring the older one again moves it back to the top.
+    m.setDeviceId('78bf172a');
+    await m.start(app, source, epaper);
+    m.stop();
+    expect(m.saved.map((d) => d.id)).toEqual(['78bf172a', '94e41dfe']);
+    expect(new RemoteMirror().saved).toEqual(JSON.parse(store.get('bench:remote-devices')!));
+  });
+
+  it("doesn't keep an ID the relay couldn't reach, and forgets on request", async () => {
+    const { m } = mirror(503);
+    m.setDeviceId('typo1234');
+    await m.start(app, source, c6);
+    m.stop();
+    expect(m.saved).toEqual([]);
+
+    const ok = mirror(200).m;
+    ok.setDeviceId('94e41dfe');
+    await ok.start(app, source, c6);
+    ok.stop();
+    ok.forget('94e41dfe');
+    expect(ok.saved).toEqual([]);
+  });
+
+  it('lists the one ID Bench remembered before it kept a list', () => {
+    expect(mirror(200, { 'bench:remote-device': '94e41dfe' }).m.saved).toEqual([{ id: '94e41dfe' }]);
+  });
 });

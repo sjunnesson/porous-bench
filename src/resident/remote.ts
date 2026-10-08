@@ -124,6 +124,7 @@ export interface MirrorSource {
 export type RemoteStatus = 'off' | 'pushing' | 'live' | 'offline' | 'error';
 
 const KEY = 'bench:remote-device';
+const SAVED_KEY = 'bench:remote-devices';
 const PERIOD_MS = 100; // up to 10 updates a second, and only when something changed
 const HEARTBEAT_MS = 2000; // …or this often anyway, so a device that just connected catches up
 const MAX_BYTES = 1000; // Resident drops events over 1024 bytes
@@ -138,8 +139,27 @@ async function send(deviceId: string, body: unknown): Promise<number> {
   return res.status;
 }
 
+/** A board this browser has mirrored to: its device ID and the display it was last mirrored from. */
+export interface SavedDevice {
+  id: string;
+  /** The display profile Bench showed then, and its name. Unset for an ID remembered before the list. */
+  display?: string;
+  displayName?: string;
+}
+
+function readSaved(): SavedDevice[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '[]');
+    return Array.isArray(list) ? list.filter((d) => d && typeof d.id === 'string' && d.id) : [];
+  } catch {
+    return [];
+  }
+}
+
 export class RemoteMirror {
   deviceId: string;
+  /** The boards this browser has reached, most recently mirrored first. */
+  saved: SavedDevice[];
   status: RemoteStatus = 'off';
   message = '';
   sent = 0;
@@ -160,6 +180,32 @@ export class RemoteMirror {
       /* not remembered */
     }
     this.deviceId = id;
+    this.saved = readSaved();
+    // The one ID Bench remembered before it kept a list.
+    if (!this.saved.length && id) this.saved = [{ id }];
+  }
+
+  /** Keep a board the relay reached at the top of the list, with the display it was mirrored from. */
+  private remember(display?: { id: string; name: string }): void {
+    const old = this.saved.find((d) => d.id === this.deviceId);
+    const entry: SavedDevice = display ? { id: this.deviceId, display: display.id, displayName: display.name } : (old ?? { id: this.deviceId });
+    this.saved = [entry, ...this.saved.filter((d) => d.id !== this.deviceId)];
+    this.store();
+  }
+
+  /** Take a board off the list (the device ID field keeps it until changed). */
+  forget(id: string): void {
+    this.saved = this.saved.filter((d) => d.id !== id);
+    this.store();
+    this.notify();
+  }
+
+  private store(): void {
+    try {
+      localStorage.setItem(SAVED_KEY, JSON.stringify(this.saved));
+    } catch {
+      /* not remembered */
+    }
   }
 
   setDeviceId(id: string): void {
@@ -172,8 +218,11 @@ export class RemoteMirror {
     this.notify();
   }
 
-  /** Push the app to the device, then keep its inputs in step with Bench's. */
-  async start(app: { name: string; code: string }, source: NonNullable<RemoteMirror['source']>): Promise<void> {
+  /**
+   * Push the app to the device, then keep its inputs in step with Bench's. Once the relay delivers
+   * it, the board joins the saved list, labelled with `display` (the one Bench shows).
+   */
+  async start(app: { name: string; code: string }, source: NonNullable<RemoteMirror['source']>, display?: { id: string; name: string }): Promise<void> {
     if (!this.deviceId) return;
     this.source = source;
     this.reader = new SnapshotReader();
@@ -182,6 +231,7 @@ export class RemoteMirror {
     try {
       const status = await send(this.deviceId, { channel: 'system', type: 'app', code: remoteApp(app.code), description: `${app.name} (from Bench)` });
       if (!this.result(status)) return;
+      this.remember(display);
     } catch (e) {
       this.set('error', `Couldn't reach the relay: ${e instanceof Error ? e.message : e}`);
       return;

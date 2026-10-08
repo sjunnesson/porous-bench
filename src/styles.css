@@ -846,6 +846,12 @@ select.wide {
   margin: 8px 0;
   flex-wrap: wrap;
 }
+/* The saved boards menu: as wide as the row, names cut short before it overflows. */
+.resident-panel select.grow {
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
 .resident-panel .row > .dim {
   font: 400 10px/1 var(--mono);
   letter-spacing: 0.16em;
