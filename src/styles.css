@@ -13,6 +13,8 @@
   --muted: #5a666d;
   --blue: #1b4b7a;
   --now: #8c3b1e;
+  /* A connection that's up: the relay online, a board being mirrored. */
+  --ok: #2f7a4a;
   --rule: rgba(17, 24, 28, 0.14);
   --band: rgba(27, 75, 122, 0.08);
   --control: rgba(27, 75, 122, 0.35);
@@ -893,7 +895,11 @@ select.wide {
   letter-spacing: 0.16em;
 }
 .resident-panel .status.on {
-  color: var(--now);
+  color: var(--ok);
+}
+.resident-panel .status.on .led {
+  background: var(--ok);
+  border-color: var(--ok);
 }
 .status.pending .led {
   border-color: var(--now);
