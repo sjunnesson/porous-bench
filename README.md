@@ -95,6 +95,7 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
 | Display | Technology | Resolution | Bus |
 |---|---|---|---|
 | Waveshare ESP32-C6-LCD-1.47 | IPS LCD, ST7789V3, rounded corners | 172×320 | SPI 80 MHz |
+| Waveshare ESP32-S3-Touch-LCD-2 | IPS LCD, ST7789T3, touch (CST816D), IMU | 240×320 | SPI 80 MHz |
 | Waveshare ESP32-S3-Touch-AMOLED-1.32 | AMOLED, CO5300, round, touch (CST820) | 466×466 | QSPI 40 MHz |
 | Waveshare ESP32-S3-AMOLED-1.91 (and -Touch-, FT3168) | AMOLED, RM67162, IMU | 240×536 (536×240 landscape) | QSPI 40 MHz |
 | M5StickC Plus2 | LCD, ST7789V2 | 135×240 | SPI 40 MHz |
@@ -271,7 +272,7 @@ the LED matrix instead of crashing on its first `leds` call.
 
 The App menu lists only the apps the chosen output and the board driving it can run; a line under
 it counts the examples left out, and hovering it says why. The board comes from the output: a
-board with a built-in display (M5StickC Plus2, M5StickS3, Waveshare ESP32-C6-LCD-1.47) is fixed,
+board with a built-in display (M5StickC Plus2, M5StickS3, the Waveshare boards) is fixed,
 and a bare module or an LED chain gets a **Board** menu (`src/sim/boards.ts`: the 2.13" e-paper
 offers the Waveshare ESP32 e-Paper Driver Board and an ESP32-S3 DevKitC-1 N16R8). A board brings
 its drawing libraries and the memory an app gets; the output brings its kind, size, colour, and
@@ -286,8 +287,8 @@ header line for the rest:
 -- @needs motion color 240x135   -- animates · means nothing in 1-bit · smallest screen its layout fits
 ```
 
-`touch` joins them for an app that needs a touch panel. On a display with one (the round AMOLED, the
-1.91" Touch AMOLED),
+`touch` joins them for an app that needs a touch panel. On a display with one (the 2" Touch LCD, the round
+AMOLED, the 1.91" Touch AMOLED),
 click the screen to tap it and drag to swipe, in the flat and the 3D view; apps get `touchscreen`
 and `touch_down` / `touch_move` / `touch_up` / `touch_tap` events (see the **Touch** example).
 
