@@ -253,14 +253,23 @@ select.wide {
 .display-more {
   margin-top: 12px;
 }
-.display-more summary {
+.display-more summary,
+details.raw summary {
   cursor: pointer;
   font: 400 10px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.display-more summary:hover {
+.display-more summary:hover,
+details.raw summary:hover {
+  color: var(--blue);
+}
+/* A sensor's raw bytes, folded away under its readout. */
+details.raw p.hex {
+  margin: 8px 0 0;
+  font: 400 10px/1.5 var(--mono);
+  word-break: break-word;
   color: var(--blue);
 }
 
@@ -976,46 +985,42 @@ textarea.code {
 
 /* ---- hardware: the parts on the bench --------------------------------------------------- */
 
+/* A part on the bench: its name and "remove" (or "built-in") on one line, its widget below. */
 .part-row {
-  position: relative;
+  padding: 14px 0;
+}
+.part-row:first-child {
+  padding-top: 0;
 }
 .part-row + .part-row {
   border-top: 1px solid var(--rule);
 }
-.part-row > .widget + .widget {
-  border-top: none;
+.part-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
-/* Top right of each part: take it off the bench, or a quiet "built-in" tag. */
-.part-remove,
 .part-tag {
-  position: absolute;
-  top: 14px;
-  right: 0;
-  font: 400 9px/1 var(--mono);
+  font: 400 10px/1 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-}
-.part-remove {
   color: var(--muted);
 }
-.part-remove:hover {
-  color: var(--now);
+.part-row .widget {
+  padding: 10px 0 0;
+}
+.part-row .widget-title {
+  display: none;
 }
 .output-pick {
   display: grid;
   gap: 6px;
   margin-bottom: 10px;
 }
-/* What the board driving the output offers apps: libraries and memory. */
-.output-pick p.board-caps {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: help;
-}
 .add-part {
   display: flex;
-  margin-top: 12px;
+  margin-top: 4px;
 }
 .add-part select {
   flex: 1;
@@ -1027,29 +1032,19 @@ textarea.code {
 
 /* ---- controls ------------------------------------------------------------------------------ */
 
-/* One grid for all the rows, so names, dropdowns and values line up. */
+/* The app's controls: each one's name (and value) over the full-width menu of what drives it. */
 .control-list {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px 10px;
+  gap: 14px;
 }
-.control-row {
-  display: contents;
-}
-.control-name {
-  max-width: 8.5em;
-  font: 400 10px/1.2 var(--mono);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.control-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 .control-row select {
-  width: 100%;
-  min-width: 0;
   font-size: 13px;
 }
 .control-value {

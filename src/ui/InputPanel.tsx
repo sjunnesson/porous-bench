@@ -36,29 +36,25 @@ interface Props {
 }
 
 /**
- * The right column: Hardware (the output and the parts you put on the bench) and Connections
- * (which part drives each of the app's controls).
+ * The right column: Output (what the app draws on, and the board driving it), Inputs (the parts on
+ * the bench) and Connections (which part drives each of the app's controls).
  */
 export function InputPanel({ run, output, onBind }: Props) {
   const bench = run.bench;
   useSyncExternalStore(bench.subscribe, bench.getVersion);
   return (
     <>
-      <Panel id="hardware" title="Hardware">
-        <h3>Output</h3>
+      <Panel id="hardware" title="Output">
         {output}
-        <h3>Inputs</h3>
+      </Panel>
+      <Panel id="inputs" title="Inputs">
         {bench.parts().map((p) => (
           <PartRow key={bench.idOf(p) ?? p.label} bench={bench} part={p} />
         ))}
         <AddPart bench={bench} />
       </Panel>
       <Panel id="connections" title="Connections">
-        {run.controls.length === 0 ? (
-          <p className="dim">This app has no controls to connect.</p>
-        ) : (
-          <p className="dim small">Which part drives each of the app's controls.</p>
-        )}
+        <p className="hint">{run.controls.length === 0 ? 'This app has no controls to connect.' : "Which part drives each of the app's controls."}</p>
         <div className="control-list">
           {run.controls.map((c) => (
             <ControlRow key={c.name} control={c} bench={bench} onBind={onBind} />
@@ -69,22 +65,28 @@ export function InputPanel({ run, output, onBind }: Props) {
   );
 }
 
-/** A part on the bench: its widget, and a way to take it off (unless it's built into the board). */
+/**
+ * A part on the bench: a header with its name and a way to take it off (or "built-in" for the board's
+ * own), then its widget. The header carries the name, so the widget's own title is hidden.
+ */
 function PartRow({ bench, part }: { bench: Bench; part: SimInput }) {
   const builtin = bench.isBuiltin(part);
   const id = bench.idOf(part);
   return (
     <div className="part-row">
+      <div className="part-head">
+        <span className="label">{part.label}</span>
+        {builtin ? (
+          <span className="part-tag" title="Built into the board">
+            built-in
+          </span>
+        ) : (
+          <button className="link" onClick={() => id && bench.remove(id)} title={`Take ${part.label} off the bench`} aria-label={`Remove ${part.label}`}>
+            remove
+          </button>
+        )}
+      </div>
       <Widget input={part} />
-      {builtin ? (
-        <span className="part-tag dim" title="Built into the board">
-          built-in
-        </span>
-      ) : (
-        <button className="part-remove link" onClick={() => id && bench.remove(id)} title={`Take ${part.label} off the bench`} aria-label={`Remove ${part.label}`}>
-          remove
-        </button>
-      )}
     </div>
   );
 }
@@ -140,8 +142,8 @@ function Widget({ input }: { input: SimInput }) {
 }
 
 /**
- * One of the app's controls, on one line: its name, the part channel that drives it, and for a dial
- * the app's value. The part's own state is under Inputs, so it isn't repeated here.
+ * One of the app's controls: its name (and for a dial the app's value) over the menu of what drives
+ * it, which gets the full width. The part's own state is under Inputs, so it isn't repeated here.
  */
 function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench; onBind: Props['onBind'] }) {
   useInput(control);
@@ -167,10 +169,14 @@ function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench
   const keyHint = keys.length ? `Keys: ${keys.map(keyLabel).join(' ')}` : undefined;
   return (
     <div className="control-row">
-      <span className="control-name" title={keyHint}>
-        {control.label}
-      </span>
+      <div className="control-head">
+        <span className="label" title={keyHint}>
+          {control.label}
+        </span>
+        <span className="control-value">{control.kind === 'dial' ? reading : ''}</span>
+      </div>
       <select
+        className="wide"
         value={control.source}
         title={keyHint}
         onChange={(e) => {
@@ -201,7 +207,6 @@ function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench
           </optgroup>
         )}
       </select>
-      <span className="control-value">{control.kind === 'dial' ? reading : ''}</span>
     </div>
   );
 }

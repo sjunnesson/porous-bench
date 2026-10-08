@@ -208,10 +208,14 @@ export function RadarWidget({ input }: { input: LD2410 }) {
       <table className="readout">
         <tbody>
           <tr>
-            <th>target state</th>
+            <th>target</th>
             <td>
-              <span className={`led ${report.state ? 'on' : ''}`} /> {stateText} <span className="dim">(OUT pin {report.state ? 'HIGH' : 'LOW'})</span>
+              <span className={`led ${report.state ? 'on' : ''}`} /> {stateText}
             </td>
+          </tr>
+          <tr>
+            <th>OUT pin</th>
+            <td>{report.state ? 'HIGH' : 'LOW'}</td>
           </tr>
           <tr>
             <th>moving</th>
@@ -225,10 +229,6 @@ export function RadarWidget({ input }: { input: LD2410 }) {
               {report.stationaryDistance} cm · energy {report.stationaryEnergy}
             </td>
           </tr>
-          <tr>
-            <th>UART frame</th>
-            <td className="hex">{bytes ? Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ') : 'waiting for the app to read…'}</td>
-          </tr>
           {overflowed > 0 && (
             <tr>
               <th>overflow</th>
@@ -237,6 +237,10 @@ export function RadarWidget({ input }: { input: LD2410 }) {
           )}
         </tbody>
       </table>
+      <details className="raw">
+        <summary>UART frame</summary>
+        <p className="hex">{bytes ? Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ') : 'waiting for the app to read…'}</p>
+      </details>
     </div>
   );
 }

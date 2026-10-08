@@ -42,10 +42,11 @@ npm install
 npm run dev        # → http://localhost:5199
 ```
 
-The page has three columns. The **left** column holds the code: pick an **App**, and see its
-source, the Resident relay and the console. The **desk** is in the middle. The **right** column holds
-the hardware: **Hardware**, where you choose the output and put inputs on the bench, and
-**Connections**, where you decide which part drives each of the app's controls. Click a section's
+The page has three columns. The **left** column holds the app: pick an **App**, edit its **Code**,
+**Receive apps** from Claude Code (over Resident's relay or from a folder), mirror it to a **Real
+device**, and read the **Console**. The **desk** is in the middle. The **right** column holds
+the hardware: **Output**, where you choose what the app draws on, **Inputs**, where you put parts on
+the bench, and **Connections**, where you decide which part drives each of the app's controls. Click a section's
 heading to fold it away. **About**, top right, says what Bench is and what it's built on. Everything you set up (the output, your parts, the connections, where things
 sit on the desk, folded sections) is saved in this browser and comes back on your next visit.
 Everything runs locally in the browser;
@@ -186,9 +187,9 @@ as you save it. `src/resident-apps/` is for apps that ship with Bench.
 
 Set up the hardware first, then connect it:
 
-1. **Hardware → Output**: a display module, or an LED strip, ring or matrix. The App menu then shows
+1. **Output**: a display module, or an LED strip, ring or matrix. The App menu then shows
    the apps written for that output.
-2. **Hardware → Inputs**: the parts on the bench. **+ Add an input** puts one on the desk (with its 3D
+2. **Inputs**: the parts on the bench. **+ Add an input** puts one on the desk (with its 3D
    part, wired to the board); **remove** takes it off. The board's own buttons, IMU and buzzer are
    there too, marked built-in. Your parts stay when you switch apps.
 3. **Connections**: the controls the running app declared. Each reads one *channel* of a part on the

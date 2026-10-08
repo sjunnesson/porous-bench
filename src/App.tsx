@@ -20,7 +20,7 @@ import type { InputSpecs, Sketch } from './sim/sketch';
 import { About } from './ui/About';
 import { Console } from './ui/Console';
 import { Copy } from './ui/Copy';
-import { DeviceInfo } from './ui/DeviceInfo';
+import { DeviceInfo, type Fact } from './ui/DeviceInfo';
 import { DeviceView, type ViewState } from './ui/DeviceView';
 import { useClockState, usePersisted } from './ui/hooks';
 import { InputPanel } from './ui/InputPanel';
@@ -401,7 +401,18 @@ export default function App() {
             <InputPanel
               run={run}
               output={
-                <DeviceInfo device={device}>
+                <DeviceInfo
+                  device={device}
+                  facts={
+                    board
+                      ? [
+                          ...(boards.length === 1 ? ([['board', board.name.replace(/ \(on the board\)$/, ', built in')]] as Fact[]) : []),
+                          ['libraries', caps.libraries.join(', '), board.note],
+                          ['app memory', board.appRamKb === undefined ? 'not measured' : board.appRamKb >= 1024 ? `${board.appRamKb / 1024} MB PSRAM` : `~${board.appRamKb} KB`, board.note],
+                        ]
+                      : []
+                  }
+                >
                   <div className="output-pick">
                     <select className="wide" value={outputKind} onChange={(e) => (setOutputKind(e.target.value as OutputKind), e.target.blur())} aria-label="Output">
                       <option value="display">Display</option>
@@ -464,12 +475,6 @@ export default function App() {
                         ))}
                       </select>
                     ) : null}
-                    {board && (
-                      <p className="board-caps" title={board.note}>
-                        {boards.length === 1 ? `${board.name} · ` : ''}
-                        {caps.libraries.join(', ')} · {board.appRamKb === undefined ? 'app memory not measured' : board.appRamKb >= 1024 ? `${board.appRamKb / 1024} MB PSRAM` : `~${board.appRamKb} KB for apps`}
-                      </p>
-                    )}
                   </div>
                 </DeviceInfo>
               }

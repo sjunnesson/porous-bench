@@ -9,28 +9,40 @@ function maxFps(d: DeviceProfile): number {
   return d.bus.hz / bits;
 }
 
-/** The display module: a picker (children), its specs, and the wiring and porting notes folded away. */
-export function DeviceInfo({ device, children }: { device: DeviceProfile; children?: ReactNode }) {
+/** A line of the spec table: its name, its value, and optionally more on hover. */
+export type Fact = [name: string, value: ReactNode, title?: string];
+
+/**
+ * The output: its pickers (children), then one table of facts (`facts` first: the board driving it,
+ * the libraries and memory it gives apps), then the wiring and porting notes folded away.
+ */
+export function DeviceInfo({ device, facts = [], children }: { device: DeviceProfile; facts?: Fact[]; children?: ReactNode }) {
   // Round glass is sold by its diameter; everything else by its diagonal.
   const diag = (device.shape === 'round' ? device.look.activeWidthMm : Math.hypot(device.look.activeWidthMm, device.look.activeHeightMm)) / 25.4;
   const bus =
     device.bus.kind === 'ws2812'
-      ? `one wire @ ${device.bus.hz / 1e3} kHz, GRB 24 bit/LED`
+      ? `one wire @ ${device.bus.hz / 1e3} kHz`
       : device.bus.kind === 'spi' || device.bus.kind === 'qspi'
         ? `${device.bus.kind.toUpperCase()} @ ${device.bus.hz / 1e6} MHz`
-        : `I2C @ ${device.bus.hz / 1e3} kHz, addr 0x${(device.bus.i2cAddress ?? 0x3c).toString(16)}`;
+        : `I2C @ ${device.bus.hz / 1e3} kHz · 0x${(device.bus.i2cAddress ?? 0x3c).toString(16)}`;
   const leds = device.look.leds;
   return (
     <div className="display-info">
       {children}
       <table className="readout">
         <tbody>
+          {facts.map(([name, value, title]) => (
+            <tr key={name} title={title}>
+              <th>{name}</th>
+              <td>{value}</td>
+            </tr>
+          ))}
           <tr>
             <th>{leds ? 'LEDs' : 'panel'}</th>
             <td>
               {leds
                 ? `${device.width * device.height} · ${leds.layout === 'grid' ? `${device.width}×${device.height} grid` : leds.layout} · ${leds.pitchMm.toFixed(1)} mm apart`
-                : `${device.tech.toUpperCase()} · ${device.width}×${device.height} · ${diag.toFixed(2)}″`}
+                : `${device.width}×${device.height} · ${diag.toFixed(2)}″`}
             </td>
           </tr>
           <tr>
@@ -42,21 +54,30 @@ export function DeviceInfo({ device, children }: { device: DeviceProfile; childr
             <td>{bus}</td>
           </tr>
           {device.ram && (
-            <tr>
+            <tr title="The controller's RAM, and where the visible area starts in it">
               <th>RAM window</th>
               <td>
-                {device.ram.width}×{device.ram.height}, visible at x+{device.ram.offsetX}, y+{device.ram.offsetY}
+                {device.ram.width}×{device.ram.height} · x+{device.ram.offsetX}, y+{device.ram.offsetY}
               </td>
             </tr>
           )}
-          <tr>
-            <th>full frame</th>
-            <td>
-              {device.epaper
-                ? `${device.epaper.fullRefreshMs} ms full / ${device.epaper.partialRefreshMs} ms partial refresh`
-                : `≤ ${Math.floor(maxFps(device))} fps over the bus`}
-            </td>
-          </tr>
+          {device.epaper ? (
+            <>
+              <tr>
+                <th>full refresh</th>
+                <td>{device.epaper.fullRefreshMs} ms</td>
+              </tr>
+              <tr>
+                <th>partial refresh</th>
+                <td>{device.epaper.partialRefreshMs} ms</td>
+              </tr>
+            </>
+          ) : (
+            <tr title="The most full frames a second the bus can carry">
+              <th>frame rate</th>
+              <td>≤ {Math.floor(maxFps(device))} fps</td>
+            </tr>
+          )}
         </tbody>
       </table>
       {(device.wiring || device.porting || device.url) && (
