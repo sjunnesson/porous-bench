@@ -17,6 +17,12 @@ dist
 
 # PlatformIO build output (firmware/)
 .pio/
+# …and what pioarduino writes next to platformio.ini when it rebuilds the core (custom_sdkconfig)
+firmware/**/managed_components/
+firmware/**/.dummy/
+firmware/**/sdkconfig.*
+firmware/**/sdkconfig.defaults
+firmware/**/dependencies.lock
 
 # Your own apps: their own repo (npm run my-apps sets it up)
 /my-apps/

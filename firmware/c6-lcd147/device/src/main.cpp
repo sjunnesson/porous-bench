@@ -1,0 +1,115 @@
+// Stage 3: Resident with drivers on the Waveshare ESP32-C6-LCD-1.47. Lua
+// modules: screen (M5Stick verbs), lgfx (LovyanGFX-style, same frame),
+// button (BOOT: tap / hold), screens ("main": 172x320, 16-bit, dark,
+// brightness). Sensors and controls come from Bench while it mirrors an app
+// here, so there are no drivers for them.
+#include <Arduino.h>
+#include <esp_heap_caps.h>
+#include <Resident.h>
+#include <ResidentLgfxModule.h>
+#include "Lcd.h"
+#include "ScreenDriver.h"
+#include "CanvasLgfxTarget.h"
+#include "ButtonsDriver.h"
+#include "LuaArena.h"
+
+static constexpr const char* RESIDENT_HOST = "resident.inanimate.tech";
+static constexpr uint16_t RESIDENT_PORT = 443;
+static constexpr int PIN_BOOT = 9;
+
+// Lua's own heap (see LuaArena.h), carved from what's left after the 110 KB
+// frame (~278 KB on device/'s rebuilt core). With an 88 KB arena, connected,
+// the shared heap keeps ~54 KB free (largest block 34 KB, lowest 23 KB while
+// a 12 KB app arrives), enough for a TLS reconnect and for parsing an app
+// message (measured). device-prebuilt-core/ sets 64: its core leaves less.
+#ifndef LUA_ARENA_KB
+#define LUA_ARENA_KB 88
+#endif
+
+ScreenDriver screenDriver;
+ButtonsDriver buttonDriver{PIN_BOOT};
+CanvasLgfxTarget lgfxMain;
+Resident::LgfxModule lgfxModule;
+LuaArena luaArena{LUA_ARENA_KB * 1024};
+
+static void printMemory(const char* when) {
+  Serial.printf("[mem] %s: 8-bit free %u, largest block %u, lowest free %u\n", when,
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
+}
+
+static Resident::SandboxConfig makeConfig() {
+  Resident::SandboxConfig cfg;
+  cfg.deviceType = "c6-lcd147";
+  cfg.firmwareVersion = "c6-lcd147-0.1";
+  lgfxModule.addDisplay("main", &lgfxMain);
+  cfg.extensions = {&luaArena, &screenDriver, &buttonDriver, &lgfxModule};
+  cfg.systemDisplay = &screenDriver;
+  cfg.systemButton = &buttonDriver;  // tap = load the saved app now, hold = forget it
+
+  // Courier::Config has a constructor with default args, so designated
+  // initializers don't compile under strict ESP-IDF builds.
+  Courier::Config courier;
+  courier.host = RESIDENT_HOST;
+  courier.port = RESIDENT_PORT;
+  cfg.network = courier;
+  return cfg;
+}
+
+Resident::Sandbox sandbox{makeConfig()};
+
+void setup() {
+  Serial.begin(115200);
+  uint32_t t0 = millis();
+  while (!Serial && millis() - t0 < 1500) delay(10);  // give a monitor time to attach
+  Serial.println();
+  Serial.println("=== Waveshare ESP32-C6-LCD-1.47: Resident + drivers ===");
+  Serial.printf("Chip: %s rev %d @ %lu MHz, flash %lu KB, PSRAM %lu KB\n", ESP.getChipModel(),
+                ESP.getChipRevision(), (unsigned long)ESP.getCpuFreqMHz(),
+                (unsigned long)(ESP.getFlashChipSize() / 1024),
+                (unsigned long)(ESP.getPsramSize() / 1024));
+  printMemory("boot");
+
+  // Panel and the full-frame canvas before Wi-Fi, so the canvas gets one
+  // contiguous 110 KB block and Resident's first status has somewhere to go.
+  if (!Lcd::begin()) {
+    Serial.println("[lcd] canvas allocation FAILED");
+    while (true) delay(1000);
+  }
+  printMemory("after the canvas");
+  if (!luaArena.reserve()) Serial.println("[lua] arena allocation FAILED: Lua shares the heap");
+  printMemory("after the Lua arena");
+
+  sandbox.setIdleScreenTitle("Connected");
+
+  // Override the default /agents/<type>-agent/<id> path with the canonical
+  // /devices/<id> path used by resident.inanimate.tech.
+  sandbox.onTransportsWillConnect([]() {
+    String wsPath = String("/devices/") + sandbox.getDeviceId();
+    sandbox.ws().setEndpoint(RESIDENT_HOST, RESIDENT_PORT, wsPath.c_str());
+    Serial.printf("[resident] device ID %s, WS wss://%s%s\n", sandbox.getDeviceId().c_str(),
+                  RESIDENT_HOST, wsPath.c_str());
+  });
+
+  sandbox.setup();
+  Serial.printf("[lua] %u bytes stayed in the shared heap; arena %u KB, %u free for apps\n",
+                (unsigned)luaArena.before(), (unsigned)(luaArena.size() / 1024),
+                (unsigned)luaArena.freeBytes());
+}
+
+void loop() {
+  sandbox.loop();
+
+  static uint32_t lastBeat = 0;
+  if (millis() - lastBeat >= 30000) {
+    lastBeat = millis();
+    Serial.printf("[heartbeat] %s, app %s, last push %lu us\n",
+                  sandbox.isConnected() ? "connected" : "offline",
+                  sandbox.isAppRunning() ? "running" : "idle", (unsigned long)Lcd::lastPushUs());
+    printMemory("now");
+    Serial.printf("[lua] arena %u KB: free %u, largest block %u, lowest free %u\n",
+                  (unsigned)(luaArena.size() / 1024), (unsigned)luaArena.freeBytes(),
+                  (unsigned)luaArena.largestFree(), (unsigned)luaArena.lowestFree());
+  }
+}
