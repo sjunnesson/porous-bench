@@ -81,7 +81,7 @@ interface Api {
   call(name: string, timeMs: number, arg?: unknown): string | null;
   lv_pump(timeMs: number, period: number): string | null;
   frame(timeMs: number): string | null;
-  /** The app caught its budget error and kept going: it's halted (see prelude.lua). */
+  /** The app ran on where a board's deadline can't stop it, so a board would hang: it's halted (see prelude.lua). */
   halted(): boolean;
 }
 
@@ -475,6 +475,8 @@ export class ResidentHost {
         if (level === 'error') b.telemetry('log_error', { error: text });
       },
       millis: () => Math.floor(b.now()),
+      /** The browser's own clock, for the execution deadline (prelude.lua). */
+      clock: () => performance.now(),
       flip: () => this.present(),
 
       // lgfx

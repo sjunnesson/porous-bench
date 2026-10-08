@@ -73,6 +73,13 @@ On a board without PSRAM, draw with `lgfx` (or `screen`) and keep the app small:
 compiling it takes about 6x its size, so stay under ~6 KB of Lua, and `datetime` costs ~35 KB
 once touched.
 
+Each dispatch (loading the app, `init`, a tick, an event) gets 1000 ms. Past that, a board raises
+`execution deadline exceeded (1000 ms)` and the app carries on. Bench counts the 1000 ms as about 4
+million Lua instructions, what an ESP32-S3 runs (other chips aren't measured; the C6, at 160 MHz,
+runs fewer). Nothing times an LVGL callback, a coroutine that never yields back, or a dispatch that
+catches the deadline error with `pcall` and carries on. On a board those hang it, so Bench halts the
+app.
+
 ## On a real board (Bench's Mirror)
 
 Bench's Real device panel pushes the open app to a Resident device and drives it from the bench:

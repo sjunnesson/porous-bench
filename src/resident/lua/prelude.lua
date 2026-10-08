@@ -18,8 +18,6 @@ local mtype, tointeger, huge = math.type, math.tointeger, math.huge
 local fmt, concat, unpack = string.format, table.concat, table.unpack
 local setmetatable, rawget, rawlen = setmetatable, rawget, rawlen
 
-local BUDGET = 2000000
-
 -- ── lauxlib-style argument checks (error level 3 = the app's call site) ─────
 
 local function tname(v, i, n)
@@ -477,56 +475,128 @@ datetime = setmetatable({}, {
 
 for _, k in ipairs({ "os", "io", "require", "load", "loadfile", "dofile", "debug", "package" }) do _G[k] = nil end
 
--- A callback that runs past its budget gets an error, and the app carries on. An app that catches
--- that error (pcall) and keeps going would hang a board: the device's deadline fires once per
--- dispatch. Bench can't hang the tab, so it halts the app instead: on the second overrun the hook
--- starts raising on every instruction, so no pcall can hold it, and nothing of the app runs again.
-local HALT = "app halted: it caught the instruction budget error and kept running"
-  .. " (a board's deadline fires once, so there it would hang)"
-local overrun, halted = false, false
+-- ── the execution deadline ─────────────────────────────────────────────────
+--
+-- A board gives each dispatch (loading the app, init, one tick, one event, one chunk) 1000 ms of
+-- wall-clock time. Once that's passed, the next VM instruction on its main thread raises
+-- "execution deadline exceeded (1000 ms)", once, and the app carries on (Resident's
+-- SandboxConfig::executionDeadlineMs). A browser runs Lua 50 to 100 times faster than a board, so
+-- 1000 ms of the browser's time would let through far more than a board does. Bench counts VM
+-- instructions instead: DEADLINE_INSTRUCTIONS is about 1000 ms of Lua on an ESP32-S3. Measured on
+-- an M5StickS3 (Resident PR #37), 2,000,000 instructions took ~740 ms to ~1.05 s depending on the
+-- mix, with a count hook armed that cost +87% or more. Unhooked, which is how a board runs until
+-- its deadline passes, that's ~3.6 to 5 million a second. Other chips aren't measured; the
+-- ESP32-C6, at 160 MHz, runs fewer, so a C6 board stops sooner than Bench does. The browser's clock
+-- counts too, for time spent inside calls rather than instructions: 1000 ms here is at least
+-- 1000 ms on any board.
+--
+-- Where a board's deadline can't reach, a runaway hangs the board. Bench can't hang the tab, so
+-- a dispatch still running another whole deadline after its deadline passed halts the app instead,
+-- and nothing of the app runs again. That covers three cases:
+-- - an app that catches the deadline error (pcall) and keeps going;
+-- - a coroutine that never yields back to the main thread, the only one the board's hook goes on;
+-- - LVGL's callbacks, which a board runs outside any dispatch.
+local DEADLINE_MS = 1000
+local DEADLINE_INSTRUCTIONS = 4000000
+local DEADLINE = "execution deadline exceeded (" .. DEADLINE_MS .. " ms)"
+local STEP = 10000 -- instructions between the hook's checks
+-- Code a board runs as Lua. Everything else here (this file, lvgl.lua) stands in for C, which a
+-- board's hook can't interrupt.
+local LUA_ON_BOARD = { ["=app"] = true, ["=chunk"] = true, ["=datetime"] = true }
+local clock = H.clock
+
+local timed, late, fired, pending, urgent = false, false, false, false, false
+local used, started, hang_used, hang_ms = 0, 0, 0, 0
+local halted, halt_msg = false, nil
 local dispatcher -- the thread the host called in on (wasmoon makes its own)
 -- A debug hook belongs to one thread: a coroutine doesn't get its creator's. So each coroutine the
--- app makes sets its own when it starts, and every dispatch gives the live ones a fresh budget.
+-- app makes sets its own when it starts.
 local threads = setmetatable({}, { __mode = "k" })
 local co_create, co_wrap, co_running, co_status = coroutine.create, coroutine.wrap, coroutine.running, coroutine.status
-local run
-local function budget_hook()
-  if getinfo(2, "f").func == run then return end -- run's own bookkeeping, once the app returned
-  if not overrun then
-    overrun = true
-    error("instruction budget exceeded: 2,000,000 per callback", 2)
-  end
-  halted = true
-  sethook(dispatcher, budget_hook, "", 1)
+local run, guard
+
+-- From here on every instruction raises, so no pcall can hold the app.
+local function halt(why)
+  halted, halt_msg = true, "app halted: " .. why .. ", so there it would hang"
+  sethook(dispatcher, guard, "", 1)
   for co in pairs(threads) do
-    if co_status(co) ~= "dead" then sethook(co, budget_hook, "", 1) end
+    if co_status(co) ~= "dead" then sethook(co, guard, "", 1) end
   end
-  error(HALT, 0)
+  error(halt_msg, 0)
 end
-local function budgeted(fname, ...)
+
+-- The hook: every STEP instructions on each thread, or every instruction on the dispatcher once
+-- the deadline has passed (urgent) and the error waits to land in the app's own code.
+function guard()
+  if getinfo(2, "f").func == run then return end -- run's own bookkeeping, once the app returned
+  if halted then error(halt_msg, 0) end
+  local co = co_running()
+  local each = urgent and co == dispatcher
+  used = used + (each and 1 or STEP)
+  local ms = each and 0 or clock() - started
+  if not late then
+    if used < DEADLINE_INSTRUCTIONS and ms < DEADLINE_MS then return end
+    -- The deadline has passed (the clock is read every STEP instructions, so a loop of slow calls
+    -- can be well past it). If the error doesn't end the dispatch, it has one more deadline's worth.
+    late, hang_used, hang_ms = true, used + DEADLINE_INSTRUCTIONS, ms + DEADLINE_MS
+  elseif used >= hang_used or ms >= hang_ms then
+    halt(fired and "it caught the deadline error and kept running: a board's deadline fires once per dispatch"
+      or not timed and "an LVGL callback ran on past the deadline: a board runs LVGL's callbacks outside the deadline"
+      or pending and "a coroutine ran on past the deadline without yielding: a board's deadline stops only the main thread"
+      or "it ran on past the deadline")
+  end
+  if fired or not timed then return end
+  if co ~= dispatcher then
+    -- The board's hook is on the main thread: it lands once this coroutine yields back.
+    if not pending then
+      pending, urgent = true, true
+      sethook(dispatcher, guard, "", 1)
+    end
+    return
+  end
+  if not LUA_ON_BOARD[getinfo(2, "S").source] then
+    -- Bench's own Lua, standing in for a C call: on a board the hook lands after it returns.
+    if not urgent then
+      urgent = true
+      sethook(guard, "", 1)
+    end
+    return
+  end
+  fired, urgent = true, false
+  sethook(guard, "", STEP)
+  -- Where luaL_error puts it from inside a hook: the running function's caller, if that's Lua.
+  local caller = getinfo(3, "Sl")
+  local at = caller and LUA_ON_BOARD[caller.source] and caller.currentline > 0
+    and caller.short_src .. ":" .. caller.currentline .. ": " or ""
+  error(at .. DEADLINE, 0)
+end
+
+local function hooked(fname, ...)
   local f = ...
   if type(f) ~= "function" then argerr(1, fname, "function expected, got " .. tname(f, 1, select("#", ...))) end
   return function(...)
     threads[co_running()] = true
-    sethook(budget_hook, "", halted and 1 or BUDGET)
+    sethook(guard, "", halted and 1 or STEP)
     return f(...)
   end
 end
-function coroutine.create(...) return co_create(budgeted("create", ...)) end
-function coroutine.wrap(...) return co_wrap(budgeted("wrap", ...)) end
+function coroutine.create(...) return co_create(hooked("create", ...)) end
+function coroutine.wrap(...) return co_wrap(hooked("wrap", ...)) end
 
 local function handler(e) return tostring(e) end
-function run(f, ...)
+-- One dispatch. `deadline`: whether a board would time it (everything but LVGL's pump).
+function run(deadline, f, ...)
   if halted then return true end
-  overrun = false
+  timed, late, fired, pending, urgent = deadline, false, false, false, false
+  used, started = 0, clock()
   dispatcher = co_running()
-  sethook(budget_hook, "", BUDGET)
   for co in pairs(threads) do
-    if co_status(co) == "dead" then threads[co] = nil else sethook(co, budget_hook, "", BUDGET) end
+    if co_status(co) == "dead" then threads[co] = nil end
   end
+  sethook(guard, "", STEP)
   local ok, err = xpcall(f, handler, ...)
   sethook()
-  if halted then return false, HALT end
+  if halted then return false, halt_msg end
   return ok, err
 end
 
@@ -538,7 +608,7 @@ function api.load(code, generation)
   local f, err = load(code, "=app", "t")
   if not f then return err end
   ctx.generation_id = generation
-  local ok, e = run(f)
+  local ok, e = run(true, f)
   if not ok then return e end
   if type(rawget(_G, "init")) ~= "function" and type(rawget(_G, "on_tick")) ~= "function"
      and type(rawget(_G, "on_event")) ~= "function" then
@@ -550,7 +620,7 @@ end
 function api.chunk(code)
   local f, err = load(code, "=chunk", "t")
   if not f then return err end
-  local ok, e = run(f)
+  local ok, e = run(true, f)
   if not ok then return e end
   return nil
 end
@@ -565,7 +635,7 @@ function api.frame(time_ms)
   local dt = frameLast and (time_ms - frameLast) or framePeriod
   frameLast = time_ms
   ctx.time_ms = time_ms
-  local ok, err = run(frameFn, ctx, dt)
+  local ok, err = run(true, frameFn, ctx, dt)
   if ok then return nil end
   return err
 end
@@ -574,7 +644,7 @@ end
 function api.lv_pump(time_ms, period)
   if not LVM then return nil end
   ctx.time_ms = time_ms
-  local ok, err = run(LVM._pump, time_ms, period)
+  local ok, err = run(false, LVM._pump, time_ms, period)
   if ok then return nil end
   return err
 end
@@ -592,7 +662,7 @@ function api.call(name, time_ms, arg)
     end
     arg = e
   end
-  local ok, err = run(f, ctx, arg)
+  local ok, err = run(true, f, ctx, arg)
   if ok then return nil end
   return err
 end

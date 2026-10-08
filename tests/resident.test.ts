@@ -165,52 +165,95 @@ describe('Resident sandbox', () => {
     expect(t.logs.filter((l) => !l.includes('motion'))).toEqual(['info: tap 0', 'info: button 0']);
   });
 
-  it('aborts a runaway callback without killing the app', async () => {
+  it("stops a runaway dispatch at the board's deadline without killing the app", async () => {
     const t = await boot(`local ticks = 0
       function on_tick(ctx) ticks = ticks + 1 if ticks == 1 then while true do end end log.info("alive " .. ticks) end`);
     await run(t, 250);
-    expect(t.logs.some((l) => l.includes('instruction budget exceeded'))).toBe(true);
+    expect(t.logs).toContain('error: runtime error: execution deadline exceeded (1000 ms)');
     expect(t.logs.some((l) => l.startsWith('info: alive'))).toBe(true);
   });
 
-  it('halts an app that catches its budget error and keeps going, instead of hanging the tab', async () => {
-    for (const loop of [
-      'while true do pcall(function() while true do end end) end',
-      'while true do xpcall(function() while true do end end, function(e) return e end) end',
-      'while true do coroutine.resume(coroutine.create(function() while true do end end)) end',
+  it('gives a dispatch about 1000 ms of an ESP32-S3: 4,000,000 instructions', async () => {
+    // An empty numeric for costs one instruction a turn.
+    const fits = await boot(`function init(ctx) for i = 1, 3900000 do end log.info("done") end`);
+    expect(fits.error).toBeUndefined();
+    expect(fits.logs).toEqual(['info: done']);
+    const over = await boot(`function init(ctx) for i = 1, 4100000 do end log.info("done") end`);
+    expect(over.error).toBe('execution deadline exceeded (1000 ms)');
+  });
+
+  it("counts time spent inside calls too, on the browser's own clock", async () => {
+    const t0 = performance.now();
+    const t = await boot(`function init(ctx) while true do local s = string.rep("x", 100000) end end`);
+    expect(t.error).toBe('execution deadline exceeded (1000 ms)');
+    // Counting instructions alone, this would run for many seconds before it reached the deadline.
+    expect(performance.now() - t0).toBeLessThan(3000);
+  });
+
+  it('puts the deadline error where a board does: at the call in the caller, if that is Lua', async () => {
+    const t = await boot(`local function spin() while true do end end
+function init(ctx) spin() end`);
+    expect(t.error).toBe('app:2: execution deadline exceeded (1000 ms)');
+    // Not inside a call that Bench makes in Lua and a board in C: there it lands once the call returns.
+    const g = await boot(`local g = lgfx.bind("main")
+      function init(ctx) while true do g:fillRect(0, 0, 1, 1, 0) end end`);
+    expect(g.error).toBe('execution deadline exceeded (1000 ms)');
+  });
+
+  it("halts an app that runs on where a board's deadline can't stop it, instead of hanging the tab", async () => {
+    for (const [loop, why] of [
+      ['while true do pcall(function() while true do end end) end', 'it caught the deadline error and kept running'],
+      ['while true do xpcall(function() while true do end end, function(e) return e end) end', 'it caught the deadline error and kept running'],
+      ['coroutine.wrap(function() while true do end end)()', 'a coroutine ran on past the deadline without yielding'],
     ]) {
       const t = await boot(`local ticks = 0
         function on_tick(ctx) ticks = ticks + 1 log.info("tick " .. ticks) if ticks == 2 then ${loop} end end`);
       await run(t, 500);
-      expect(t.logs.filter((l) => l.includes('app halted')), loop).toHaveLength(1);
+      expect(t.logs.filter((l) => l.includes('app halted')), loop).toEqual([expect.stringContaining(`error: app halted: ${why}`)]);
       expect(t.logs.filter((l) => l.startsWith('info: tick')), loop).toEqual(['info: tick 1', 'info: tick 2']);
       t.host.close();
     }
   });
 
-  it('budgets coroutines too, per dispatch', async () => {
-    const t = await boot(`local gen = coroutine.wrap(function() local n = 0 while true do for i = 1, 5000 do n = n + 1 end coroutine.yield(n) end end)
+  it('halts a runaway LVGL callback: a board runs those outside the deadline, so it would hang', async () => {
+    const t = await boot(`local h = lvgl.bind("main")
+      lvgl.Timer { period = 50, cb = function() while true do end end }
+      function on_tick(ctx) end`);
+    await run(t, 200);
+    expect(t.logs.filter((l) => l.startsWith('error'))).toEqual([
+      "error: app halted: an LVGL callback ran on past the deadline: a board runs LVGL's callbacks outside the deadline, so there it would hang",
+    ]);
+  });
+
+  it("counts coroutines toward their dispatch's deadline, which lands on the main thread", async () => {
+    const t = await boot(`local gen = coroutine.wrap(function() local n = 0 while true do for i = 1, 20000 do n = n + 1 end coroutine.yield(n) end end)
+      local burn = function() for i = 1, 3000000 do end end
       local ticks = 0
       function on_tick(ctx)
         ticks = ticks + 1
-        gen() -- 5,000 steps a tick add up past 2,000,000 over the run, but never in one dispatch
-        if ticks == 3 then coroutine.wrap(function() while true do end end)() end
+        gen() -- 40,000 instructions a tick add up past 4,000,000 over the run, but never in one dispatch
+        if ticks == 3 then
+          coroutine.wrap(burn)() -- 3,000,000 instructions: within the deadline
+          coroutine.wrap(burn)() -- 6,000,000: past it, and the error lands as this one returns
+          log.info("not reached")
+        end
         if ticks == 4 then log.info("alive") end
       end`);
     await run(t, 30_000);
-    expect(t.logs.filter((l) => l.includes('instruction budget exceeded'))).toHaveLength(1);
+    expect(t.logs.filter((l) => l.startsWith('error'))).toEqual(['error: runtime error: execution deadline exceeded (1000 ms)']);
+    expect(t.logs).not.toContain('info: not reached');
     expect(t.logs).toContain('info: alive');
     const bad = await boot(`function init(ctx) local ok, err = pcall(coroutine.create) log.info(err) log.info(select(2, pcall(coroutine.wrap, 1))) end`);
     expect(bad.logs).toEqual(["info: bad argument #1 to 'create' (function expected, got no value)", "info: bad argument #1 to 'wrap' (function expected, got number)"]);
   });
 
-  it('still lets a caught budget error pass once, like the device', async () => {
+  it('still lets a caught deadline error pass once, like the device', async () => {
     const t = await boot(`function init(ctx)
       local ok, err = pcall(function() while true do end end)
       log.info(tostring(ok) .. " " .. err)
     end`);
     expect(t.error).toBeUndefined();
-    expect(t.logs).toEqual(['info: false app:2: instruction budget exceeded: 2,000,000 per callback']);
+    expect(t.logs).toEqual(['info: false execution deadline exceeded (1000 ms)']);
   });
 
   it('caps the Lua heap so one app cannot take the tab down', async () => {
