@@ -14,7 +14,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "my-apps": "node scripts/my-apps.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

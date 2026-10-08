@@ -13,6 +13,7 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   in), and the prompts Bench copies for Claude (`prompt.ts` for apps, `firmware.ts` for firmware).
 - `src/resident-apps/`: bundled Lua apps. `docs/resident/DEVICE-SKILL.md`: Bench's device skill.
 - `firmware/`: Resident firmware Bench ships for real boards (PlatformIO; Resident pinned by commit).
+- `my-apps/`: the user's own apps. Ignored by this repo and its own git repo (`npm run my-apps`).
 
 ## Commands
 
@@ -28,6 +29,9 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   for LED apps; `-- @needs motion color touch WxH` for what the code can't show (animates / colour
   only / needs a touch panel / smallest screen its fixed layout fits). Libraries and memory are read from the code
   (`needs.ts`). Tests fail if an app runs nowhere or doesn't boot wrapped for a real device.
+- **Apps someone writes for themselves go in `my-apps/`**, not `src/resident-apps/` or the repo
+  root, and are committed in that repo (`git -C my-apps …`), never in Bench's. Only apps meant to
+  ship with Bench are bundled.
 - **A new output or board** goes in `src/sim/devices/` or `src/sim/boards.ts` with its libraries
   and its app memory: the PSRAM size on a board with PSRAM, otherwise *measured*
   (`heap_caps_get_free_size(MALLOC_CAP_8BIT)` after Wi-Fi + TLS, not `ESP.getFreeHeap()`);

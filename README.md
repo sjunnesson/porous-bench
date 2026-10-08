@@ -152,6 +152,21 @@ off the walls). On e-paper they skip the animation and jump to
 each end state, since every refresh is a slow one. From Resident: the Swiss railway clock, water-sim,
 daisy, accelerometer and the rest of its M5Stick examples, which draw with `lgfx`.
 
+### Your own apps
+
+Keep the apps you write for yourself in `my-apps/`. Bench's repo ignores that folder, so they never
+end up in a commit or a pull request here, and you can pull Bench updates without touching them.
+`npm run my-apps` sets it up as a git repo of its own; push it wherever you like, for example a
+private GitHub repo:
+
+```sh
+npm run my-apps
+gh repo create my-bench-apps --private --source my-apps --push
+```
+
+Then **App → Watch a folder for apps** and pick `my-apps/`: every app you save there runs on Bench
+as you save it. `src/resident-apps/` is for apps that ship with Bench.
+
 ### Your bench, and connecting it
 
 Set up the hardware first, then connect it:
@@ -474,6 +489,7 @@ src/ui/             React UI; ui/three/ builds the wireframe models from each en
 tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol, Lua sandbox and
                     drivers, every bundled and generated app on every kind of output
 docs/resident/      DEVICE-SKILL.md for Resident's agent skills
+my-apps/            your own apps, ignored by this repo (npm run my-apps makes it its own repo)
 firmware/           Resident firmware for real boards Bench supports (epd213: the 2.13" e-paper)
 ```
 
@@ -484,6 +500,7 @@ npm run dev        # dev server with hot reload
 npm test           # unit tests
 npm run typecheck  # TypeScript
 npm run build      # typecheck + static build into dist/
+npm run my-apps    # set up my-apps/ for your own apps
 ```
 
 ## Credits and license
