@@ -220,17 +220,18 @@ select.wide {
   width: 100%;
 }
 .panel p.sketch-desc {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
 }
-/* How many examples the output and board can't run; hover for why. */
-.panel p.sketch-hidden {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: help;
+/* The App panel's ways to make an app: one column of equal buttons. */
+.app-actions {
+  display: grid;
+  gap: 8px;
+}
+.app-actions > button {
+  text-align: left;
 }
 
 /* The display block heads the Hardware panel; its pinout and notes fold away. */
@@ -837,25 +838,50 @@ select.wide {
   padding: 9px 12px;
 }
 
-/* ---- Resident panel ----------------------------------------------------------------------- */
+/* ---- sidebar panels: shared rows, labels and hints ----------------------------------------- */
 
-.resident-panel .row {
+/* A line of controls; wraps on a narrow sidebar unless told not to. */
+.panel .row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 8px 0;
+  gap: 8px;
+  margin: 10px 0;
   flex-wrap: wrap;
 }
-/* The saved boards menu: as wide as the row, names cut short before it overflows. */
-.resident-panel select.grow {
-  flex: 1;
-  min-width: 0;
-  text-overflow: ellipsis;
+.panel .row.nowrap {
+  flex-wrap: nowrap;
 }
-.resident-panel .row > .dim {
+.panel .row.nowrap input.text.grow {
+  min-width: 0;
+}
+.panel .row input.text.name {
+  width: 72px;
+}
+/* A field's name at the start of a row, like the panel captions. */
+.panel .label {
   font: 400 10px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: var(--muted);
+}
+/* Quiet explanation under or above the thing it explains. */
+.panel p.hint {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.panel p.hint.warn {
+  color: var(--now);
+}
+.panel-body > p.hint:first-child {
+  margin-top: 0;
+}
+/* A menu that fills its row, names cut short before it overflows. */
+.panel select.grow {
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 .resident-panel .status {
   display: flex;
@@ -877,8 +903,9 @@ select.wide {
   border: 1px solid var(--control);
   padding: 6px 8px;
 }
-.push-help pre {
-  margin: 6px 0;
+/* A command to paste, the part to fill in dimmed. */
+pre.command {
+  margin: 0;
   padding: 10px;
   background: var(--paper);
   border: 1px solid var(--rule);

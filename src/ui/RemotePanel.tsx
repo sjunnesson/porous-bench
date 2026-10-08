@@ -60,7 +60,7 @@ export function RemotePanel({ device, board, app, source, onShow, tz }: Props) {
         ) : undefined
       }
     >
-      <p className="dim small">Mirror this app onto a Resident board, driven by this bench.</p>
+      <p className="hint">Mirror this app onto a real Resident board, driven by this bench.</p>
       {saved.length > 0 && (
         <div className="row">
           <select className="grow" value={picked ? picked.id : ''} disabled={active} onChange={(e) => pick(e.target.value)} aria-label="Real device">
@@ -99,8 +99,8 @@ export function RemotePanel({ device, board, app, source, onShow, tz }: Props) {
         </div>
       )}
       {picked?.display && picked.display !== device.id && (
-        <p className="dim small">
-          Last mirrored from {picked.displayName}.{' '}
+        <p className="hint">
+          Last used with {picked.displayName?.replace(/^Waveshare /, '')}.{' '}
           {findDevice(picked.display) && !active && (
             <button className="link" onClick={() => onShow(picked.display!)}>
               Show it
@@ -123,12 +123,12 @@ export function RemotePanel({ device, board, app, source, onShow, tz }: Props) {
           </button>
         )}
       </div>
-      {remote.message && <p className={`small ${remote.status === 'error' || remote.status === 'offline' ? 'warn' : 'dim'}`}>{remote.message}</p>}
-      {active && remote.status === 'live' && <p className="dim small">{remote.sent} updates sent. Switching apps here sends the new one.</p>}
+      {remote.message && <p className={`hint ${remote.status === 'error' || remote.status === 'offline' ? 'warn' : ''}`}>{remote.message}</p>}
+      {active && remote.status === 'live' && <p className="hint">{remote.sent} updates sent. Switching apps here sends the new one.</p>}
       <div className="row">
         <Copy
-          label="Copy firmware prompt"
-          done="Firmware prompt copied"
+          label="Copy a prompt to set up a board"
+          done="Prompt copied"
           title={`Copy a prompt for Claude Code to build Resident firmware for ${device.name} and flash it, so it gets a device ID`}
           text={() => firmwarePrompt(device, board)}
         />

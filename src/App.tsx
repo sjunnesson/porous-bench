@@ -20,12 +20,12 @@ import type { InputSpecs, Sketch } from './sim/sketch';
 import { About } from './ui/About';
 import { Console } from './ui/Console';
 import { Copy } from './ui/Copy';
-import { WatchFolder } from './ui/WatchFolder';
 import { DeviceInfo } from './ui/DeviceInfo';
 import { DeviceView, type ViewState } from './ui/DeviceView';
 import { useClockState, usePersisted } from './ui/hooks';
 import { InputPanel } from './ui/InputPanel';
 import { Panel } from './ui/Panel';
+import { CodePanel } from './ui/CodePanel';
 import { RemotePanel } from './ui/RemotePanel';
 import { ResidentPanel } from './ui/ResidentPanel';
 
@@ -331,14 +331,20 @@ export default function App() {
                     ))}
                 </optgroup>
               ))}
+              {leftOut.length > 0 && (
+                <optgroup label="Won't run on this display and board">
+                  {leftOut.map((e) => (
+                    <option key={e.name} disabled>
+                      {e.name} · {e.why.join(', ')}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
-            {leftOut.length > 0 && (
-              <p className="sketch-hidden" title={leftOut.map((e) => `${e.name}: ${e.why.join(', ')}`).join('\n')}>
-                {leftOut.length} more {leftOut.length === 1 ? "example doesn't" : "examples don't"} fit this output and board
-              </p>
-            )}
             {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
-            <div className="row">
+
+            <h3>New app</h3>
+            <div className="app-actions">
               <button
                 onClick={() =>
                   session.setLive({
@@ -350,13 +356,12 @@ export default function App() {
                 }
                 title="Write a Lua app with a control for every part on your bench, connected and shown live: a starting point to edit"
               >
-                ✦ New app from my bench
+                Start from my bench
               </button>
-            </div>
-            <div className="row">
               <Copy
-                label="Copy app prompt"
-                done="App prompt copied"
+                className=""
+                label="Copy a prompt for Claude"
+                done="Prompt copied"
                 title="Copy a prompt for Claude to write a new Lua app for this output and bench, with the right skills, ready to paste"
                 text={() =>
                   appPrompt({
@@ -373,9 +378,9 @@ export default function App() {
                 }
               />
             </div>
-            <WatchFolder />
           </Panel>
-          <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
+          <CodePanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
+          <ResidentPanel />
           {run && <RemotePanel device={device} board={board} app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} onShow={(id) => (setOutputKind('display'), setDeviceId(id))} tz={session.zone.name} />}
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>

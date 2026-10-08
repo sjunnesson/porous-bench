@@ -179,7 +179,7 @@ npm run my-apps
 gh repo create my-bench-apps --private --source my-apps --push
 ```
 
-Then **App → Watch a folder for apps** and pick `my-apps/`: every app you save there runs on Bench
+Then **Receive apps → Watch a folder for apps** and pick `my-apps/`: every app you save there runs on Bench
 as you save it. `src/resident-apps/` is for apps that ship with Bench.
 
 ### Your bench, and connecting it
@@ -214,7 +214,7 @@ is handed over.
 
 ### Start from your bench
 
-Once the bench holds what you want to build with, **App → ✦ New app from my bench** writes the Lua
+Once the bench holds what you want to build with, **App → Start from my bench** writes the Lua
 for it and runs it as *My bench*. Every input gets a control connected to its part (`connect = …`)
 and its own keys. Each one shows live on the output: a row with a bar on a display (paging through
 when they don't all fit), a run of LEDs on a strip or ring, a column on a matrix. Presses are counted,
@@ -370,10 +370,10 @@ the simulated glass, the first updates about 25 times a second and the second 10
 
 ### Push apps from your terminal or Claude Code
 
-The quickest start: set up the output and the bench, then **App → Copy app prompt** and paste it into
+The quickest start: set up the output and the bench, then **App → Copy a prompt for Claude** and paste it into
 Claude Code with a line about what you want. It's built from what's on screen when you click it.
 
-**Watch a folder (no network).** In Chrome or Edge, **App → Watch a folder for apps** and pick the
+**Watch a folder (no network).** In Chrome or Edge, **Receive apps → Watch a folder for apps** and pick the
 folder you run Claude Code in: every `.lua` file saved there runs on Bench straight away, and runs
 again on each save. The app prompt then tells Claude to just save the file there. Nothing goes
 through the relay, so it works offline and needs no permission to send anything anywhere (Claude
@@ -383,7 +383,7 @@ device skill into the folder as `DEVICE-SKILL.md`, so Claude reads the one that 
 you're running (which is why it asks to edit the folder, not just read it). Refuse that and
 Bench offers to watch the folder read-only; Claude then downloads the skill itself.
 
-Press **Connect to relay** in the Resident panel. Bench connects to
+Press **Connect to relay** in the Receive apps panel. Bench connects to
 `wss://resident.inanimate.tech/devices/sim-xxxxxxxx` the way the firmware does and shows its device ID.
 Anything that can push to a Resident device can now push to the browser:
 
@@ -404,7 +404,7 @@ The last app that boots is restored on reload. To have agents write apps for Ben
 (any display, plus `lgfx` and `screens`), pass `--device-skill docs/resident/DEVICE-SKILL.md`.
 
 The device ID is a random secret: anyone who knows it can push apps to your browser while you're
-connected. Use **new** in the Resident panel to rotate it.
+connected. Use **new** in the Receive apps panel to rotate it.
 
 ### Drive a real device from the bench
 

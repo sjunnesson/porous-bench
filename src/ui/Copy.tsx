@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
-/** A link that copies text to the clipboard (`text` can be built at click time) and says so. */
-export function Copy({ text, label = 'copy', done = 'copied', title }: { text: string | (() => string); label?: string; done?: string; title?: string }) {
+/** A link (or, with `className`, a button) that copies text to the clipboard (`text` can be built at click time) and says so. */
+export function Copy({ text, label = 'copy', done = 'copied', title, className = 'link' }: { text: string | (() => string); label?: string; done?: string; title?: string; className?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const show = (s: typeof state) => {
     setState(s);
@@ -9,7 +9,7 @@ export function Copy({ text, label = 'copy', done = 'copied', title }: { text: s
   };
   return (
     <button
-      className="link"
+      className={className}
       title={title}
       onClick={() => {
         const value = typeof text === 'function' ? text() : text;

@@ -5,7 +5,7 @@ import { folderWatch } from '../resident/watch';
 export function WatchFolder() {
   useSyncExternalStore(folderWatch.subscribe, folderWatch.getVersion);
   if (!folderWatch.supported) {
-    return <p className="dim small">Watching a folder for apps needs Chrome or Edge; you can still drop a .lua file on the device.</p>;
+    return <p className="hint">Watching a folder for apps needs Chrome or Edge; you can still drop a .lua file on the display.</p>;
   }
   const { folder, saved, mode, last, skill, refused, error } = folderWatch;
   return (
@@ -41,7 +41,7 @@ export function WatchFolder() {
           </>
         ) : (
           <>
-            <button className="link" onClick={() => void folderWatch.pick()} title="Pick the folder you run Claude Code in: every .lua saved there runs here">
+            <button onClick={() => void folderWatch.pick()} title="Pick the folder you run Claude Code in: every .lua saved there runs here">
               Watch a folder for apps
             </button>
             {refused && (
@@ -56,7 +56,7 @@ export function WatchFolder() {
         )}
       </div>
       {folder && (
-        <p className="dim small">
+        <p className="hint">
           {last ? `Running ${last}. ` : ''}Save a .lua file in it and it runs here.
           {skill && (
             <>
@@ -75,8 +75,11 @@ export function WatchFolder() {
           )}
         </p>
       )}
+      {!folder && !saved && !refused && (
+        <p className="hint">Every .lua file Claude Code (or an editor) saves there runs here, with nothing over the network.</p>
+      )}
       {refused && !folder && (
-        <p className="dim small">
+        <p className="hint">
           Bench asks to edit the folder so it can put its <code>DEVICE-SKILL.md</code> there for Claude. To skip that, watch it read-only.
         </p>
       )}

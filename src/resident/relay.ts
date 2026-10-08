@@ -166,6 +166,9 @@ export class ResidentRelay {
     if (typeof msg !== 'object' || msg === null) return;
     const type = String(msg.type ?? '');
     const channel = msg.channel as string | undefined;
+    // The relay runs on Cloudflare's Agents framework, which greets every connection with messages of
+    // its own (cf_agent_identity, cf_agent_mcp_servers, ...): not Resident's, nothing to do or log.
+    if (!channel && type.startsWith('cf_agent_')) return;
 
     if (channel === 'app' || channel === 'runtime') {
       const nonce = typeof msg.nonce === 'string' ? msg.nonce : null;
