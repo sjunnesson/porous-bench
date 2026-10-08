@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { session } from '../resident/session';
 import { Copy } from './Copy';
 import { Panel } from './Panel';
@@ -22,6 +22,7 @@ export function ResidentPanel({ code, appName }: Props) {
   const [eventName, setEventName] = useState('note');
   const [eventData, setEventData] = useState('{ "text": "hello" }');
   const [eventError, setEventError] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
   useEffect(() => setDraft(code ?? ''), [code]);
 
   const st = STATUS[session.status];
@@ -103,7 +104,22 @@ export function ResidentPanel({ code, appName }: Props) {
           />
           <div className="row">
             <button onClick={() => session.setLive({ name: `${appName ?? 'App'} (edited)`, code: draft, source: 'editor' })}>Run ⌘↵</button>
-            <span className="dim small">or drop a .lua file on the device</span>
+            <button onClick={() => picker.current?.click()} title="Run a .lua file from this computer, as if dropped on the device">
+              Open .lua…
+            </button>
+            <input
+              ref={picker}
+              type="file"
+              accept=".lua"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // Cleared so picking the same file again (after editing it) runs it again.
+                e.target.value = '';
+                if (file) void file.text().then((code) => session.setLive({ name: file.name.replace(/\.lua$/, ''), code, source: 'file' }));
+              }}
+            />
+            <span className="dim small">or drop one on the device</span>
           </div>
 
           <h3>Send event</h3>

@@ -87,8 +87,8 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
   a piezo that pulses while it sounds, and the LD2410 with its detection fan and a little character
   who walks, blinks and looks around; click anywhere to send it walking there, or pick it up by the head to carry it. Each part is wired back
   to the device. With an IMU the device itself tilts and shakes.
-- **Hot reload.** Edit an app in the code panel and press Run (⌘↵), drop a `.lua` file on the device,
-  or save a bundled one: it restarts in place.
+- **Hot reload.** Edit an app in the code panel and press Run (⌘↵), open a `.lua` file (**Open
+  .lua…**) or drop one on the device, or save a bundled one: it restarts in place.
 
 ## Displays
 
@@ -112,8 +112,9 @@ even-aligned windows, the SSD1306 charge pump, …).
 ## Writing apps
 
 An app is one Lua file. Pick one in the **App** menu, edit it in the code panel and press Run
-(⌘↵), or drop a `.lua` file on the device. The bundled ones live in `src/resident-apps/`; a new file
-there appears in the menu, named by its first comment line (`-- Name: what it does`).
+(⌘↵), or open a `.lua` file with **Open .lua…** or drop one on the device. The bundled ones live
+in `src/resident-apps/`; a new file there appears in the menu, named by its first comment line
+(`-- Name: what it does`).
 
 ```lua
 -- Comet: a dot that circles the screen. A changes colour; Speed can be any hardware.
