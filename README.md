@@ -9,7 +9,7 @@ app to a real device. Bench can also join the Resident relay as a device.
 
 **Try it: [bench.porous.systems](https://bench.porous.systems)**
 
-![Bench running Resident's water-sim app on an M5StickC Plus2](docs/images/app.png)
+![Bench running the porous.systems logo app on a Waveshare ESP32-C6-LCD-1.47, wired to an encoder, a slide pot and a button](docs/images/app.png)
 
 <table>
   <tr>
