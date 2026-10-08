@@ -46,6 +46,9 @@ export function About() {
             Bench is open source under the MIT license, and so is Resident. This site counts page views with Vercel Web
             Analytics: no cookies, and nothing about your apps or your bench.
             <span className="about-links">
+              <a href="mailto:bench@porous.systems" title="Questions, ideas, bugs">
+                Contact: bench@porous.systems
+              </a>
               <a href="https://github.com/sjunnesson/porous-bench" target="_blank" rel="noreferrer">
                 Bench on GitHub
               </a>
