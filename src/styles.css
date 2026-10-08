@@ -233,6 +233,9 @@ select.wide {
 .app-actions > button {
   text-align: left;
 }
+.app-actions > button.link {
+  justify-self: start;
+}
 
 /* The display block heads the Hardware panel; its pinout and notes fold away. */
 .display-info {
@@ -903,14 +906,18 @@ select.wide {
   border: 1px solid var(--control);
   padding: 6px 8px;
 }
-/* A command to paste, the part to fill in dimmed. */
-pre.command {
-  margin: 0;
-  padding: 10px;
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  font: 11px/1.6 var(--mono);
-  white-space: pre-wrap;
+/* The device ID beside its connect button, as tall as the button. */
+.resident-panel .row.id {
+  align-items: stretch;
+}
+.resident-panel .row.id .device-id {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+}
+.panel .sep {
+  color: var(--muted);
+  font-size: 12px;
 }
 textarea.code {
   width: 100%;

@@ -383,7 +383,7 @@ device skill into the folder as `DEVICE-SKILL.md`, so Claude reads the one that 
 you're running (which is why it asks to edit the folder, not just read it). Refuse that and
 Bench offers to watch the folder read-only; Claude then downloads the skill itself.
 
-Press **Connect to relay** in the Receive apps panel. Bench connects to
+Press **Connect** next to the device ID in the Receive apps panel. Bench connects to
 `wss://resident.inanimate.tech/devices/sim-xxxxxxxx` the way the firmware does and shows its device ID.
 Anything that can push to a Resident device can now push to the browser:
 
@@ -404,7 +404,7 @@ The last app that boots is restored on reload. To have agents write apps for Ben
 (any display, plus `lgfx` and `screens`), pass `--device-skill docs/resident/DEVICE-SKILL.md`.
 
 The device ID is a random secret: anyone who knows it can push apps to your browser while you're
-connected. Use **new** in the Receive apps panel to rotate it.
+connected. Use **New ID** in the Receive apps panel to rotate it.
 
 ### Drive a real device from the bench
 

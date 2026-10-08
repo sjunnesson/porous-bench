@@ -147,7 +147,7 @@ function deliverSection({ deviceId, online, watching }: PromptInput): string[] {
   }
   return [
     `- ${save} If I point Bench at this folder (Receive apps → Watch a folder for apps), it runs the moment it's saved, with nothing over the network.`,
-    `- Then push it to my Bench with push-app: \`--device-id ${deviceId}\` (the default relay, https://resident.inanimate.tech, passes it to my own Bench tab; the ID is mine). ${online ? 'Bench is connected to the relay.' : "I'll press Connect to relay in Bench's Receive apps panel first."} If push.sh exits 1, Bench isn't connected: say so and stop.`,
+    `- Then push it to my Bench with push-app: \`--device-id ${deviceId}\` (the default relay, https://resident.inanimate.tech, passes it to my own Bench tab; the ID is mine). ${online ? 'Bench is connected to the relay.' : "I'll press Connect in Bench's Receive apps panel first."} If push.sh exits 1, Bench isn't connected: say so and stop.`,
     '- If the push is blocked by a permission check or fails, don\'t look for another way to send it: show me the exact push command so I can run it myself.',
   ];
 }

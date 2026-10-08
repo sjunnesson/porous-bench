@@ -359,7 +359,6 @@ export default function App() {
                 Start from my bench
               </button>
               <Copy
-                className=""
                 label="Copy a prompt for Claude"
                 done="Prompt copied"
                 title="Copy a prompt for Claude to write a new Lua app for this output and bench, with the right skills, ready to paste"

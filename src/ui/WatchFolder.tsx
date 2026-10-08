@@ -76,7 +76,7 @@ export function WatchFolder() {
         </p>
       )}
       {!folder && !saved && !refused && (
-        <p className="hint">Every .lua file Claude Code (or an editor) saves there runs here, with nothing over the network.</p>
+        <p className="hint">Every .lua file saved there runs here, with nothing over the network.</p>
       )}
       {refused && !folder && (
         <p className="hint">
