@@ -32,6 +32,8 @@ export class SketchRun {
   readonly declared: SimInput[] = [];
   private abort = new AbortController();
   private startMs: number;
+  /** Simulated time when loop() last began: while paused, a Step that moves past it runs loop() again. */
+  private loopAt = 0;
   private ctx: SketchContext;
 
   constructor(
@@ -97,8 +99,10 @@ export class SketchRun {
     try {
       await this.sketch.setup?.(this.ctx);
       await this.flush();
+      this.loopAt = this.clock.now();
       while (!this.stopped) {
         await this.whilePaused();
+        this.loopAt = this.clock.now();
         await this.sketch.loop(this.ctx);
         await this.flush();
         // Keep the page responsive even if loop() never awaits anything.
@@ -128,11 +132,16 @@ export class SketchRun {
     if (!this.stopped && this.display.hasPendingChanges()) await this.display.show();
   }
 
+  /**
+   * Hold the loop while paused, until resumed or stepped. Time is frozen while paused, so a loop
+   * that delays waits for the next Step on its own; this stops one that never delays from spinning.
+   */
   private whilePaused(): Promise<void> {
-    if (!this.clock.paused) return Promise.resolve();
+    const free = () => !this.clock.paused || this.clock.now() !== this.loopAt;
+    if (free()) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const off = this.clock.onChange(() => {
-        if (!this.clock.paused) {
+        if (free()) {
           off();
           resolve();
         }

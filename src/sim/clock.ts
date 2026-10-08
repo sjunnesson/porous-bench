@@ -55,6 +55,7 @@ export class SimClock {
     this.simMs += ms;
     this.fire();
     this.reschedule();
+    this.emit();
   }
 
   /** Resolve after `ms` of simulated time. Rejects with SketchStopped if `signal` aborts. */

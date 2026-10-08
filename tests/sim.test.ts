@@ -317,4 +317,35 @@ describe('SketchRun', () => {
     expect(loops).toBe(3);
     expect(String(errors[0])).toContain('boom');
   });
+
+  it('runs loop() on each Step while paused, and holds it otherwise', async () => {
+    const clock = pausedClock();
+    let delaying = 0;
+    let spinning = 0;
+    const flush = async () => {
+      for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+    const runs = [
+      new SketchRun(defineSketch({ name: 'delays', loop: async ({ delay }) => void (delaying++, await delay(5)) }), device('ssd1306-128x64'), clock),
+      new SketchRun(defineSketch({ name: 'spins', loop: () => void spinning++ }), device('ssd1306-128x64'), clock),
+    ];
+    runs.forEach((r) => void r.start());
+    await flush();
+    // Boot: the first frame over I2C outlasts a Step. Paused, setup() is not followed by loop().
+    clock.advance(100);
+    await flush();
+    expect([delaying, spinning]).toEqual([0, 0]);
+    clock.advance(1000 / 60);
+    await flush();
+    expect(delaying).toBeGreaterThan(0);
+    expect(spinning).toBe(1);
+    const before = [delaying, spinning];
+    await flush();
+    expect([delaying, spinning]).toEqual(before);
+    clock.advance(1000 / 60);
+    await flush();
+    expect(delaying).toBeGreaterThan(before[0]);
+    expect(spinning).toBe(2);
+    runs.forEach((r) => r.stop());
+  });
 });
