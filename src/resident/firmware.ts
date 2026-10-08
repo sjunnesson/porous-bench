@@ -22,6 +22,11 @@ const BENCH_FIRMWARE: Record<string, { path: string; tested: boolean; note?: str
     tested: true,
     note: 'Its panel may be the older V2 (ribbon HINK-E0213A22, controller IL3897): that build drives the V2, which is what the driver boards Bench has seen carry. If partial refreshes flash the whole screen, the panel is the other generation: rebuild with `-DEPD_PANEL=4`.',
   },
+  'waveshare-esp32-c6-lcd-1.47|waveshare-esp32-c6-lcd-1.47': {
+    path: 'firmware/c6-lcd147/device',
+    tested: true,
+    note: 'Its first build downloads and compiles ESP-IDF to rebuild the Arduino core with more RAM for apps (several minutes); `firmware/c6-lcd147/device-prebuilt-core` is the same firmware on the prebuilt core, quicker to build with less memory for apps. If the serial port doesn\'t show up, I hold BOOT while plugging it in.',
+  },
   'waveshare-epd-2.13-v4|esp32-s3-devkitc-1-n16r8': {
     path: 'firmware/epd213/device-s3',
     tested: false,
@@ -37,6 +42,7 @@ const DISPLAY_LESSONS = [
 const LESSONS = [
   '- Check the real part against Bench\'s profile before trusting it: read the ribbon or the back sticker (a "2.13 V4" may turn out to be a V2 with another controller). A test card that looks right can hide the wrong controller; partial refresh is what tells them apart.',
   '- Measure app memory with `heap_caps_get_free_size(MALLOC_CAP_8BIT)` and `heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)`, not `ESP.getFreeHeap()`: on a classic ESP32 that also counts IRAM Lua can\'t use. Without PSRAM about 70 KB is left once Wi-Fi and TLS are up; LVGL\'s first bind keeps ~30 KB, so leave `lvgl` out there.',
+  '- Without PSRAM, give Lua a heap of its own: Resident\'s allocator takes whatever is free, and an app that grows (or just fragments the heap with small blocks) leaves TLS without the 16 KB block a reconnect needs, so the board drops off the relay and can\'t be sent the next app. Take one block before Wi-Fi starts, make it a heap with `multi_heap_register`, and point Lua at it with `lua_setallocf` from a driver\'s `registerModule` (`LuaArena` in `firmware/c6-lcd147/device/lib/drivers/` does this): an app that doesn\'t fit then fails with "not enough memory" and the board stays online.',
   '- Opening the serial port resets a board with a USB-serial bridge (DTR/RTS); open it with both lines released, or it can stay held in reset.',
   '- A key on a strapping pin (IO12 on the Waveshare e-Paper Driver Board) may have no pull-up of its own: enable `INPUT_PULLUP` after boot.',
   `- When it works, tell me the libraries it has and the app memory you measured, so Bench's board entry (src/sim/boards.ts in ${REPO}) lists the right apps for it.`,
@@ -130,7 +136,8 @@ function planSection(p: DeviceProfile, board?: Board): string[] {
   if (c6) {
     lines.push(
       '- **ESP32-C6:** the `espressif32@6.x` platform in Resident\'s examples is too old for the C6. Use pioarduino (Arduino core 3.x): `platform = https://github.com/pioarduino/platform-espressif32/releases/download/stable/platform-espressif32.zip`, board `esp32-c6-devkitc-1`.',
-      '- The C6 has 512 KB of RAM and this board, as far as I know, no PSRAM: check the canvas (172×320×2 bytes ≈ 110 KB) still leaves Wi-Fi and Lua enough room. No one has published Resident on a C6 yet, so expect bring-up work and tell me what you find.',
+      `- Resident's libraries need three fixes on core 3.x, all in \`firmware/c6-lcd147/\` in ${REPO}: Courier's \`esp_websocket_client\` from Espressif's component registry (ESP-IDF 5 moved it out of the core), \`<string>\` force-included for Esp32Lua's C++ wrapper, and Esp32Lua's standalone \`lua.c\`/\`luac.c\` left out of the build (\`core3.py\`). Core 3.x already compiles C++17 and newer, so skip the \`gnu++17\` flags.`,
+      '- The C6 has 512 KB of SRAM and no PSRAM: a full RGB565 frame competes with Wi-Fi, TLS and Lua for it. Rebuilding the core with less code in IRAM (pioarduino\'s `custom_sdkconfig`) frees ~36 KB.',
       '- It has native USB: add `-DARDUINO_USB_MODE=1 -DARDUINO_USB_CDC_ON_BOOT=1` or serial stays silent. If the port doesn\'t show up, I hold BOOT while plugging it in.',
     );
   }

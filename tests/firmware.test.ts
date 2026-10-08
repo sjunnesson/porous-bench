@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { firmwarePrompt } from '../src/resident/firmware';
+import { boardsFor } from '../src/sim/boards';
 import { findDevice } from '../src/sim/devices';
 import { ledProfile } from '../src/sim/leds';
 
@@ -22,6 +23,15 @@ describe('firmware prompt', () => {
     expect(p).toContain('esp32-c6-devkitc-1');
     expect(p).toContain('ARDUINO_USB_CDC_ON_BOOT=1');
     expect(p).toContain('Real device');
+  });
+
+  it('builds Bench\'s own firmware for the C6 on its board', () => {
+    const d = findDevice('waveshare-esp32-c6-lcd-1.47')!;
+    const p = firmwarePrompt(d, boardsFor(d)[0]);
+    expect(p).toContain('`firmware/c6-lcd147/device`');
+    expect(p).toContain('tested on hardware');
+    expect(p).toContain('device-prebuilt-core');
+    expect(p).not.toContain('start-building.md');
   });
 
   it('asks about the board for a bare module, and drives LEDs with a matching leds module', () => {

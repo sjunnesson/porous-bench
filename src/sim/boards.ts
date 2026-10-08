@@ -79,8 +79,9 @@ export const BOARDS: Board[] = [
   {
     id: 'waveshare-esp32-c6-lcd-1.47',
     name: 'ESP32-C6 (on the board)',
-    libraries: ['screen', 'lgfx', 'lvgl'],
-    note: 'No PSRAM, 512 KB SRAM: app memory not measured yet, so not checked.',
+    libraries: ['screen', 'lgfx'],
+    appRamKb: 84,
+    note: 'No PSRAM: Bench\'s firmware gives Lua an 88 KB heap of its own next to the 110 KB frame, Wi-Fi and TLS, ~84 KB free for an app (measured); too little for LVGL.',
   },
 ];
 

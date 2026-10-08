@@ -67,11 +67,12 @@ The board driving the output decides what an app gets. Bench shows it under the 
 |---|---|---|
 | M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-AMOLED-1.32, Waveshare ESP32-S3-AMOLED-1.91 and its Touch version | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
 | ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~70 KB |
-| Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`, `lvgl` | not measured yet |
+| Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`; no `lvgl` | ~84 KB |
 
 On a board without PSRAM, draw with `lgfx` (or `screen`) and keep the app small: receiving and
-compiling it takes about 6x its size, so stay under ~6 KB of Lua, and `datetime` costs ~35 KB
-once touched.
+compiling it takes about 6x its size, so stay under ~6 KB of Lua (~8 KB on the C6), and `datetime`
+costs ~35 KB once touched. On the C6 an app that doesn't fit stops with "not enough memory" and the
+board stays online for the next one.
 
 Each dispatch (loading the app, `init`, a tick, an event) gets 1000 ms. Past that, a board raises
 `execution deadline exceeded (1000 ms)` and the app carries on. Bench counts the 1000 ms as about 4

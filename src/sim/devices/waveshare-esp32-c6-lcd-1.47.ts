@@ -17,6 +17,9 @@ export default {
     'Backlight on GPIO22 is plain PWM (ledcAttach/ledcWrite); the screen stays dark until you drive it.',
     'Waveshare demo runs SPI at 80 MHz; RGB565 pixels go out big-endian.',
     'Panel has rounded corners: keep content ~20 px away from them.',
+    'Upright (USB-C at the bottom) is the panel\'s native scan, MADCTL 0x00: Adafruit_ST7789\'s rotation 2.',
+    'ESP32-C6FH8: 8 MB of flash in the package, no PSRAM.',
+    'The RGB LED on GPIO8 takes R, G, B byte order, not a WS2812\'s G, R, B.',
   ],
   url: 'https://docs.waveshare.com/ESP32-C6-LCD-1.47',
   enclosure: {
