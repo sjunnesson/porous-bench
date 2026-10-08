@@ -358,7 +358,8 @@ through the relay, so it works offline and needs no permission to send anything 
 Code's auto mode can block uploading a file to an outside server, which is what a relay push is).
 Bench remembers the folder; after a reload, one click resumes watching it. Bench also writes its
 device skill into the folder as `DEVICE-SKILL.md`, so Claude reads the one that matches the Bench
-you're running (which is why it asks to edit the folder, not just read it).
+you're running (which is why it asks to edit the folder, not just read it). Refuse that and
+Bench offers to watch the folder read-only; Claude then downloads the skill itself.
 
 Press **Connect to relay** in the Resident panel. Bench connects to
 `wss://resident.inanimate.tech/devices/sim-xxxxxxxx` the way the firmware does and shows its device ID.
