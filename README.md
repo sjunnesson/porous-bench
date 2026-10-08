@@ -160,9 +160,12 @@ highlight slides between rows), **LD2410 radar** (a presence dashboard with glid
 **Little devil** (a cute chibi devil whose mood follows the radar: it naps when nobody's there, gets
 curious, schemes, pops up with a "boo!" when you come close and gets cozy if you stay) and **LVGL
 motion** (an `Anim` and an `on_tick` dot side by side). For LED strips and rings: **Rainbow chase**,
-**Comet**, **Fire** (Fire2012), **Level meter** (a VU bar you can drive from any sensor) and **Night
-light** (fades in on motion, brighter in a darker room). For LED matrices: **Scrolling text**, **Life**
-and **Plasma**. Two more draw with `lgfx`: **lgfx hello** (reads the screen's facts from `screens` and
+**Comet**, **Fire** (Fire2012), **Level meter** (a VU bar you can drive from any sensor), **Night
+light** (fades in on motion, brighter in a darker room), **Twinkle**, **Bouncing balls**, **Ripple**
+(drops that spread rings of colour), **Ring clock** (hours, minutes and a gliding second, round a
+ring from the top) and **Pong** (one-dimensional, for two, on A and B; it plays itself when left
+alone). For LED matrices: **Scrolling text**, **Life**, **Plasma**, **Digital rain**, **Fireworks** and
+**Snake** (it plays itself). Two more draw with `lgfx`: **lgfx hello** (reads the screen's facts from `screens` and
 adapts to colour or 1-bit, dark or light glass) and **Tilt ball** (roll a ball with the IMU; it clicks
 off the walls). On e-paper they skip the animation and jump to
 each end state, since every refresh is a slow one. From Resident: the Swiss railway clock, water-sim,

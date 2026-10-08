@@ -41,6 +41,7 @@ export const residentApps: BundledApp[] = Object.entries(files)
 /** Bench's own examples in a deliberate order (simplest first); the rest alphabetically. */
 function order(id: string) {
   const i = ['porous-systems', 'hello-display', 'patterns', 'characters', 'knob-menu', 'ld2410-radar', 'devil', 'lvgl-motion', 'touch',
-    'led-rainbow', 'led-comet', 'led-fire', 'led-level', 'led-nightlight', 'led-marquee', 'led-life', 'led-plasma'].indexOf(id);
+    'led-rainbow', 'led-comet', 'led-fire', 'led-level', 'led-nightlight', 'led-twinkle', 'led-bouncing-balls', 'led-ripple',
+    'led-clock', 'led-pong', 'led-marquee', 'led-life', 'led-plasma', 'led-rain', 'led-fireworks', 'led-snake'].indexOf(id);
   return i < 0 ? 99 : i;
 }
