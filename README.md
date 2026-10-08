@@ -139,8 +139,10 @@ Coordinates are checked like `luaL_checkinteger`, so `math.floor` anything compu
 
 Bench opens on **Porous systems**: the porous.systems logo, its spokes sweeping in around the ring
 and the words fading in, drawn anti-aliased with `lgfx` on any display (e-paper gets the finished
-logo in one refresh). Turn the encoder to move the hollow spoke around the ring; tap A to see it
-all again. It needs a board with PSRAM (or the C6). Its shapes come from the logo's SVG:
+logo in one refresh). The encoder moves the hollow spoke around the ring, Button 1 stamps a hollow
+one where it is (again to make it solid), and the slide pot colours the background, black through
+the colour wheel to white, with the ink switching to stay readable; tap A to start again. It needs a
+board with PSRAM (or the C6). Its shapes come from the logo's SVG:
 `node scripts/logo-app.mjs <logo.svg>` writes a new logo into it.
 
 Included, from Bench, all drawn with LVGL and moved by `lvgl.Anim` (see [LVGL](#lvgl-smooth-animation)):

@@ -1,4 +1,4 @@
--- Porous systems: the porous.systems logo. Its spokes sweep in around the ring and the words fade in; turn the encoder to move the hollow spoke, tap A to see it all again.
+-- Porous systems: the porous.systems logo. Its spokes sweep in and the words fade in. The encoder moves the hollow spoke, the button stamps one where it is, the slide pot colours the background; tap A to start again.
 -- @output display
 local g = lgfx.bind("main")
 local s = screens.get("main")
@@ -62,7 +62,9 @@ else
 end
 local WORDS_SHOWN = K * 50 >= 6 -- the words, once their x-height reaches 6 px
 
--- Rasterise polygon contours (flat x, y lists in pixels, even-odd) into runs {x, y, width, shade}.
+-- Rasterise polygon contours (flat x, y lists in pixels, even-odd) into runs of one shade, packed
+-- 7 bytes each (x, y, width, shade) so every shape can be kept and repainted in a new colour.
+local RUN = "<i2i2i2B"
 local function raster(contours)
   local edges, top, bottom = {}, 1e9, -1e9
   for _, c in ipairs(contours) do
@@ -78,7 +80,7 @@ local function raster(contours)
     end
   end
   table.sort(edges, function(p, q) return p[1] < q[1] end)
-  local runs, active, nxt = {}, {}, 1
+  local runs, active, nxt = {}, {}, 1 -- runs: packed strings, joined at the end
   for py = floor(top), math.ceil(bottom) - 1 do
     local cov, lo, hi = {}, 1e9, -1e9
     for k = 0, SUB - 1 do
@@ -111,11 +113,11 @@ local function raster(contours)
     while x <= hi do
       local e = x
       while e < hi and shade(e + 1) == shade(x) do e = e + 1 end
-      if shade(x) > 0 then runs[#runs + 1] = { x, py, e - x + 1, shade(x) } end
+      if shade(x) > 0 then runs[#runs + 1] = string.pack(RUN, x, py, e - x + 1, shade(x)) end
       x = e + 1
     end
   end
-  return runs
+  return table.concat(runs)
 end
 
 -- A spoke: a capsule from radius INNER to r (0.1 units) at angle a, hw pixels either side of its axis.
@@ -132,13 +134,15 @@ local function capsule(a, r, hw)
   return pts
 end
 
--- Which spoke is hollow, and its width and outline (the encoder moves it).
-local n, HOLLOW, HW, HO = #SPOKES
-for k, p in ipairs(SPOKES) do if p[4] then HOLLOW, HW, HO = k, p[3], p[4] end end
+-- The hollow spoke (the encoder's cursor) and its width and outline, and the ones stamped hollow.
+local n, HOME, HW, HO = #SPOKES
+for k, p in ipairs(SPOKES) do if p[4] then HOME, HW, HO = k, p[3], p[4] end end
+local cursor, stamped = HOME, {}
+local function isHollow(k) return k == cursor or stamped[k] end
 
 local function spokeRuns(k)
   local p = SPOKES[k]
-  local a, hollow = p[1] * pi / 1800, k == HOLLOW
+  local a, hollow = p[1] * pi / 1800, isHollow(k)
   local hw = max((hollow and HW or STROKE) / 2 * K, LEVELS == 1 and 0.5 or 0)
   if not hollow then return raster({ capsule(a, p[2], hw) }) end
   local o = max(HO / 2 * K, LEVELS == 1 and 0.5 or 0) -- its outline, a ring between two capsules (1 px at least on 1-bit)
@@ -184,13 +188,41 @@ local function palette(f)
 end
 local INK, ERASE = palette(1), palette(0)
 
+-- The slide pot picks the background: black at the bottom, round the colour wheel, white at the top
+-- (a 1-bit screen: black or white). The ink is white or near-black, whichever reads on it.
+local function setBackground(f)
+  if LEVELS == 1 or f < 0.03 or f > 0.97 then
+    BG = f < 0.5 and 0 or 0xFFFFFF
+  else
+    local h = (f - 0.03) / 0.94 * 6
+    local x = 1 - math.abs(h % 2 - 1)
+    local t = ({ { 1, x, 0 }, { x, 1, 0 }, { 0, 1, x }, { 0, x, 1 }, { x, 0, 1 }, { 1, 0, x } })[floor(h) % 6 + 1]
+    BG = 0
+    for j = 1, 3 do BG = BG << 8 | floor((0.27 + 0.63 * t[j]) * 255 + 0.5) end -- saturation 0.7, value 0.9
+  end
+  local lum = (0.2126 * (BG >> 16) + 0.7152 * (BG >> 8 & 255) + 0.0722 * (BG & 255)) / 255
+  FG = lum > 0.55 and (LEVELS == 1 and 0 or 0x111111) or 0xFFFFFF
+  INK, ERASE = palette(1), palette(0)
+end
+
 local function paint(runs, pal)
-  for _, r in ipairs(runs) do g:fillRect(r[1], r[2], r[3], 1, pal[r[4]]) end
+  for i = 1, #runs, 7 do
+    local x, y, w, sh = string.unpack(RUN, runs, i)
+    g:fillRect(x, y, w, 1, pal[sh])
+  end
+end
+
+-- Each spoke's shapes, solid and hollow, rasterised once and kept.
+local shapes = {}
+local function shape(k)
+  local key = k * 2 + (isHollow(k) and 1 or 0)
+  shapes[key] = shapes[key] or spokeRuns(k)
+  return shapes[key]
 end
 
 -- The intro: four spokes a tick, clockwise from the hollow one, then the words fade in. E-paper
 -- gets the end of it in one frame.
-local step, start, drawn, words
+local step, start, drawn, words, shown = 0, HOME, {}, nil, 0 -- shown: how far the words have faded in
 local FADE = LEVELS == 1 and 1 or 6 -- 1-bit can't fade
 
 local function advance()
@@ -200,44 +232,81 @@ local function advance()
   for i = from, min(n, from + (paper and n or 4)) - 1 do
     local k = (start - 1 + i) % n + 1
     drawn[k] = true
-    paint(spokeRuns(k), INK)
+    paint(shape(k), INK)
   end
   if f > 0 and WORDS_SHOWN then
-    words = words or wordRuns()
-    paint(words, palette(f / FADE))
+    words, shown = words or wordRuns(), f / FADE
+    paint(words, palette(shown))
   end
   step = step + 1
   g:flip()
 end
 
 local function restart()
-  step, start, drawn = 0, HOLLOW, {}
+  step, start, drawn, shown = 0, cursor, {}, 0
   g:fillScreen(BG)
   advance()
 end
 
--- Make spoke `to` the hollow one: erase both, then redraw them and their neighbours (their edges
+-- Everything drawn so far, in the current colours (from the kept shapes: no rasterising).
+local function repaint()
+  g:fillScreen(BG)
+  for k in pairs(drawn) do paint(shape(k), INK) end
+  if shown > 0 then paint(words, palette(shown)) end
+  g:flip()
+end
+
+-- Change spokes ks with `apply`: erase them, apply, redraw them and their neighbours (their edges
 -- share pixels), leaving any the intro hasn't reached yet.
-local function move(to)
-  local old = HOLLOW
-  if to == old then return end
-  for _, k in ipairs({ old, to }) do
-    if drawn[k] then paint(spokeRuns(k), ERASE) end
+local function change(ks, apply)
+  for _, k in ipairs(ks) do
+    if drawn[k] then paint(shape(k), ERASE) end
   end
-  HOLLOW = to
-  for _, k in ipairs({ old - 1, old, old + 1, to - 1, to, to + 1 }) do
-    k = (k - 1) % n + 1
-    if drawn[k] then paint(spokeRuns(k), INK) end
+  apply()
+  for _, k in ipairs(ks) do
+    for j = k - 1, k + 1 do
+      j = (j - 1) % n + 1
+      if drawn[j] then paint(shape(j), INK) end
+    end
   end
   g:flip()
 end
 
--- The encoder by default; any part can drive it in Connections. Only on Bench (or the mirror).
-local spoke = dial and dial.new("spoke", { label = "Hollow spoke", via = "encoder", min = 1, max = n, start = HOLLOW, wrap = true })
+-- Bench drivers (also on a real board through Bench's mirror). Which part drives each is the
+-- user's choice in Connections; these are the defaults.
+local spoke = dial and dial.new("spoke", { label = "Hollow spoke", via = "encoder" })
+local bg = dial and dial.new("background", { label = "Background", via = "pot", min = 0, max = 100 })
+-- Stamp names Button 1: on a board with one button of its own, Bench would give it to B first.
+local stamp = trigger and trigger.new("stamp", { label = "Stamp", via = "external-button", connect = "button-1:press" })
+local offset = 0 -- stamping steps the cursor on, past the encoder's own count
+local recolour = false
+
+local function follow()
+  local to = (HOME - 1 + spoke:value() + offset) % n + 1
+  if to ~= cursor then change({ cursor, to }, function() cursor = to end) end
+end
 
 function init(ctx) restart() end
-function on_tick(ctx, dt_ms) advance() end
+
+function on_tick(ctx, dt_ms)
+  if recolour then
+    recolour = false
+    setBackground(bg:fraction())
+    repaint()
+  end
+  advance()
+end
+
 function on_event(ctx, e)
-  if e.name == "tap" and e.data.index == 0 then restart() end
-  if e.name == "dial" then move(spoke:value()) end
+  local d = e.data
+  if e.name == "tap" and d.index == 0 then restart() end
+  if e.name == "dial" and d.name == "spoke" then follow() end
+  -- The pot moves in many small steps: recolour once a tick.
+  if e.name == "dial" and d.name == "background" then recolour = true end
+  -- Stamp the cursor's spoke hollow (or solid again), then step the cursor on so the stamp shows.
+  if e.name == "trigger" and d.name == "stamp" and d.pressed then
+    stamped[cursor] = not stamped[cursor]
+    offset = offset + 1
+    follow()
+  end
 end
