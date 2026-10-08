@@ -1,8 +1,10 @@
 // Watch a folder on this computer for Lua apps: whenever a .lua file in it is saved, Bench runs it.
 // The way to get an app from Claude Code (or any editor) onto Bench with no network in between: the
 // agent writes a file, Bench reads it. Uses Chromium's File System Access API (Chrome, Edge, Opera);
-// the folder is remembered, and after a reload one click picks it up again.
+// the folder is remembered, and after a reload one click picks it up again. Bench also writes its
+// device skill into the folder, so the agent working there reads the one this Bench was built with.
 
+import SKILL from '../../docs/resident/DEVICE-SKILL.md?raw';
 import { session } from './session';
 
 interface FileEntry {
@@ -10,18 +12,24 @@ interface FileEntry {
   name: string;
   getFile(): Promise<File>;
 }
+interface WritableFile {
+  getFile(): Promise<File>;
+  createWritable(): Promise<{ write(data: string): Promise<void>; close(): Promise<void> }>;
+}
 interface FolderHandle {
   kind: 'directory';
   name: string;
   values(): AsyncIterable<FileEntry | { kind: 'directory'; name: string }>;
-  queryPermission?(o: { mode: 'read' }): Promise<PermissionState>;
-  requestPermission?(o: { mode: 'read' }): Promise<PermissionState>;
+  getFileHandle(name: string, o?: { create?: boolean }): Promise<WritableFile>;
+  queryPermission?(o: { mode: 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(o: { mode: 'readwrite' }): Promise<PermissionState>;
 }
-type Picker = (o?: { id?: string; mode?: 'read' }) => Promise<FolderHandle>;
+type Picker = (o?: { id?: string; mode?: 'readwrite' }) => Promise<FolderHandle>;
 
 const picker = (): Picker | undefined => (typeof window !== 'undefined' ? (window as unknown as { showDirectoryPicker?: Picker }).showDirectoryPicker : undefined);
 const POLL_MS = 700;
 const MAX_FILES = 200;
+const SKILL_FILE = 'DEVICE-SKILL.md';
 
 // The chosen folder survives reloads in IndexedDB (a handle can't go in localStorage).
 function db(): Promise<IDBDatabase> {
@@ -62,6 +70,8 @@ class FolderWatch {
   saved: FolderHandle | null = null;
   /** The last file that was run from the folder. */
   last: string | null = null;
+  /** This Bench's DEVICE-SKILL.md is in the folder (written when watching began). */
+  skill = false;
   error: string | null = null;
   private seen = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -73,7 +83,7 @@ class FolderWatch {
     if (!this.supported) return;
     void recall().then(async (h) => {
       if (!h || this.folder) return;
-      if ((await h.queryPermission?.({ mode: 'read' })) === 'granted') await this.start(h);
+      if ((await h.queryPermission?.({ mode: 'readwrite' })) === 'granted') await this.start(h);
       else {
         this.saved = h;
         this.notify();
@@ -86,7 +96,7 @@ class FolderWatch {
     const show = picker();
     if (!show) return;
     try {
-      const h = await show({ id: 'bench-apps', mode: 'read' });
+      const h = await show({ id: 'bench-apps', mode: 'readwrite' });
       await keep(h);
       await this.start(h);
     } catch (e) {
@@ -98,7 +108,7 @@ class FolderWatch {
     const h = this.saved;
     if (!h) return;
     try {
-      if ((await h.requestPermission?.({ mode: 'read' })) !== 'granted') return;
+      if ((await h.requestPermission?.({ mode: 'readwrite' })) !== 'granted') return;
       await this.start(h);
     } catch (e) {
       this.fail(e);
@@ -110,6 +120,7 @@ class FolderWatch {
     this.folder = null;
     this.saved = null;
     this.last = null;
+    this.skill = false;
     void keep(null);
     this.notify();
   }
@@ -120,6 +131,7 @@ class FolderWatch {
     this.saved = null;
     this.error = null;
     this.last = null;
+    this.skill = await writeSkill(h);
     // Only what's saved from now on runs: the files already there are a baseline.
     this.seen = await this.scan(h);
     this.timer = setInterval(() => void this.poll(), POLL_MS);
@@ -179,6 +191,20 @@ class FolderWatch {
   private notify() {
     this.version++;
     for (const fn of this.listeners) fn();
+  }
+}
+
+/** Put this Bench's device skill in the folder, unless an identical copy is there. */
+async function writeSkill(h: FolderHandle): Promise<boolean> {
+  try {
+    const file = await h.getFileHandle(SKILL_FILE, { create: true });
+    if ((await (await file.getFile()).text()) === SKILL) return true;
+    const out = await file.createWritable();
+    await out.write(SKILL);
+    await out.close();
+    return true;
+  } catch {
+    return false;
   }
 }
 

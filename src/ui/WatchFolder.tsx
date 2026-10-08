@@ -7,7 +7,7 @@ export function WatchFolder() {
   if (!folderWatch.supported) {
     return <p className="dim small">Watching a folder for apps needs Chrome or Edge; you can still drop a .lua file on the device.</p>;
   }
-  const { folder, saved, last, error } = folderWatch;
+  const { folder, saved, last, skill, error } = folderWatch;
   return (
     <>
       <div className="row">
@@ -35,7 +35,17 @@ export function WatchFolder() {
           </button>
         )}
       </div>
-      {folder && <p className="dim small">{last ? `Running ${last}. ` : ''}Save a .lua file in it and it runs here.</p>}
+      {folder && (
+        <p className="dim small">
+          {last ? `Running ${last}. ` : ''}Save a .lua file in it and it runs here.
+          {skill && (
+            <>
+              {' '}
+              <code>DEVICE-SKILL.md</code> in it is this Bench's, for Claude.
+            </>
+          )}
+        </p>
+      )}
       {error && <p className="warn small">{error}</p>}
     </>
   );

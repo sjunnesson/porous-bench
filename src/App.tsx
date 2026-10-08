@@ -349,6 +349,7 @@ export default function App() {
                     deviceId: session.deviceId,
                     online: session.status === 'online',
                     watching: folderWatch.folder?.name ?? null,
+                    skillInFolder: folderWatch.skill,
                   })
                 }
               />

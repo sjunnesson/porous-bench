@@ -16,7 +16,8 @@ if (existsSync(join(dir, '.git'))) {
 }
 
 mkdirSync(dir, { recursive: true });
-// DEVICE-SKILL.md: Bench's app prompt downloads a fresh copy here; it's Bench's, not yours.
+// DEVICE-SKILL.md: Bench writes its own copy here while watching the folder (or the app prompt
+// downloads one); it's Bench's, not yours.
 write('.gitignore', '.DS_Store\nDEVICE-SKILL.md\n');
 write(
   'README.md',
@@ -26,7 +27,8 @@ Resident Lua apps I've written for my own bench. This folder sits inside a Bench
 ignores it, and is its own git repo.
 
 Run an app by dropping its \`.lua\` file on Bench, or use **App → Watch a folder for apps**, pick
-this folder, and every file saved here runs on Bench straight away.
+this folder, and every file saved here runs on Bench straight away. Bench then keeps its
+\`DEVICE-SKILL.md\` here for Claude (ignored: it's Bench's, not mine).
 `,
 );
 git('init', '-q', '-b', 'main');

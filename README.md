@@ -356,7 +356,9 @@ folder you run Claude Code in: every `.lua` file saved there runs on Bench strai
 again on each save. The app prompt then tells Claude to just save the file there. Nothing goes
 through the relay, so it works offline and needs no permission to send anything anywhere (Claude
 Code's auto mode can block uploading a file to an outside server, which is what a relay push is).
-Bench remembers the folder; after a reload, one click resumes watching it.
+Bench remembers the folder; after a reload, one click resumes watching it. Bench also writes its
+device skill into the folder as `DEVICE-SKILL.md`, so Claude reads the one that matches the Bench
+you're running (which is why it asks to edit the folder, not just read it).
 
 Press **Connect to relay** in the Resident panel. Bench connects to
 `wss://resident.inanimate.tech/devices/sim-xxxxxxxx` the way the firmware does and shows its device ID.

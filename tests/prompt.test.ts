@@ -59,6 +59,13 @@ describe('app prompt', () => {
     expect(appPrompt({ ...base, device: findDevice('m5stickc-plus2')! })).toContain('240×135 pixels');
   });
 
+  it('has the device skill downloaded fresh, or read from the watched folder Bench wrote it into', () => {
+    expect(appPrompt(base)).toContain('replacing any copy already there');
+    const p = appPrompt({ ...base, watching: 'my-apps', skillInFolder: true });
+    expect(p).toContain("use that copy and don't download one");
+    expect(p).not.toContain('raw.githubusercontent.com');
+  });
+
   it('delivers into the watched folder, with no push, when Bench is watching one', () => {
     const p = appPrompt({ ...base, watching: 'my-apps' });
     expect(p).toContain('Bench is watching my folder `my-apps`');

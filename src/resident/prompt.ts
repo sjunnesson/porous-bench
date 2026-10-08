@@ -23,6 +23,8 @@ export interface PromptInput {
   online: boolean;
   /** The folder Bench is watching for .lua files, if any (just its name: the browser doesn't reveal paths). */
   watching?: string | null;
+  /** Bench wrote its DEVICE-SKILL.md into the watched folder. */
+  skillInFolder?: boolean;
 }
 
 /** What a part offers besides dials and triggers: its own Lua module. */
@@ -152,12 +154,16 @@ function deliverSection({ deviceId, online, watching }: PromptInput): string[] {
 
 /** The prompt, as Markdown. */
 export function appPrompt(input: PromptInput): string {
+  const skill =
+    input.watching && input.skillInFolder
+      ? `Bench keeps it in my folder as \`./DEVICE-SKILL.md\`, written by the Bench I'm running, so it matches exactly: use that copy and don't download one.`
+      : `Download it fresh into the current folder as \`./DEVICE-SKILL.md\`, replacing any copy already there (an old one can be out of date): ${DEVICE_SKILL}.`;
   return [
     'Write a Resident Lua app for my porous.systems Bench setup, for the hardware described below.',
     '',
     '## Skills and references',
     '- Use the Resident Claude Code plugin\'s skills: create-app to write the app (it validates it too), push-app to send it. If they\'re missing: `/plugin marketplace add inanimate-tech/agent-plugins`, then `/plugin install resident@inanimate`.',
-    `- Bench's device skill describes this board, its Lua modules and the Bench drivers. Download it into the current folder as \`./DEVICE-SKILL.md\`: ${DEVICE_SKILL}. Both skills pick it up from there (without it, push-app falls back to the plain M5Stick surface for \`sim-\` devices).`,
+    `- Bench's device skill describes this board, its Lua modules and the Bench drivers. ${skill} Both skills pick it up from there (without it, push-app falls back to the plain M5Stick surface for \`sim-\` devices).`,
     "- Its sections *Which outputs list an app*, *Boards: libraries and memory* and *On a real board (Bench's Mirror)* say how Bench matches apps to hardware and runs them on a real board: follow them.",
     `- Bench itself: ${SITE} (source: ${REPO}).`,
     '',
