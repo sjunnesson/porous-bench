@@ -16,7 +16,8 @@ if (existsSync(join(dir, '.git'))) {
 }
 
 mkdirSync(dir, { recursive: true });
-write('.gitignore', '.DS_Store\n');
+// DEVICE-SKILL.md: Bench's app prompt downloads a fresh copy here; it's Bench's, not yours.
+write('.gitignore', '.DS_Store\nDEVICE-SKILL.md\n');
 write(
   'README.md',
   `# My Bench apps
