@@ -221,17 +221,23 @@ export class RemoteMirror {
   /**
    * Push the app to the device, then keep its inputs in step with Bench's. Once the relay delivers
    * it, the board joins the saved list, labelled with `display` (the one Bench shows).
+   *
+   * `tz`, the zone Bench's apps run in, goes first, so the app's local time matches Bench's from its
+   * `init`. It travels on Bench's own channel, which Bench's firmware listens to, and not as a
+   * Resident `hello`: a hello also makes the board drop un-channelled messages until it reboots, and
+   * /resident:push-app still sends those. Other firmware drops it and stays on UTC.
    */
-  async start(app: { name: string; code: string }, source: NonNullable<RemoteMirror['source']>, display?: { id: string; name: string }): Promise<void> {
+  async start(app: { name: string; code: string }, source: NonNullable<RemoteMirror['source']>, opts: { display?: { id: string; name: string }; tz?: string } = {}): Promise<void> {
     if (!this.deviceId) return;
     this.source = source;
     this.reader = new SnapshotReader();
     this.last = '';
     this.set('pushing', `Sending ${app.name}…`);
     try {
+      if (opts.tz) await send(this.deviceId, { channel: 'bench', type: 'timezone', data: { tz: opts.tz } }).catch(() => 0);
       const status = await send(this.deviceId, { channel: 'system', type: 'app', code: remoteApp(app.code), description: `${app.name} (from Bench)` });
       if (!this.result(status)) return;
-      this.remember(display);
+      this.remember(opts.display);
     } catch (e) {
       this.set('error', `Couldn't reach the relay: ${e instanceof Error ? e.message : e}`);
       return;

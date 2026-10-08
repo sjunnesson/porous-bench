@@ -18,6 +18,8 @@ interface Props {
   source: () => MirrorSource;
   /** Show this display on Bench (a saved board's, when Bench shows another). */
   onShow: (displayId: string) => void;
+  /** The time zone Bench's apps run in, sent to the board so its local time matches. */
+  tz: string;
 }
 
 const STATUS = {
@@ -35,7 +37,7 @@ const label = (d: SavedDevice) => (d.displayName ? `${d.id} · ${d.displayName.r
  * Run the open app on a real Resident device, driven by this bench's virtual inputs. Boards the relay
  * has reached are kept in a menu, so picking one replaces typing its ID.
  */
-export function RemotePanel({ device, board, app, source, onShow }: Props) {
+export function RemotePanel({ device, board, app, source, onShow, tz }: Props) {
   useSyncExternalStore(remote.subscribe, remote.getVersion);
   const [draft, setDraft] = useState(remote.deviceId);
   const active = remote.active;
@@ -114,7 +116,7 @@ export function RemotePanel({ device, board, app, source, onShow }: Props) {
             disabled={!draft.trim()}
             onClick={() => {
               remote.setDeviceId(draft);
-              void remote.start(app, source, { id: device.id, name: device.name });
+              void remote.start(app, source, { display: { id: device.id, name: device.name }, tz });
             }}
           >
             Mirror

@@ -248,7 +248,7 @@ export default function App() {
     [run, bench],
   );
   useEffect(() => {
-    if (run && remote.active) void remote.start({ name: entry.name.replace(/^▶ /, ''), code: entry.code }, mirrorSource, { id: device.id, name: device.name });
+    if (run && remote.active) void remote.start({ name: entry.name.replace(/^▶ /, ''), code: entry.code }, mirrorSource, { display: { id: device.id, name: device.name }, tz: session.zone.name });
   }, [run, mirrorSource]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byTech = (['lcd', 'amoled', 'oled', 'epaper'] as const).map((tech) => ({ tech, list: devices.filter((d) => d.tech === tech) }));
@@ -376,7 +376,7 @@ export default function App() {
             <WatchFolder />
           </Panel>
           <ResidentPanel code={entry.code} appName={entry.name.replace(/^▶ /, '')} />
-          {run && <RemotePanel device={device} board={board} app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} onShow={(id) => (setOutputKind('display'), setDeviceId(id))} />}
+          {run && <RemotePanel device={device} board={board} app={{ name: entry.name.replace(/^▶ /, ''), code: entry.code }} source={mirrorSource} onShow={(id) => (setOutputKind('display'), setDeviceId(id))} tz={session.zone.name} />}
           <Console lines={logs} onClear={() => setLogs([])} />
         </aside>
         {run && (

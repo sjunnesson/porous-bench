@@ -74,7 +74,11 @@ enter your network. The screen then shows the 8-character device ID.
   RTS first, then DTR.
 - **No coredump partition**, so `esp_core_dump_flash: No core dump partition found!` at boot is
   expected.
-- No timezone: the board runs on UTC.
+- **Local time is UTC until Bench mirrors here.** Before each app it mirrors, Bench sends the zone
+  its own apps run in (`{channel: "bench", type: "timezone", data: {tz}}`), and the board applies it
+  with `setTimezone` (one lookup through ezTime's server, up to 2 s; the same zone again is skipped,
+  and a reboot forgets it). Not as a Resident `hello`, which would set the zone too but also make the
+  board drop un-channelled messages until reboot, and `/resident:push-app` still sends those.
 
 ## Memory
 

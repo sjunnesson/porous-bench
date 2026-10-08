@@ -303,8 +303,12 @@ describe('saved boards', () => {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
     });
-    vi.stubGlobal('fetch', async () => ({ status }));
-    return { m: new RemoteMirror(), store };
+    const sent: { channel: string; type: string; data?: unknown }[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+      sent.push(JSON.parse(init.body));
+      return { status };
+    });
+    return { m: new RemoteMirror(), store, sent };
   }
   const app = { name: 'hello', code: 'function init(ctx) end' };
   const source = () => ({ controls: [], bench: new Bench(new SimClock()), buttons: {} });
@@ -316,10 +320,10 @@ describe('saved boards', () => {
   it('keeps a board once the relay has delivered to it, newest first, with its display', async () => {
     const { m, store } = mirror(200);
     m.setDeviceId('78bf172a');
-    await m.start(app, source, epaper);
+    await m.start(app, source, { display: epaper });
     m.stop();
     m.setDeviceId('94e41dfe');
-    await m.start(app, source, c6);
+    await m.start(app, source, { display: c6 });
     m.stop();
     expect(m.saved).toEqual([
       { id: '94e41dfe', display: c6.id, displayName: c6.name },
@@ -327,7 +331,7 @@ describe('saved boards', () => {
     ]);
     // Mirroring the older one again moves it back to the top.
     m.setDeviceId('78bf172a');
-    await m.start(app, source, epaper);
+    await m.start(app, source, { display: epaper });
     m.stop();
     expect(m.saved.map((d) => d.id)).toEqual(['78bf172a', '94e41dfe']);
     expect(new RemoteMirror().saved).toEqual(JSON.parse(store.get('bench:remote-devices')!));
@@ -336,16 +340,25 @@ describe('saved boards', () => {
   it("doesn't keep an ID the relay couldn't reach, and forgets on request", async () => {
     const { m } = mirror(503);
     m.setDeviceId('typo1234');
-    await m.start(app, source, c6);
+    await m.start(app, source, { display: c6 });
     m.stop();
     expect(m.saved).toEqual([]);
 
     const ok = mirror(200).m;
     ok.setDeviceId('94e41dfe');
-    await ok.start(app, source, c6);
+    await ok.start(app, source, { display: c6 });
     ok.stop();
     ok.forget('94e41dfe');
     expect(ok.saved).toEqual([]);
+  });
+
+  it("sends Bench's time zone on its own channel before the app, never as a hello", async () => {
+    const { m, sent } = mirror(200);
+    m.setDeviceId('94e41dfe');
+    await m.start(app, source, { display: c6, tz: 'Europe/Stockholm' });
+    m.stop();
+    expect(sent.map((b) => `${b.channel}:${b.type}`)).toEqual(['bench:timezone', 'system:app']);
+    expect(sent[0].data).toEqual({ tz: 'Europe/Stockholm' });
   });
 
   it('lists the one ID Bench remembered before it kept a list', () => {

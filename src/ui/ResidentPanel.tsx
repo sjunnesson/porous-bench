@@ -84,9 +84,6 @@ export function ResidentPanel({ code, appName }: Props) {
           </p>
         </div>
       )}
-      <p className="dim small">
-        Time zone: {session.zone.name} {session.zoneFromHost ? '(from host hello)' : '(browser)'}
-      </p>
 
       {code !== null && (
         <>

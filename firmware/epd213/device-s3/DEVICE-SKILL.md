@@ -167,7 +167,7 @@ end
 
 function on_tick(ctx)
   if not datetime.synced() then return end   -- 1970 until Wi-Fi sets the clock
-  local now = datetime.now()                 -- UTC on this board
+  local now = datetime.now()                 -- local: UTC, or Bench's zone once it has mirrored here
   local hhmm = now:strftime("%H:%M")
   if hhmm ~= shown then               -- only flip when the minute changes
     shown = hhmm
@@ -261,8 +261,9 @@ end
 - Ghosting builds up over partial refreshes; the periodic full refresh clears it. Call
   `screens.refresh("main")` after a big layout change if you want it crisp right away (it flashes).
 - `screen` and `lgfx` share one frame, so they can be mixed; `lgfx` is preferred.
-- The clock syncs over Wi-Fi at boot (`datetime.synced()`); the board's zone is UTC, so
-  `datetime.now()` is UTC unless the app passes a zone.
+- The clock syncs over Wi-Fi at boot (`datetime.synced()`). Local time (`datetime.now()`) is UTC,
+  or the zone Bench runs in once Bench has mirrored an app here; `datetime.now(datetime.UTC)` is
+  always UTC.
 
 ## Validation stubs
 

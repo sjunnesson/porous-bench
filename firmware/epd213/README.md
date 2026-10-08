@@ -71,7 +71,11 @@ your network. The panel then shows the 8-character device ID.
 - **No `lvgl`.** `device-lvgl/` builds (2.35 MB) and `lv_init()` is cheap (2 KB), but the first
   `lvgl.bind` costs ~30 KB for good (luavgl's bindings, the display, its draw buffer), which leaves
   too little to compile and run Bench's LVGL apps over TLS. LVGL apps need a board with PSRAM.
-- No timezone: the board runs on UTC.
+- **Local time is UTC until Bench mirrors here.** Before each app it mirrors, Bench sends the zone
+  its own apps run in (`{channel: "bench", type: "timezone", data: {tz}}`), and the board applies it
+  with `setTimezone` (one lookup through ezTime's server, up to 2 s; the same zone again is skipped,
+  and a reboot forgets it). Not as a Resident `hello`, which would set the zone too but also make the
+  board drop un-channelled messages until reboot, and `/resident:push-app` still sends those.
 - **While Bench mirrors, IO12 is ignored.** Bench's shim drops the board's own tap/hold events and
   replays the taps and holds Bench recognised on its buttons A and B, so both screens count the
   same. IO12 still works for apps pushed without Bench, and for the boot countdown.

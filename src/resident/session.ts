@@ -41,7 +41,6 @@ class ResidentSession {
   readonly relay: ResidentRelay;
   live: LiveApp | null = savedLive();
   zone = new Zone();
-  zoneFromHost = false;
   /** The Resident app running now, if the current sketch is one. */
   host: ResidentHost | null = null;
   /** Console sink, set by the UI. */
@@ -72,7 +71,6 @@ class ResidentSession {
       onTimezone: (tz) => {
         if (!Zone.valid(tz)) return this.log('warn', `relay: unknown time zone '${tz}'`);
         this.zone = new Zone(tz);
-        this.zoneFromHost = true;
         this.log('info', `relay: time zone ${tz}`);
         this.notify();
       },

@@ -199,7 +199,8 @@ end
 - `screen` and `lgfx` share one frame, so they can be mixed; `lgfx` is preferred.
 - Centre important things: the rounded corners eat ~20 px diagonally, the top and bottom edges
   less so.
-- The clock syncs over Wi-Fi at boot; the board's zone is UTC.
+- The clock syncs over Wi-Fi at boot. Local time (`datetime.now()`) is UTC, or the zone Bench runs
+  in once Bench has mirrored an app here; `datetime.now(datetime.UTC)` is always UTC.
 
 ## Validation stubs
 

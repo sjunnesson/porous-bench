@@ -92,6 +92,21 @@ void setup() {
                   RESIDENT_HOST, wsPath.c_str());
   });
 
+  // Bench sends the time zone its apps run in before each app it mirrors
+  // here, so a clock shows the same time on both screens. It comes on Bench's
+  // own channel, not as a Resident `hello`: a hello would also make the board
+  // drop un-channelled messages until reboot, which /resident:push-app still
+  // sends. setTimezone looks the zone up once (ezTime, up to 2 s); the same
+  // zone again is skipped, and a failed lookup leaves the board on UTC.
+  sandbox.onMessageWithChannel("bench", [](const char*, const char* type, JsonDocument& doc) {
+    if (strcmp(type, "timezone") != 0) return;
+    static String applied;
+    String tz = doc["data"]["tz"] | "";
+    if (tz.isEmpty() || (tz == applied && sandbox.hasTimezone())) return;
+    applied = tz;
+    sandbox.setTimezone(tz.c_str());
+  });
+
   sandbox.setup();
   Serial.printf("[lua] %u bytes stayed in the shared heap; arena %u KB, %u free for apps\n",
                 (unsigned)luaArena.before(), (unsigned)(luaArena.size() / 1024),

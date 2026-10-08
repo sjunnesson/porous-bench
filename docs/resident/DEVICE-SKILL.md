@@ -94,6 +94,8 @@ Bench's Real device panel pushes the open app to a Resident device and drives it
   counts Bench's taps. Touches on Bench's screen are replayed the same way, in order with their
   points, and the board's own touch panel is ignored while Bench mirrors.
 - E-paper: the real panel refreshes in the background, newest frame wins, exactly as Bench shows it.
+- Local time: Bench sends its time zone before each app, so `datetime.now()` reads the same on both
+  screens on boards running Bench's firmware. Other firmware stays on UTC.
 - An app the board can't load (out of memory, a module it lacks) leaves the previous app on screen:
   Bench only knows the relay took it. The Board line in Bench tells you what fits.
 
