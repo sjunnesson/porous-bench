@@ -64,7 +64,7 @@ The board driving the output decides what an app gets. Bench shows it under the 
 
 | Board | Libraries | Memory for apps |
 |---|---|---|
-| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Waveshare ESP32-S3-Touch-AMOLED-1.32, Waveshare ESP32-S3-(Touch-)AMOLED-1.91 | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
+| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Waveshare ESP32-S3-Touch-AMOLED-1.32, Waveshare ESP32-S3-AMOLED-1.91 and its Touch version | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
 | ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~70 KB |
 | Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`, `lvgl` | not measured yet |
 
@@ -77,8 +77,8 @@ once touched.
 Bench's Real device panel pushes the open app to a Resident device and drives it from the bench:
 
 - The app travels wrapped in a small shim (only the stand-ins it uses, minified) that defines
-  `dial`, `trigger`, `light`, `pir`, `climate`, `touch`, `ld2410`, `imu` and a silent `buzzer` where
-  the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
+  `dial`, `trigger`, `light`, `pir`, `climate`, `touch`, `ld2410`, `imu`, `touchscreen` and a silent
+  `buzzer` where the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
   unchanged.
 - Buttons A and B: the taps and holds Bench recognises are replayed on the board, and the board's
   own keys are ignored while Bench mirrors, so both screens count the same. `button.press_count()`
