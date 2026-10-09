@@ -112,7 +112,7 @@ end
 if not imu then
   imu = {
     accel = function() local a = __bench.s.imu or { 0, 0, 1 } return a[1], a[2], a[3] end,
-    gyro = function() return 0, 0, 0 end,
+    gyro = function() local a = __bench.s.imu or {} return a[4] or 0, a[5] or 0, a[6] or 0 end,
     temp = function() return 0 end,
   }
 end
@@ -177,10 +177,22 @@ local function __bench_apply(ctx, data, deliver)
   end
   local s = data.s or {}
   local before = __bench.s
+  -- A reading an update left out (to stay under the relay's size limit) keeps its last value.
+  for k, v in pairs(before) do if s[k] == nil then s[k] = v end end
   __bench.s = s
   -- Changes only: the first reading of a sensor is where it starts, not an event.
+-- @@part pir
   if s.pir and before.pir and before.pir.motion ~= s.pir.motion then deliver(ctx, "motion", { moving = s.pir.motion }) end
+-- @@end
+-- @@part touch
   if s.touch and before.touch and before.touch.touched ~= s.touch.touched then deliver(ctx, "touch", { touched = s.touch.touched }) end
+-- @@end
+-- @@part ld2410
+  local r, was = s.radar, before.radar
+  if r and was and (r.moving ~= was.moving or r.still ~= was.still) then
+    deliver(ctx, "presence", { moving = r.moving, still = r.still, distance_cm = r.distance_cm })
+  end
+-- @@end
 end
 
 -- @@APP@@

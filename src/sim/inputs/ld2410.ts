@@ -6,7 +6,7 @@
 //                   statDist(LE16) statEnergy | detectDist(LE16) | 55 00 | F8 F7 F6 F5
 
 import type { SimClock } from '../clock';
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface LD2410Report {
   /** bit0 = moving target, bit1 = stationary target */
@@ -340,7 +340,3 @@ function scripted(mode: RadarMode, t: number): { x: number; y: number; present: 
     present: true,
   };
 }
-
-export const ld2410 = (opts: LD2410Options = {}): InputSpec<LD2410> => ({
-  create: ({ clock }) => new LD2410(opts, clock),
-});

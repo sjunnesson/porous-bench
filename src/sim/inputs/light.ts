@@ -1,4 +1,4 @@
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface LightOptions {
   label?: string;
@@ -39,5 +39,3 @@ export class LightSensor extends SimInput {
     return Math.min(4095, Math.max(0, Math.round(this.v * 4095) + n));
   }
 }
-
-export const light = (opts: LightOptions = {}): InputSpec<LightSensor> => ({ create: () => new LightSensor(opts) });

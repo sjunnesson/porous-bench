@@ -102,16 +102,6 @@ export function ledProfile(o: Exclude<Output, { kind: 'display' }>): DeviceProfi
   };
 }
 
-/** The profile an output runs on: the display module, or the LED chain. */
-export function outputProfile(o: Output, findDevice: (id: string) => DeviceProfile | undefined, fallback: DeviceProfile): DeviceProfile {
-  return o.kind === 'display' ? (findDevice(o.device) ?? fallback) : ledProfile(o);
-}
-
-/** Which apps fit an output: strip apps run on rings too (both are one chain). */
-export function appTarget(o: Output): 'display' | 'strip' | 'matrix' {
-  return o.kind === 'ring' ? 'strip' : o.kind;
-}
-
 /** LEDs in cells: how big the drawing is (a ring needs a square around its circle). */
 export function ledCells(p: DeviceProfile): { w: number; h: number } {
   const layout = p.look.leds?.layout;

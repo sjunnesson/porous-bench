@@ -1,12 +1,15 @@
 // The sketch's external hardware as parts on the desk next to the device, drawn in the same ghosted
 // linework: a rotary encoder, tactile buttons, a slide pot, a piezo buzzer, an LD2410 radar with
-// its detection fan, an LDR light sensor, a PIR, a DHT22 and a touch pad. Each one is live: it shows its input's state and you can work it with the mouse.
+// its detection fan, an LDR light sensor, a PIR, a DHT22, a touch pad (or a TTP223 module) and a
+// GY-521 IMU, and the dev board they're wired to. Each one is live: it shows its input's state and
+// you can work it with the mouse.
 // Units are mm; the desk is the xy plane and +z points up out of it, towards the viewer.
 
 import * as THREE from 'three';
 import type { Button } from '../../sim/inputs/button';
 import type { Buzzer } from '../../sim/inputs/buzzer';
 import { type Climate, TEMP_RANGE } from '../../sim/inputs/climate';
+import type { Imu } from '../../sim/inputs/imu';
 import type { SimInput } from '../../sim/inputs/input';
 import type { Knob } from '../../sim/inputs/knob';
 import { FOV_DEG, type LD2410, MAX_RANGE_M } from '../../sim/inputs/ld2410';
@@ -350,7 +353,7 @@ function piezo(input: Buzzer): Peripheral {
   };
 }
 
-/** HLK-LD2410 module with its 120° detection fan on the desk and the target walking in it. */
+/** HLK-LD2410C module with its 120° detection fan on the desk and the target walking in it. */
 function radar(input: LD2410): Peripheral {
   const root = new THREE.Group();
   const scale = 13; // mm on the desk per metre in the room
@@ -706,34 +709,101 @@ function dht(input: Climate): Peripheral {
   };
 }
 
-/** A capacitive touch pad: a round copper pad on a small board. Press and hold to touch it. */
-function touchPad(input: Touch): Peripheral {
+/**
+ * A capacitive touch pad: a round copper pad on a small board. Press and hold to touch it. On a chip
+ * without touch sensing (`ttp223`) it's a TTP223 module instead, as the Wiring view has it: a
+ * smaller board with the sensing chip and three pins.
+ */
+function touchPad(input: Touch, ttp223 = false): Peripheral {
   const root = new THREE.Group();
-  root.add(block(20, 20, 1.6));
-  const R = 7;
-  root.add(ring(R, 1.65));
-  root.add(ring(R + 1.2, 1.65, LINE_DIM)); // the keep-out around the copper
-  const pad = disc(R, 1.7);
+  const [w, h] = ttp223 ? [15, 11] : [20, 20];
+  root.add(block(w, h, 1.6));
+  const R = ttp223 ? 4 : 7;
+  const cx = ttp223 ? 2.5 : 0;
+  root.add(xy(ring(R, 1.65), cx, 0));
+  root.add(xy(ring(R + 1.2, 1.65, LINE_DIM), cx, 0)); // the keep-out around the copper
+  const pad = xy(disc(R, 1.7), cx, 0);
   root.add(pad);
-  // Trace to the pin on the wire side.
-  root.add(polyline([[-R - 1.2, 0], [-8.5, 0]], 1.65, LINE_DIM));
-  root.add(place(block(1, 1, 2, 0, LINE_DIM), -9, 0, 1.6 + 1));
-  withLabel(root, input.label, -13.5);
+  if (ttp223) {
+    // The TTP223 (SOT-23) by the pad, and VCC, I/O, GND along the wire side.
+    root.add(xy(block(1.6, 3, 1, 1.6, LINE_DIM), -3.6, 0));
+    for (const y of [-2.54, 0, 2.54]) root.add(place(block(1, 1, 2, 0, LINE_DIM), -6.3, y, 1.6 + 1));
+  } else {
+    // Trace to the pin on the wire side.
+    root.add(polyline([[-R - 1.2, 0], [-8.5, 0]], 1.65, LINE_DIM));
+    root.add(place(block(1, 1, 2, 0, LINE_DIM), -9, 0, 1.6 + 1));
+  }
+  withLabel(root, input.label, -h / 2 - 3.5);
   return {
     root,
-    w: 24,
-    h: 28,
-    anchor: new THREE.Vector3(-10, 0, 0.8),
+    w: w + 4,
+    h: h + 8,
+    anchor: new THREE.Vector3(-w / 2, 0, 0.8),
     targets: [pad],
-    handles: [handleOf(root, 20, 20, 1.6)],
+    handles: [handleOf(root, w, h, 1.6)],
     grab: () => {
       input.setDown(true);
       return { move: () => {}, up: () => input.setDown(false) };
     },
-    title: () => `${input.label}: press and hold · touchRead ≈ ${input.touchRead()}`,
+    title: () => (ttp223 ? `${input.label} (TTP223): press and hold · I/O ${input.isPressed() ? 'high' : 'low'}` : `${input.label}: press and hold · touchRead ≈ ${input.touchRead()}`),
     update() {
       const down = input.isPressed();
       setFill(pad, down ? NOW : BLUE, down ? 0.85 : 0.1);
+    },
+  };
+}
+
+/**
+ * A GY-521 breakout (MPU-6050) on the desk: it tilts as its IMU does, and dragging across the chip
+ * tilts it (right lowers its right edge, down its bottom edge, as the tilt pad does). A board's own
+ * IMU has no part of its own: the device tilts instead.
+ */
+function gy521(input: Imu): Peripheral {
+  const root = new THREE.Group();
+  const board = new THREE.Group();
+  root.add(board);
+  board.add(block(16, 21, 1.6));
+  // The MPU-6050 (4 × 4 mm) and its pins along the wire side: VCC GND SCL SDA XDA XCL AD0 INT.
+  board.add(xy(block(4, 4, 0.9, 1.6), 1.5, 2));
+  board.add(xy(ring(0.4, 2.55, LINE_DIM), 0.2, 3.3)); // pin 1
+  for (let i = 0; i < 8; i++) board.add(place(block(1, 1, 2, 0, LINE_DIM), -6.5, -8.89 + i * 2.54, 1.6 + 1));
+  const chip = handle(12, 14, 1, 1.6, 1.5, 1);
+  board.add(chip);
+  withLabel(root, input.label, -14);
+  const body = handle(16, 21, 1.6, 0);
+  root.add(body);
+  return {
+    root,
+    w: 20,
+    h: 30,
+    anchor: new THREE.Vector3(-8, 0, 0.8),
+    targets: [chip],
+    handles: [body],
+    grab: (_hit, ray) => {
+      const start = onPlane(root, ray, 1.6);
+      const t0 = input.getTilt();
+      return {
+        move(r) {
+          const p = onPlane(root, r, 1.6);
+          if (start && p) input.setTilt(t0.x + (p.x - start.x) / 25, t0.y - (p.y - start.y) / 25); // 25 mm across: all the way over
+        },
+        up() {},
+      };
+    },
+    title: () => {
+      const t = input.getTilt();
+      return `${input.label} (GY-521): drag across it to tilt it · tilt ${t.x.toFixed(2)}, ${t.y.toFixed(2)} g`;
+    },
+    update() {
+      // As the device tilts with a built-in IMU, eased, with the shake on top.
+      const t = input.getTilt();
+      const tx = Math.asin(Math.max(-1, Math.min(1, t.x))) * 0.75;
+      const ty = Math.asin(Math.max(-1, Math.min(1, t.y))) * 0.75;
+      board.rotation.y += (tx - board.rotation.y) * 0.25;
+      board.rotation.x += (ty - board.rotation.x) * 0.25;
+      const s = input.isShaking() ? 0.8 : 0;
+      const k = performance.now() / 1000;
+      board.position.set(Math.sin(k * 57) * s, Math.sin(k * 43 + 1) * s * 0.6, 0);
     },
   };
 }
@@ -991,7 +1061,14 @@ const MCU: Record<string, { name: string; w: number; h: number; pins: number; ro
   'esp32-s3-devkitc-1-n16r8': { name: 'ESP32-S3-DevKitC-1', w: 62.7, h: 25.4, pins: 22, rowY: 11.4, module: { w: 25.5, h: 18 }, can: { w: 17.6, h: 15.8, x: -2.6 }, usb: { w: 7.4, h: 9, n: 2 } },
   'esp32-devkitc': { name: 'ESP32-DevKitC', w: 54.4, h: 27.9, pins: 19, rowY: 12.7, module: { w: 25.5, h: 18 }, can: { w: 17.6, h: 15.8, x: -2.6 }, usb: { w: 5.8, h: 7.8, n: 1 } },
   'seeed-xiao-esp32s3': { name: 'XIAO ESP32S3', w: 21, h: 17.8, pins: 7, rowY: 7.6, can: { w: 12.5, h: 11, x: 2.4 }, usb: { w: 7.4, h: 9, n: 1 } },
+  // J3 and J4, 19 pins each; the e-paper's ribbon plugs into its FPC connector.
+  'waveshare-esp32-epaper-driver': { name: 'e-Paper ESP32 Driver Board', w: 48.3, h: 29.5, pins: 19, rowY: 13.4, module: { w: 25.5, h: 18 }, can: { w: 17.6, h: 15.8, x: -2.6 }, usb: { w: 7.4, h: 9, n: 1 } },
 };
+
+/** Whether Bench can draw this board on the desk (one with its own display is the device itself). */
+export function hasOutline(boardId: string): boolean {
+  return boardId in MCU;
+}
 
 /**
  * The microcontroller board between the parts and a bare module or LED chain: its PCB, the module's
@@ -1039,10 +1116,11 @@ export function microcontroller(boardId: string): Peripheral | null {
 }
 
 /**
- * A part on the desk for every piece of hardware on the bench, except buttons the device itself
- * provides (`onDevice`) and the IMU, which is shown by tilting the device.
+ * A part on the desk for every piece of hardware on the bench, except what the device itself
+ * provides (`onDevice`): its buttons, and its IMU, shown by tilting the device. `ttp223`: touch is
+ * sensed by a TTP223 module, on a chip without touch pins.
  */
-export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>): Peripheral[] {
+export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>, ttp223 = false): Peripheral[] {
   const parts: Peripheral[] = [];
   const add = (p: Peripheral, input: SimInput) => parts.push({ ...p, input });
   for (const input of hardware) {
@@ -1072,7 +1150,10 @@ export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>):
         add(dht(input as Climate), input);
         break;
       case 'touch':
-        add(touchPad(input as Touch), input);
+        add(touchPad(input as Touch, ttp223), input);
+        break;
+      case 'imu':
+        if (!onDevice.has(input)) add(gy521(input as Imu), input);
         break;
     }
   }

@@ -180,8 +180,12 @@ describe('Bench', () => {
   it('disconnects controls when their part is taken off, and only offers channels that fit', () => {
     const { bench } = setup();
     const d = new Dial({}, bench);
+    const forgotten: string[] = [];
+    bench.onRemove = (id) => forgotten.push(id);
     bench.remove('knob-1');
     expect(d.source).toBe('none');
+    // What was saved for it goes too, so the next knob-1 doesn't inherit its connections or place.
+    expect(forgotten).toEqual(['knob-1']);
     expect(bench.options('dial').map((o) => `${o.connection.part}:${o.connection.channel}`)).toEqual(['pot-1:position']);
     expect(bench.options('trigger').map((o) => o.connection.part)).toEqual(['button-1']);
     expect(bench.specs().map((s) => s.id)).toEqual(['pot-1', 'button-1']);

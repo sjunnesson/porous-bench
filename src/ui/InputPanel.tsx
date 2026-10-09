@@ -44,7 +44,7 @@ export function InputPanel({ run, output, onBind }: Props) {
   useSyncExternalStore(bench.subscribe, bench.getVersion);
   return (
     <>
-      <Panel id="hardware" title="Output">
+      <Panel id="output" title="Output">
         {output}
       </Panel>
       <Panel id="inputs" title="Inputs">

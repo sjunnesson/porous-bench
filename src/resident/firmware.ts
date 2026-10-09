@@ -131,7 +131,10 @@ function planSection(p: DeviceProfile, board?: Board): string[] {
     '3. **Add drivers** (one `Resident::Driver` each, in `lib/drivers/`) so Bench\'s apps run unchanged. Bench\'s device skill is the surface to match: ' +
       DEVICE_SKILL +
       (p.look.leds
-        ? '. Implement its `leds` module exactly (`count`, `width`, `height`, `xy`, `set`, `set_rgb`, `get`, `fill`, `clear`, `hsv`, `brightness`, `show`, and `on_frame(fn, fps)` as a frame timer calling the app between ticks; if Resident can\'t call into Lua from a driver timer, say so and document `on_tick` as the fallback).'
+        ? '. Implement its `leds` module exactly (`count`, `width`, `height`, `xy`, `set`, `set_rgb`, `get`, `fill`, `clear`, `hsv`, `brightness`, `show`, and `on_frame(fn, fps)` as a frame timer calling the app between ticks; if Resident can\'t call into Lua from a driver timer, say so and document `on_tick` as the fallback).' +
+          (p.look.leds.layout === 'grid'
+            ? ` Then \`lgfx\` on the matrix, as Bench has it: a ${p.width}×${p.height} canvas (one pixel per LED) whose \`flip()\` copies each pixel to its LED through \`xy\` and shows the chain, so Bench's matrix apps that draw text and shapes run unchanged.`
+            : '')
         : '. Start with `screen` (the M5Stick drawing calls) on a full-frame canvas pushed in one transfer by `flip()`, then the board\'s buttons as `tap` / `hold` events, then `lgfx` (the LovyanGFX-style calls Bench apps use). ' +
           (p.touch
             ? `Then the ${p.touch.controller} touch panel as Bench's \`touchscreen\` module: \`read()\` returning \`{ pressed, x, y }\` in the coordinates apps draw in, and \`touch_down\` / \`touch_move\` (at most one per loop) / \`touch_up\` / \`touch_tap\` driver events with \`{ x, y }\` (a tap: released within 500 ms, moved under 10 px). `

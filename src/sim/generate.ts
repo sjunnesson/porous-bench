@@ -1,6 +1,7 @@
 // Write a starter Lua app for the bench as it stands: one control per input on the bench, each
 // connected to its part, shown live on the output (a row per input on a display, a run of LEDs on
-// a strip or ring, a column on a matrix). A working sketch to rewrite, not a finished app.
+// a strip or ring, a column on a matrix). A working sketch to rewrite, not a finished app. On a
+// display it's LVGL where the board has it, and lgfx where it doesn't (the e-paper driver board, the C6).
 
 import { TEMP_RANGE } from './inputs/climate';
 import { MAX_RANGE_M } from './inputs/ld2410';
@@ -35,7 +36,7 @@ function controlsFor(p: PartSpec, many: boolean): Control[] {
       moment(named('Presence'), 'presence'),
     ],
     pir: [moment(named('Motion'), 'motion')],
-    light: [value(named('Light'), 'level', { ...pct, start: 0 })],
+    light: [value(named('Light'), 'level', { ...pct, start: 0 }), moment(named('Dark'), 'dark')],
     climate: [
       value(named('Temp'), 'temperature', { min: TEMP_RANGE[0], max: TEMP_RANGE[1], step: 1, start: 21, unit: ' C' }),
       value(named('Humidity'), 'humidity', { ...pct, start: 40 }),
@@ -194,6 +195,76 @@ end
 `;
 }
 
+/**
+ * The display app in lgfx, for boards without LVGL: the same rows, redrawn only when one changes.
+ * Kept small: on the e-paper driver board it must fit next to the mirror's stand-ins in ~39 KB.
+ */
+function lgfxDisplayApp(presses: string): string {
+  return `local g = lgfx.bind("main")
+local s = screens.get("main")
+local W, H = g:width(), g:height()
+local paper = s.scheme == "light" -- e-paper: every change is a slow refresh
+local BG = paper and 0xFFFFFF or 0x000000
+local FG = paper and 0x000000 or 0xFFFFFF
+local ACCENT = s.depth == 16 and 0x5AC8FA or FG
+
+-- One row per input: its name and value, and a bar under them. If they don't all fit, the list
+-- pages through them. The built-in font is 6 × 8 px a character at size 1.
+local SIZE = (W >= 200 and H >= 120) and 2 or 1
+local rowH = 11 * SIZE + 7
+local perPage = math.max(1, math.min(#inputs, (H - 4) // rowH))
+local pages = math.ceil(#inputs / perPage)
+local barW = W - 16
+local chars = (barW - 30 * SIZE) // (6 * SIZE) -- a name stops short of its value
+
+${presses}
+
+local page, turned, shown = 0, 0
+local function draw()
+  -- What the screen would show: unchanged, there's nothing to flip (on e-paper, each flip is a refresh).
+  local frame = page
+  for _, input in ipairs(inputs) do
+    frame = frame .. "|" .. (input.dial and input.dial:value() or (input.count or 0) .. (input.down and "*" or ""))
+  end
+  if frame == shown then return end
+  shown = frame
+  g:fillScreen(BG)
+  g:setTextSize(SIZE)
+  g:setTextColor(FG)
+  for k = 1, perPage do
+    local input = inputs[page * perPage + k]
+    if not input then break end
+    local y = 2 + (k - 1) * rowH
+    g:setTextDatum(lgfx.TL_DATUM)
+    g:drawString(input.label:sub(1, chars), 8, y)
+    g:setTextDatum(lgfx.TR_DATUM)
+    g:drawString(input.dial and string.format("%d%s", input.dial:value(), input.unit) or input.count and "x" .. input.count or "", 8 + barW, y)
+    -- A dial fills its bar; a trigger fills it while it's held.
+    y = y + 8 * SIZE + 2
+    g:drawRect(8, y, barW, 3 * SIZE, FG)
+    local fill = input.dial and math.floor(input.dial:fraction() * barW + 0.5) or input.down and barW or 0
+    if fill > 0 then g:fillRect(8, y, fill, 3 * SIZE, ACCENT) end
+  end
+  g:flip()
+end
+
+function on_tick(ctx)
+  for _, input in ipairs(inputs) do
+    if input.trigger then
+      if input.trigger:was_pressed() then pressed(input) end
+      input.down = input.trigger:is_pressed()
+    end
+  end
+  -- More rows than fit: the next page every 3 s (e-paper: every 15 s).
+  if pages > 1 and ctx.time_ms - turned >= (paper and 15000 or 3000) then
+    turned = ctx.time_ms
+    page = (page + 1) % pages
+  end
+  draw()
+end
+`;
+}
+
 function stripApp(presses: string): string {
   return `local n = leds.count()
 leds.brightness(128) -- half power: plenty indoors, and kind to the 5 V supply
@@ -293,8 +364,11 @@ end)
 `;
 }
 
-/** A Lua app that shows every input on the bench on the chosen output. */
-export function benchApp(output: AppOutput, parts: (PartSpec & { builtin?: boolean })[]): string {
+/**
+ * A Lua app that shows every input on the bench on the chosen output. `libraries`: the board's
+ * (`Board.libraries`); without `lvgl`, a display gets the lgfx version.
+ */
+export function benchApp(output: AppOutput, parts: (PartSpec & { builtin?: boolean })[], libraries: string[] = ['screen', 'lgfx', 'lvgl']): string {
   // The board's own buttons already drive the app's A and B, so they aren't listed again.
   const boardButton = (p: (typeof parts)[number]) => p.kind === 'button' && !!p.builtin;
   const inputs = parts.filter((p) => !boardButton(p) && p.kind !== 'buzzer');
@@ -308,8 +382,8 @@ export function benchApp(output: AppOutput, parts: (PartSpec & { builtin?: boole
     seen.set(c.label, n);
     if (n > 1) c.label = `${c.label} (${n})`;
   }
-  const app = output === 'display' ? displayApp : output === 'strip' ? stripApp : matrixApp;
-  const none = controls.length ? '' : '-- Nothing on the bench to read yet: add parts in Hardware, then make the app again.\n';
+  const app = output === 'display' ? (libraries.includes('lvgl') ? displayApp : lgfxDisplayApp) : output === 'strip' ? stripApp : matrixApp;
+  const none = controls.length ? '' : '-- Nothing on the bench to read yet: add parts in Inputs, then make the app again.\n';
   return `${head(output, inputs, hasBuzzer, parts.some(boardButton))}
 
 ${none}${inputsTable(controls)}

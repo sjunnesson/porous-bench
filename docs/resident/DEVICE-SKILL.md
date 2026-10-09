@@ -2,8 +2,9 @@
 
 Bench is a browser simulator that runs Resident apps on a choice of virtual displays. Its board
 surface is the M5StickC Plus2's (`screen`, `imu`, `buzzer`, `button`, two buttons) plus `lgfx`, on
-whichever display the user has selected, plus three Bench drivers for hardware on its desk (`dial`,
-`trigger`, `ld2410`). Apps written for the M5Stick run unchanged; apps that read
+whichever display the user has selected, plus Bench drivers for the hardware on its desk (`dial`,
+`trigger`, `ld2410`, `light`, `pir`, `climate`, `touch`), `touchscreen` on a display with a touch
+panel, and `leds` when the output is an LED chain. Apps written for the M5Stick run unchanged; apps that read
 `screens.get("main")` adapt to every display.
 
 Pass this file to the Resident plugin: `/resident:create-app --device-skill docs/resident/DEVICE-SKILL.md …`
@@ -14,7 +15,7 @@ Pass this file to the Resident plugin: `/resident:create-app --device-skill docs
 
 ```lua
 local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme = "dark" | "light", dpi?, brightness,
-                                --   model, controller, tech = "lcd" | "amoled" | "oled" | "epaper" }  (the last three are Bench extras)
+                                --   model, controller, tech = "lcd" | "amoled" | "oled" | "epaper" | "led" }  (the last three are Bench extras)
 ```
 
 | Display | Size seen by apps | depth | scheme | Notes |
@@ -26,7 +27,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 | Waveshare ESP32-S3-AMOLED-1.91 | 536×240 (landscape) | 16 | dark | AMOLED, black is off; IMU; the Touch version adds a touch panel (`touchscreen`) |
 | 1.3" ST7789 | 240×240 | 16 | dark | |
 | SSD1306 OLED | 128×64 or 128×32 | 1 | dark | colours threshold to lit/unlit at 50% brightness |
-| 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh (0.3 s partial, 2 s full every 10th); it runs in the background and only the newest frame reaches the glass: flip only when something changed |
+| 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh (0.2 s partial, 1.9 s full every 10th); it runs in the background and only the newest frame reaches the glass: flip only when something changed |
 
 On 1-bit screens use pure white for marks on a dark scheme, pure black on a light one.
 
@@ -88,7 +89,8 @@ Bench's Real device panel pushes the open app to a Resident device and drives it
 - The app travels wrapped in a small shim (only the stand-ins it uses, minified) that defines
   `dial`, `trigger`, `light`, `pir`, `climate`, `touch`, `ld2410`, `imu`, `touchscreen` and a silent
   `buzzer` where the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
-  unchanged.
+  unchanged: the readings (the IMU's rotation rate included) and the `dial`, `trigger`, `motion`,
+  `touch` and `presence` events arrive as they do in Bench.
 - Buttons A and B: the taps and holds Bench recognises are replayed on the board, and the board's
   own keys are ignored while Bench mirrors, so both screens count the same. `button.press_count()`
   counts Bench's taps. Touches on Bench's screen are replayed the same way, in order with their
@@ -97,7 +99,8 @@ Bench's Real device panel pushes the open app to a Resident device and drives it
 - Local time: Bench sends its time zone before each app, so `datetime.now()` reads the same on both
   screens on boards running Bench's firmware. Other firmware stays on UTC.
 - An app the board can't load (out of memory, a module it lacks) leaves the previous app on screen:
-  Bench only knows the relay took it. The Board line in Bench tells you what fits.
+  Bench only knows the relay took it. Bench's App menu lists only the apps that fit the chosen board,
+  and says why the others won't run.
 
 ## Lua modules
 
@@ -273,4 +276,19 @@ ld2410 = { begin = function() end, read = function()
            still_cm = 0, still_energy = 0, out = false }
 end }
 buzzer = setmetatable({}, { __index = function() return function() end end })
+light = { read = function() return { level = 0.5, lux = 300, raw = 2048 } end, level = function() return 0.5 end }
+pir = { read = function() return { motion = false } end, motion = function() return false end }
+climate = { read = function() return { temperature = 21, humidity = 40 } end,
+  temperature = function() return 21 end, humidity = function() return 40 end }
+touch = { read = function() return { touched = false, raw = 0 } end, touched = function() return false end }
+touchscreen = { read = function() return { pressed = false, x = 0, y = 0 } end, pressed = function() return false end }
+screens = { get = function()
+  return { name = "main", w = 240, h = 135, shape = "rect", depth = 16, scheme = "dark", brightness = 1,
+           model = "M5StickC Plus2", controller = "ST7789V2", tech = "lcd" }
+end }
+local gfx = setmetatable({ width = function() return 240 end, height = function() return 135 end },
+  { __index = function() return function() return 0 end end })
+lgfx = setmetatable({ bind = function() return gfx end }, { __index = function() return 0 end })
+leds = setmetatable({ count = function() return 30 end, width = function() return 30 end, height = function() return 1 end },
+  { __index = function() return function() return 0 end end })
 ```

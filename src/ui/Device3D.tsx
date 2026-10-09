@@ -5,6 +5,7 @@ import type { SimClock } from '../sim/clock';
 import type { Imu } from '../sim/inputs/imu';
 import type { SketchRun } from '../sim/runner';
 import { drawLeds, ledCells } from '../sim/leds';
+import { touchByModule } from '../sim/wiring';
 import { buildModel, type ModelButton } from './three/model';
 import { buildPeripherals, type Grab, microcontroller, type Peripheral, wire, wirePath } from './three/peripherals';
 
@@ -85,8 +86,8 @@ function nearestOnRect(p: THREE.Vector3, box: THREE.Box3): THREE.Vector3 {
  *
  * Mouse: drag empty space to orbit (double-click to reset and fit); press a button, knob, pot or the
  * radar to use it; drag the body of the device or of a part to slide it across the desk (⌥ Option-drag
- * moves anything; double-click it to put it back); shift-drag the device to tilt it when the sketch
- * has an IMU. F fits everything in view. Until you zoom or pan, the view keeps everything fitted.
+ * moves anything; double-click it to put it back); shift-drag the device to tilt it when its board
+ * has an IMU of its own (an IMU you added is a GY-521 on the desk: drag across it). F fits everything in view. Until you zoom or pan, the view keeps everything fitted.
  */
 export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -99,6 +100,10 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
   const orbitRef = useRef({ yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, zoom: 1, panX: 0, panY: 0, manual: false });
   const toolsRef = useRef<ViewTools | null>(null);
   const [movedByHand, setMovedByHand] = useState(false);
+  // A frame that threw: rethrown while rendering, so the ErrorBoundary around the view hears of it
+  // (an error in a requestAnimationFrame callback never reaches React).
+  const [broken, setBroken] = useState<unknown>(undefined);
+  if (broken !== undefined) throw broken;
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -153,17 +158,17 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
     scene.add(pivot);
 
     const hardware = run.bench.parts();
-    const imu = hardware.find((i) => i.kind === 'imu') as Imu | undefined;
     // The device's n-th physical button is the bench's built-in button n; built-in parts have no
-    // part of their own on the desk.
+    // part of their own on the desk. A built-in IMU tilts the device; one you added is a part.
     const inputFor = (b: ModelButton) => (b.input === undefined ? undefined : run.bench.builtinButton(b.input));
     const onDevice = new Set(hardware.filter((p) => run.bench.isBuiltin(p)));
+    const imu = hardware.find((i) => i.kind === 'imu' && onDevice.has(i)) as Imu | undefined;
 
     // External parts on the desk, plus wires back to the device. A bare module or an LED chain
     // can't read them itself: its dev board stands first on the desk, the parts wired to it and it
     // to the output, as they would be on a real desk.
     const mcu = board ? microcontroller(board.id) : null;
-    const parts: Peripheral[] = [...(mcu ? [mcu] : []), ...buildPeripherals(hardware, onDevice)];
+    const parts: Peripheral[] = [...(mcu ? [mcu] : []), ...buildPeripherals(hardware, onDevice, !!board && touchByModule(board.id))];
     // Where you put a part is remembered by its id on the bench.
     const partKeys = parts.map((p, i) => (p === mcu ? 'board' : p.input && run.bench.idOf(p.input)) || `part:${i}`);
     const desk = new THREE.Group();
@@ -718,6 +723,14 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
     let first = true;
     const frame = () => {
       raf = requestAnimationFrame(frame);
+      try {
+        draw();
+      } catch (e) {
+        cancelAnimationFrame(raf);
+        setBroken(e ?? new Error('the 3D view stopped'));
+      }
+    };
+    const draw = () => {
       const quarter = ((mountRef.current() % 4) + 4) % 4;
       if (quarter !== laidOutFor) {
         laidOutFor = quarter;

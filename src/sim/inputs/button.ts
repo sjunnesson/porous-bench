@@ -1,5 +1,5 @@
 import type { SimClock } from '../clock';
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface ButtonOptions {
   label?: string;
@@ -71,7 +71,3 @@ export class Button extends SimInput {
     return this.down ? 0 : 1;
   }
 }
-
-export const button = (opts: ButtonOptions = {}): InputSpec<Button> => ({
-  create: ({ clock }) => new Button(opts, clock),
-});

@@ -24,12 +24,10 @@ export interface RunCallbacks {
 export class SketchRun {
   readonly display: Display;
   readonly inputs: Record<string, SimInput>;
-  /** The parts on the desk: yours (shared across runs when the app passes one in) plus declared ones. */
+  /** The parts on the desk (shared across runs when the app passes one in). */
   readonly bench: Bench;
   /** Abstract controls (dial, trigger), whose hardware the user can swap. */
   readonly controls: Control[] = [];
-  /** Concrete hardware the sketch declared itself. */
-  readonly declared: SimInput[] = [];
   private abort = new AbortController();
   private startMs: number;
   /** Simulated time when loop() last began: while paused, a Step that moves past it runs loop() again. */
@@ -62,10 +60,11 @@ export class SketchRun {
     };
   }
 
-  /** Create an input and put it on the bench; a control picks up the user's saved hardware. */
+  /** Create a control (a dial or trigger); it picks up the hardware the user last chose for it. */
   addInput<T extends SimInput>(name: string, spec: InputSpec<T>): T {
     const existing = this.inputs[name];
     const input = spec.create({ clock: this.clock, bench: this.bench });
+    if (!isControl(input)) throw new Error(`'${name}': a sketch declares dials and triggers; parts go on the bench`);
     if (existing) {
       if (existing.kind === input.kind) {
         if (isControl(input)) input.detach();
@@ -76,14 +75,9 @@ export class SketchRun {
     }
     input.name = name;
     this.inputs[name] = input;
-    if (isControl(input)) {
-      this.controls.push(input);
-      const saved = this.cb.bindingFor?.(name);
-      if (saved) input.bind(saved);
-    } else {
-      this.declared.push(input);
-      this.bench.addDeclared(input);
-    }
+    this.controls.push(input);
+    const saved = this.cb.bindingFor?.(name);
+    if (saved) input.bind(saved);
     return input;
   }
 

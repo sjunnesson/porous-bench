@@ -49,6 +49,9 @@ describe('app prompt', () => {
     expect(p).toContain('16×16 WS2812B matrix');
     expect(p).toContain('leds.on_frame');
     expect(p).toContain('`-- @output matrix`');
+    // A matrix is also an lgfx display, as Bench and needs.ts have it; a strip isn't.
+    expect(p).toContain('also an `lgfx` display, 16×16 pixels');
+    expect(appPrompt({ ...base, device: ledProfile({ kind: 'strip', count: 30 }) })).toContain('there is no lgfx');
     expect(p).not.toContain('lvgl.Anim');
     expect(p).toContain('```lua\nfunction init() end\n```');
     expect(p).toContain('connected to the relay');

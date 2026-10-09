@@ -90,7 +90,8 @@ export class SnapshotReader {
     const touch = bench.first<Touch>('touch');
     if (touch) snap.s.touch = { touched: touch.isPressed(), raw: touch.touchRead() };
     const imu = bench.first<Imu>('imu');
-    if (imu) snap.s.imu = imu.accel().map((x) => round(x));
+    // Acceleration in g, then the rotation rate in °/s.
+    if (imu) snap.s.imu = [...imu.accel().map((x) => round(x)), ...imu.gyro().map((x) => round(x, 1))];
     const radar = bench.first<LD2410>('ld2410');
     if (radar) {
       radar.read();
@@ -263,7 +264,8 @@ export class RemoteMirror {
     const snap = this.reader.read(controls, bench, buttons, gestures, touches);
     let json = JSON.stringify(snap);
     if (json.length > MAX_BYTES) {
-      delete snap.s.radar; // the biggest part; dials and triggers matter most
+      // The biggest part; dials and triggers matter most. The device keeps the last reading it had.
+      delete snap.s.radar;
       json = JSON.stringify(snap);
     }
     const now = Date.now();

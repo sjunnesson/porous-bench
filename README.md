@@ -62,7 +62,7 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
   speed, wiring, porting notes and its physical enclosure. Add a file and it appears in the menu.
 - **Real constraints.** `show()` takes as long as pushing the changed pixels over the real SPI or
   I2C bus, so frame rates are honest (≈40 fps ceiling on a 400 kHz I2C OLED). E-paper refreshes take
-  their real 2 s / 0.3 s, flash on a full refresh and leave ghosting after partial ones.
+  as long as on the real board (1.9 s full, 0.2 s partial), flash on a full refresh and leave ghosting after partial ones.
 - **One kind of app: Lua, the Resident way.** `init`, `on_tick` at 10 FPS, `on_event`, drawing with
   `lgfx`. Resident apps run unmodified, and Bench adds drivers for the hardware on its desk.
 - **Outputs.** Display modules, or addressable LEDs: a WS2812B strip (8–144 LEDs), a ring (12, 16,
@@ -73,9 +73,10 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
   buzzer). Each part has a widget and a 3D model on the desk.
 - **Connections.** An app declares the controls it needs ("speed", "next"); you connect each one to a
   part on the bench, and can rewire it while the app runs.
-- **An app from your bench.** **✦ New app from my bench** writes a Lua app for the output and parts
-  you've chosen: a control for every input, connected to its part and shown live, ready to edit.
-- **A prompt for Claude.** **Copy app prompt** copies a ready-to-paste prompt for writing a new app in
+- **An app from your bench.** **Start from my bench** writes a Lua app for the output and parts
+  you've chosen: a control for every input, connected to its part and shown live, ready to edit (in
+  LVGL where the board has it, in lgfx where it doesn't).
+- **A prompt for Claude.** **Copy a prompt for Claude** copies a ready-to-paste prompt for writing a new app in
   Claude Code: the output, every part on the bench with its `connect` ids, how the open app is wired,
   that app as a reference, the Resident plugin skills and Bench's device skill to use, and how to
   deliver it: into a folder Bench watches, or pushed over the relay.
@@ -93,8 +94,9 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
   a piezo that pulses while it sounds, and the LD2410 with its detection fan and a little character
   who walks, blinks and looks around; click anywhere to send it walking there, or pick it up by the head to carry it. Each part is wired back
   to the device; a bare display module or an LED chain gets the dev board that drives it on the desk
-  (an ESP32-S3 DevKitC-1, ESP32 DevKitC or XIAO ESP32S3), with the parts wired to the board and the
-  board to the output, as on a real desk. With an IMU the device itself tilts and shakes.
+  (an ESP32-S3 DevKitC-1, ESP32 DevKitC, XIAO ESP32S3 or the e-Paper ESP32 Driver Board), with the
+  parts wired to the board and the board to the output, as on a real desk. A board's own IMU tilts
+  and shakes the device itself; one you add is a GY-521 on the desk, and you drag across it to tilt it.
 - **Hot reload.** Edit an app in the code panel and press Run (⌘↵), open a `.lua` file (**Open
   .lua…**) or drop one on the device, or save a bundled one: it restarts in place.
 
@@ -113,7 +115,7 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
 | 0.91″ OLED | OLED, SSD1306 | 128×32 | I2C 400 kHz |
 | Waveshare 2.13″ e-Paper V4 | E-paper, SSD1680, black/white | 122×250 | SPI 10 MHz |
 
-The Device panel shows each one's controller, RAM offsets, wiring and the things a driver must get
+The Output panel shows each one's controller, RAM offsets, wiring and the things a driver must get
 right on hardware (the Waveshare's 34-pixel column offset and INVON, the AMOLED's 6-column offset and
 even-aligned windows, the SSD1306 charge pump, …).
 
@@ -302,8 +304,9 @@ the LED matrix instead of crashing on its first `leds` call.
 
 ### Which apps an output lists
 
-The App menu lists only the apps the chosen output and the board driving it can run; a line under
-it counts the examples left out, and hovering it says why. The board comes from the output: a
+The App menu lists only the apps the chosen output and the board driving it can run; the examples
+left out follow, greyed out, each with why it won't run. Your own app always stays in the menu, and
+says so when the board couldn't run it. The board comes from the output: a
 board with a built-in display (M5StickC Plus2, M5StickS3, the Waveshare boards) is fixed,
 and a bare module or an LED chain gets a **Board** menu (`src/sim/boards.ts`: an ESP32-S3
 DevKitC-1 N16R8, an ESP32 DevKitC or a Seeed Studio XIAO ESP32S3; the 2.13" e-paper offers the
@@ -439,17 +442,18 @@ connected. Use **New ID** in the Receive apps panel to rotate it.
 **Real device** (left column): enter the ID of a Resident device that's online (the one its screen
 shows) and press **Mirror**.
 
-No Resident firmware on the board yet? **Copy firmware prompt** copies a prompt for Claude Code to
-build and flash it for the hardware selected in Bench, and the board chosen under it. For an
+No Resident firmware on the board yet? **Copy a prompt to set up a board** copies a prompt for Claude
+Code to build and flash it for the hardware selected in Bench, and the board chosen under it. For an
 M5StickC Plus2 or M5StickS3 that's Resident's own `m5stick-demo` firmware. For the 2.13" e-paper on
 the Waveshare ESP32 e-Paper Driver Board (or an ESP32-S3 DevKitC-1 N16R8) it's the firmware in
 [`firmware/epd213/`](firmware/epd213/), built and tested on the driver board; the S3 build compiles
-but hasn't run on hardware yet. For other boards it follows Resident's
+but hasn't run on hardware yet. For the Waveshare ESP32-C6-LCD-1.47 it's
+[`firmware/c6-lcd147/`](firmware/c6-lcd147/), tested on the board. For other boards it follows Resident's
 [start-building guide](https://github.com/inanimate-tech/resident/blob/main/docs/start-building.md)
 in stages (bring-up, then Resident, then drivers), using the pins, offsets and quirks Bench knows
 for the part and the platform it needs (pioarduino for the ESP32-C6), plus what bringing up the
 e-paper board taught (check the real part, measure byte-addressable heap, don't block `flip()`). For an LED output it adds a
-`leds` module that matches Bench's. It asks before flashing and ends with the device ID to paste here. Bench sends it the open app, then streams the state of the app's
+`leds` module that matches Bench's (and `lgfx` on a matrix). It asks before flashing and ends with the device ID to paste here. Bench sends it the open app, then streams the state of the app's
 controls and the bench's sensors to it as `bench` events, up to ten times a second and only when
 something changed. Switching apps or restarting sends the new run. **Stop** leaves the device running
 the app with the last values it got.
@@ -482,9 +486,9 @@ In the 3D view everything stands on one desk:
 - **Use a part:** click buttons, turn the encoder ring, slide the pot, click the radar floor.
 - **Move things:** drag the body of the device or of a part (its board, not its controls) to slide
   it across the desk; the wires follow. ⌥ Option-drag moves anything. Double-click something to put
-  it back. Layouts are remembered per device and app. **Tidy** puts every part back in an
+  it back. Layouts are remembered per output, whichever app runs. **Tidy** puts every part back in an
   automatic layout chosen to suit the stage's shape (beside the device, or under it on a tall stage).
-- **Look around:** drag empty space to orbit; scroll or pinch to zoom towards the cursor; right- or
+- **Look around:** drag empty space to orbit; scroll, or pinch on a trackpad, to zoom towards the cursor; right- or
   middle-drag to pan; double-click empty space to reset the angle and fit everything.
 - **Fit:** **Fit all** (or **F**) frames the device, every part and the wires. Until you zoom or pan
   yourself, the view keeps everything fitted as the window resizes or parts are swapped. The **+ / −**
@@ -502,7 +506,7 @@ import type { DeviceProfile } from './types';
 export default {
   id: 'my-oled',
   name: '1.3" OLED 128×64 (SH1106)',
-  tech: 'oled',                       // 'lcd' | 'oled' | 'epaper'
+  tech: 'oled',                       // 'lcd' | 'oled' | 'amoled' | 'epaper' ('led' is for LED chains, src/sim/leds.ts)
   width: 128,
   height: 64,
   controller: 'SH1106',
@@ -522,9 +526,12 @@ export default {
 Enclosure `parts` can be buttons (`input: n` makes one clickable as the app's n-th button),
 ports, pin headers, mounting holes and LEDs, placed on any face of the body.
 
-To add an input type, subclass `SimInput` in `src/sim/inputs/`, export a factory like `button()`, add
-a widget in `src/ui/widgets/` with a case in `InputPanel.tsx`, and give Lua a driver for it: bridge
-functions in `src/resident/host.ts` and the module in `src/resident/lua/prelude.lua`.
+To add an input type, subclass `SimInput` in `src/sim/inputs/` and put it on the bench in
+`src/sim/controls/bench.ts` (`PART_KINDS`, `createPart`, and the `CHANNELS` that dials and triggers
+connect to). Give it a widget in `src/ui/widgets/` (a case in `InputPanel.tsx`), a model on the desk in `src/ui/three/peripherals.ts`
+and the module Bench draws for it in `src/sim/wiring.ts`; then a Lua driver (bridge functions in
+`src/resident/host.ts`, the module in `src/resident/lua/prelude.lua`) and its stand-in in the mirror's
+shim (`src/resident/lua/remote.lua`).
 
 ## Project layout
 
@@ -533,7 +540,8 @@ src/sim/            simulator core, framework-free
   clock.ts            simulated time: pause, step, speed
   gfx.ts              drawing API          framebuffer.ts   MCU-side buffer + dirty rect
   display.ts          show(): bus timing   panels/          LCD, OLED, e-paper physics
-  devices/            one file per display inputs/          button, knob, pot, LD2410, IMU, buzzer
+  devices/            one file per display inputs/          button, knob, pot, touch, IMU, LD2410,
+                                                            PIR, light, climate, buzzer
   runner.ts           runs a program       renderer.ts      flat canvas view
   controls/           the bench, dials and triggers          leds.ts   LED strips, rings, matrices
   generate.ts         writes a Lua app for the bench
@@ -546,7 +554,8 @@ tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol
 docs/resident/      DEVICE-SKILL.md for Resident's agent skills
 my-apps/            your own apps, ignored by this repo (npm run my-apps makes it its own repo)
 scripts/            my-apps.mjs (sets up my-apps/), logo-app.mjs (the logo SVG into its app)
-firmware/           Resident firmware for real boards Bench supports (epd213: the 2.13" e-paper)
+firmware/           Resident firmware for real boards Bench supports (epd213: the 2.13" e-paper;
+                    c6-lcd147: the Waveshare ESP32-C6-LCD-1.47)
 ```
 
 ## Development

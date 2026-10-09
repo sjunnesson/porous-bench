@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { firmwarePrompt } from '../src/resident/firmware';
 import { BOARDS, findBoard } from '../src/sim/boards';
-import { DEFAULT_PARTS, type PartKind, type PartSpec } from '../src/sim/controls/bench';
+import { DEFAULT_PARTS, PART_KINDS, type PartKind, type PartSpec } from '../src/sim/controls/bench';
 import { devices, findDevice } from '../src/sim/devices';
 import { ledProfile } from '../src/sim/leds';
 import { gpioName, onBoard, PINOUTS, type Wiring, wiring } from '../src/sim/wiring';
@@ -22,10 +22,11 @@ function uses(w: Wiring): Map<number, string[]> {
 const pinOf = (w: Wiring, id: string, pin: string) => w.parts.find((p) => p.id === id)?.wires.find((x) => x.pin === pin)?.gpio;
 
 describe('wiring', () => {
-  const every: PartKind[] = ['knob', 'pot', 'button', 'touch', 'imu', 'ld2410', 'pir', 'light', 'climate', 'buzzer'];
+  const every: PartKind[] = PART_KINDS.map((k) => k.kind);
 
   it('wires every kind of part on an ESP32 DevKitC, each GPIO once but the shared I2C bus', () => {
-    const w = wiring(st7789, devkitc, hw(every.map((k) => part(k))));
+    // An I2C display, so every part gets a pin: an ST7789's five leave one short.
+    const w = wiring(findDevice('ssd1306-128x64')!, devkitc, hw(every.map((k) => part(k))));
     expect(w.problems).toEqual([]);
     for (const [gpio, who] of uses(w)) {
       if (gpio === 21 || gpio === 22) continue;
@@ -51,8 +52,10 @@ describe('wiring', () => {
       ['SDA', 23],
       ['RES', 17],
       ['DC', 16],
-      ['BLK', '3V3'],
+      ['BLK', 19],
     ]);
+    // The backlight on a pin of its own, so an app's dimming works on the desk too.
+    expect(w.output?.wires.find((x) => x.pin === 'BLK')?.role).toBe('backlight PWM');
     for (const [, who] of uses(w)) expect(who).toHaveLength(1);
   });
 
@@ -63,10 +66,47 @@ describe('wiring', () => {
     expect(w.problems).toEqual([]);
   });
 
-  it('drives LEDs from GPIO 18 and 5V', () => {
-    const w = wiring(ledProfile({ kind: 'strip', count: 30 }), s3, hw(DEFAULT_PARTS));
+  it('drives LEDs from GPIO 18, and from 5V while USB can light them', () => {
+    const w = wiring(ledProfile({ kind: 'strip', count: 8 }), s3, hw(DEFAULT_PARTS));
     expect(w.output?.wires.map((x) => x.gpio ?? x.rail)).toEqual(['5V', 18, 'GND']);
     expect([...uses(w).keys()].filter((g) => g === 18)).toHaveLength(1);
+  });
+
+  it('gives a chain USB cannot light a 5 V supply of its own, sharing GND', () => {
+    const w = wiring(ledProfile({ kind: 'strip', count: 144 }), s3, []);
+    const [vcc, din, gnd] = w.output!.wires;
+    expect(vcc).toMatchObject({ pin: '5V', supply: '5 V, 9 A or more' });
+    expect(vcc.rail).toBeUndefined();
+    expect(din.gpio).toBe(18);
+    expect(gnd.rail).toBe('GND');
+    expect(w.output!.notes.join(' ')).toMatch(/8\.6 A.*join its − to the board's GND/);
+    expect(w.output!.notes.join(' ')).toMatch(/both ends/);
+    expect(firmwarePrompt(ledProfile({ kind: 'strip', count: 144 }), s3)).toContain('5V → its own supply (5 V, 9 A or more)');
+  });
+
+  it('keeps a board\'s own I2C bus for I2C', () => {
+    // The round AMOLED's connector: GP1, GP2 and the touch panel's bus.
+    const amoled = findDevice('waveshare-esp32-s3-touch-amoled-1.32')!;
+    const w = wiring(amoled, findBoard('waveshare-esp32-s3-touch-amoled-1.32')!, hw([...DEFAULT_PARTS, part('imu')]));
+    expect(uses(w).get(47)).toEqual(['imu 1 SDA']);
+    expect(uses(w).get(48)).toEqual(['imu 1 SCL']);
+    expect(['CLK', 'DT'].map((p) => pinOf(w, 'knob-1', p))).toEqual([1, 2]);
+    expect(w.problems).toEqual(expect.arrayContaining([expect.stringMatching(/^Encoder 1: no free GPIO/), expect.stringMatching(/^Slide pot 1: no free ADC1 pin/), expect.stringMatching(/^Button 1: no free GPIO/)]));
+  });
+
+  it("wires the keys Bench's own firmware reads, and keeps parts off them", () => {
+    const epaper = findDevice('waveshare-epd-2.13-v4')!;
+    const onS3 = wiring(epaper, s3, hw([...DEFAULT_PARTS, part('pot', 2), part('touch'), part('light')]));
+    expect(onS3.builtins.map((b) => b.label)).toEqual(['Key A (the BOOT button)']);
+    expect(onS3.parts[0]).toMatchObject({ label: 'Key B', kind: 'button' });
+    expect(onS3.parts[0].wires.map((x) => x.gpio ?? x.rail)).toEqual([4, 'GND']);
+    expect(uses(onS3).get(4)).toEqual(['Key B 1']);
+    expect(onS3.problems).toEqual([]);
+    const driver = wiring(epaper, findBoard('waveshare-esp32-epaper-driver')!, hw(DEFAULT_PARTS));
+    expect(driver.builtins.map((b) => b.label)).toEqual(['Key A (the IO12 key)']);
+    expect(driver.parts.map((p) => p.id)).toEqual(['knob-1', 'pot-1', 'button-1']);
+    // Another output on the same S3 has no firmware of Bench's, so GPIO 4 is free.
+    expect(wiring(st7789, s3, []).parts).toEqual([]);
   });
 
   it('wires the same bench the same way, and adding a part moves no wire', () => {

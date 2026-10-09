@@ -49,7 +49,7 @@ function boardLines(board: Board | undefined): string[] {
         : `only ~${board.appRamKb} KB of heap to receive, compile and run the app`;
   const lines = [`- It's driven by a ${board.name}: its firmware has ${board.libraries.join(', ')}; ${memory}.`];
   if (board.appRamKb !== undefined && board.appRamKb < 1024) {
-    lines.push(`- Keep the app small: compiling takes ~4x the source, so stay under ~${Math.floor((board.appRamKb * 0.75) / 6 - 2)} KB of Lua, and skip \`datetime\` unless it matters (~35 KB).`);
+    lines.push(`- Keep the app small: receiving and compiling it takes ~6x its size, so stay under ~${Math.floor((board.appRamKb * 0.75) / 6 - 2)} KB of Lua, and skip \`datetime\` unless it matters (~35 KB).`);
   }
   return lines;
 }
@@ -68,7 +68,9 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
           ? `a WS2812B ring of ${n} LEDs (LED 0 at the top, clockwise)`
           : `a WS2812B strip of ${n} LEDs`;
     return [
-      `The output is ${shape}, not a screen: there is no lgfx, screen or lvgl drawing.`,
+      leds.layout === 'grid'
+        ? `The output is ${shape}, not a screen: there is no \`screen\` or \`lvgl\`, but the matrix is also an \`lgfx\` display, ${p.width}×${p.height} pixels, one per LED: text and shapes work with \`lgfx.bind("main")\` and \`g:flip()\` (the built-in 5×7 font fits 8 rows).`
+        : `The output is ${shape}, not a screen: there is no lgfx, screen or lvgl drawing.`,
       '- Use the `leds` module: `leds.set(i, rgb)`, `leds.set_rgb(i, r, g, b)`, `leds.fill`, `leds.hsv(h, s, v)`, `leds.brightness(0..255)`, then `leds.show()`.',
       '- Animate in `leds.on_frame(function(ctx, dt_ms) … end[, fps])`, the LED driver\'s own frame timer (50 fps by default), not in the 10 Hz `on_tick`.',
       `- At full white each LED draws about 60 mA (${((n * 60) / 1000).toFixed(1)} A for all of them): keep brightness moderate.`,
@@ -97,7 +99,7 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
   }
   if (p.tech === 'amoled') lines.push('- AMOLED: every pixel emits its own light and black is off, so a black background looks like no screen at all; it suits dark, high-contrast designs.');
   if (!color && p.tech !== 'epaper') lines.push('- 1-bit: use pure white on black; colours become lit or unlit at 50% brightness.');
-  if (p.tech === 'epaper') lines.push('- E-paper: every `flip()` is a refresh (about 2 s full, 0.3 s partial). Change the screen rarely and don\'t animate.');
+  if (p.epaper) lines.push(`- E-paper: every \`flip()\` is a refresh (about ${p.epaper.fullRefreshMs / 1000} s full, ${p.epaper.partialRefreshMs / 1000} s partial). Change the screen rarely and don't animate.`);
   lines.push('- Put `-- @output display` on the app\'s second line.', NEEDS_LINE);
   return lines;
 }

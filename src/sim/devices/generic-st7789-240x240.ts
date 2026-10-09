@@ -12,6 +12,8 @@ export default {
   porting: [
     'Visible area is the top 240 rows of a 240×320 RAM; rotations 2 and 3 need a row offset of 80.',
     'IPS: needs INVON (0x21).',
+    "No CS pin (it's tied low on the module), so the controller only reads with the clock idling high: SPI mode 3 (TFT_eSPI, LovyanGFX) or mode 2 (Adafruit_ST7789's `init(240, 240, SPI_MODE2)`).",
+    "BLK switches the backlight: PWM on it dims the screen, as Bench's brightness does; left unconnected it stays on.",
   ],
   enclosure: {
     style: 'pcb',

@@ -1,5 +1,5 @@
 import type { SimClock } from '../clock';
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface ImuOptions {
   label?: string;
@@ -80,5 +80,3 @@ export class Imu extends SimInput {
     return [this.rate.x * decay + shake + n(), this.rate.y * decay - shake * 0.6 + n(), shake * 0.3 + n()];
   }
 }
-
-export const imu = (opts: ImuOptions = {}): InputSpec<Imu> => ({ create: ({ clock }) => new Imu(opts, clock) });

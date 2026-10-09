@@ -1,5 +1,5 @@
 import type { SimClock } from '../clock';
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface TouchOptions {
   label?: string;
@@ -68,5 +68,3 @@ export class Touch extends SimInput {
     return base + Math.round((Math.random() * 2 - 1) * 2);
   }
 }
-
-export const touch = (opts: TouchOptions = {}): InputSpec<Touch> => ({ create: ({ clock }) => new Touch(opts, clock) });

@@ -50,7 +50,7 @@ interface Laid {
 
 export function WiringView({ run, board, onSvg }: { run: SketchRun; board: Board; onSvg?(svg: SVGSVGElement | null): void }) {
   const bench = run.bench;
-  const version = useSyncExternalStore(bench.subscribe, bench.getVersion);
+  const version = useSyncExternalStore(bench.subscribe, bench.getVersion, bench.getVersion);
   const w = useMemo(() => wiring(run.device, board, bench.hardware()), [run, board, bench, version]); // eslint-disable-line react-hooks/exhaustive-deps
   const [hot, setHot] = useState<string | null>(null);
 
@@ -224,6 +224,24 @@ function WireRow({ w, wire, y, boardR, partL }: { w: Wiring; wire: WiredPart['wi
       </>
     );
   }
+  if (wire.supply) {
+    // From a supply of its own: a stub off the board's rails, ending at the supply's + terminal.
+    const sx = partL - 110;
+    return (
+      <>
+        <line className="w r-5V" x1={sx} y1={y} x2={partL - 4} y2={y} />
+        <rect className="f-5V" x={sx - 12} y={y - 6} width={12} height={12} />
+        <text className="small" x={partL - 10} y={y - 5} textAnchor="end">
+          OWN 5 V SUPPLY
+        </text>
+        {pinMark}
+        {name}
+        <text className="small" x={partL + PART_W - 12} y={y + 4} textAnchor="end">
+          {wire.supply.toUpperCase()}
+        </text>
+      </>
+    );
+  }
   if (wire.gpio === undefined && !wire.missing) {
     // Left unconnected.
     return (
@@ -272,7 +290,7 @@ function studentNotes(w: Wiring): string[] {
   const general = [
     'Wire it with the USB cable unplugged, and check every wire against the diagram before plugging it back in.',
     ...(w.pinout?.notes ?? []),
-    ...(rails.size ? ['Run 3V3, 5V and GND from the board to a breadboard\'s rails, and take each part\'s supply from there. Every GND joins.'] : []),
+    ...(rails.size ? [`Run ${words(RAILS.filter((r) => rails.has(r)))} from the board to a breadboard's rails, and take each part's supply from there. Every GND joins.`] : []),
     ...(rails.has('5V') ? ['Only the parts drawn on the orange rail go to 5V; everything else gets 3V3. A GPIO takes 3.3 V at most.'] : []),
   ];
   const seen = new Set<string>();
@@ -282,4 +300,9 @@ function studentNotes(w: Wiring): string[] {
     return p.notes.map((n) => `${p.module}: ${n}`);
   });
   return [...general, ...own];
+}
+
+/** "3V3, 5V and GND". */
+function words(list: string[]): string {
+  return list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : (list[0] ?? '');
 }

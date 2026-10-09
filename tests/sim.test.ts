@@ -48,7 +48,8 @@ describe('device catalog', () => {
     expect(lcd.height).toBe(320);
     expect(lcd.ram?.offsetX).toBe(34);
     expect(device('ssd1306-128x64').tech).toBe('oled');
-    expect(device('waveshare-epd-2.13-v4').epaper?.fullRefreshMs).toBe(2000);
+    // As measured on the driver board (firmware/epd213).
+    expect(device('waveshare-epd-2.13-v4').epaper).toMatchObject({ fullRefreshMs: 1900, partialRefreshMs: 200 });
   });
 });
 
@@ -188,7 +189,7 @@ describe('e-paper', () => {
 
     let t0 = clock.now();
     await settle(clock, d.show(), 5);
-    expect(clock.now() - t0).toBeGreaterThanOrEqual(2000); // first show is a full refresh
+    expect(clock.now() - t0).toBeGreaterThanOrEqual(1900); // first show is a full refresh
     expect(d.stats.fullRefreshes).toBe(1);
     const inkR = pixel(d, 5, 5)[0];
     expect(inkR).toBeLessThan(60);
@@ -196,7 +197,7 @@ describe('e-paper', () => {
     d.fillRect(0, 0, 20, 20, colors.WHITE);
     t0 = clock.now();
     await settle(clock, d.show(), 5);
-    expect(clock.now() - t0).toBeLessThan(400); // partial
+    expect(clock.now() - t0).toBeLessThan(300); // partial
     const ghost = pixel(d, 5, 5)[0];
     expect(ghost).toBeLessThan(paperR); // a trace of the old black square remains
     expect(ghost).toBeGreaterThan(paperR - 30);
@@ -209,7 +210,7 @@ describe('e-paper', () => {
     const clock = pausedClock();
     const d = new Display(device('waveshare-epd-2.13-v4'), clock);
     d.fillScreen(colors.WHITE);
-    const first = d.show(); // the first refresh (full, 2 s) starts now
+    const first = d.show(); // the first refresh (full, 1.9 s) starts now
     expect(d.refreshing()).toBe(true);
     // Three more frames while the panel is BUSY: only the last one should reach the glass.
     for (const x of [0, 30, 60]) {

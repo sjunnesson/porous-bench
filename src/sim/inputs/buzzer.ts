@@ -1,5 +1,5 @@
 import type { SimClock } from '../clock';
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface BuzzerOptions {
   label?: string;
@@ -42,5 +42,3 @@ export class Buzzer extends SimInput {
     return this.freq > 0 && now < this.until;
   }
 }
-
-export const buzzer = (opts: BuzzerOptions = {}): InputSpec<Buzzer> => ({ create: ({ clock }) => new Buzzer(opts, clock) });

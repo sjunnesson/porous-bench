@@ -164,10 +164,18 @@ export interface Gpio {
 export interface Pinout {
   /** The GPIOs free for parts, in the order to hand them out (one header before the other). */
   pins: Gpio[];
-  /** The I2C bus for sensors (and an I2C display). */
-  i2c: { sda: number; scl: number };
-  /** A bare display module or an LED chain's pins on a dev board. */
-  display?: { sclk: number; mosi: number; cs?: number; dc: number; rst: number; busy?: number; leds: number };
+  /**
+   * The I2C bus for sensors (and an I2C display). `own`: what the board itself has on it; its pins
+   * then carry only I2C (a button there would pull the touch panel's bus low).
+   */
+  i2c: { sda: number; scl: number; own?: string };
+  /** A bare display module or an LED chain's pins on a dev board; `bl`: an LCD's backlight, dimmed by PWM. */
+  display?: { sclk: number; mosi: number; cs?: number; dc: number; rst: number; busy?: number; bl?: number; leds: number };
+  /**
+   * The keys Bench's own firmware for this board reads as buttons A and B, to GND (`firmware/`).
+   * `onBoard`: the board's own key; `output`: only with that output (the firmware written for it).
+   */
+  keys?: { gpio: number; onBoard?: string; output?: string }[];
   /** The 5 V pin as printed, if a header has one. */
   fiveVolt?: string;
   /** How the board prints a GPIO's name. */
@@ -216,7 +224,12 @@ export const PINOUTS: Record<string, Pinout> = {
     // Not Arduino's 8/9: the e-paper firmware's BUSY is on 9.
     i2c: { sda: 16, scl: 17 },
     // The e-paper pins are firmware/epd213/device-s3's.
-    display: { sclk: 12, mosi: 11, cs: 10, dc: 13, rst: 14, busy: 9, leds: 18 },
+    display: { sclk: 12, mosi: 11, cs: 10, dc: 13, rst: 14, busy: 9, bl: 15, leds: 18 },
+    // firmware/epd213/device-s3: key A is BOOT, key B a button on GPIO 4.
+    keys: [
+      { gpio: 0, onBoard: 'the BOOT button', output: 'waveshare-epd-2.13-v4' },
+      { gpio: 4, output: 'waveshare-epd-2.13-v4' },
+    ],
     fiveVolt: '5V',
     source: 'Espressif ESP32-S3-DevKitC-1 user guide and ESP32-S3 datasheet',
   },
@@ -245,7 +258,7 @@ export const PINOUTS: Record<string, Pinout> = {
       { gpio: 13, touch: 4 },
     ]),
     i2c: { sda: 21, scl: 22 },
-    display: { sclk: 18, mosi: 23, dc: 16, rst: 17, leds: 18 },
+    display: { sclk: 18, mosi: 23, dc: 16, rst: 17, bl: 19, leds: 18 },
     fiveVolt: '5V',
     source: 'Espressif ESP32-DevKitC V4 user guide and ESP32 datasheet',
   },
@@ -259,8 +272,8 @@ export const PINOUTS: Record<string, Pinout> = {
       { gpio: 43, last: true },
     ]),
     i2c: { sda: 5, scl: 6 },
-    // SPI on D8 (SCK) and D10 (MOSI), DC on D9, reset on D3; LED data on D0.
-    display: { sclk: 7, mosi: 9, dc: 8, rst: 4, leds: 1 },
+    // SPI on D8 (SCK) and D10 (MOSI), DC on D9, reset on D3, backlight on D1; LED data on D0.
+    display: { sclk: 7, mosi: 9, dc: 8, rst: 4, bl: 2, leds: 1 },
     fiveVolt: '5V',
     printed: (g) => `D${XIAO_D.indexOf(g)} (GPIO ${g})`,
     notes: ['The XIAO prints its pins as D0–D10: the diagram gives both names.', 'D6 and D7 are the chip\'s serial port, and it prints its boot log on D6 at reset: Bench uses them last.'],
@@ -287,6 +300,8 @@ export const PINOUTS: Record<string, Pinout> = {
       { gpio: 33, adc: 5, touch: 8 },
     ]),
     i2c: { sda: 21, scl: 22 },
+    // firmware/epd213/device: key A is the IO12 key; there is no key B.
+    keys: [{ gpio: 12, onBoard: 'the IO12 key' }],
     fiveVolt: '5V',
     source: 'Waveshare e-Paper ESP32 Driver Board V3 schematic, and the board itself (firmware/epd213)',
   },
@@ -323,7 +338,7 @@ export const PINOUTS: Record<string, Pinout> = {
   },
   'waveshare-esp32-s3-touch-lcd-2': {
     // P1 from the display end, then P2. Left out: USB on 19 and 20, UART0 on 43 and 44. 47 and 48
-    // are the board's own I2C bus (touch and IMU), shared with sensors.
+    // are the board's own I2C bus (touch and IMU), shared with sensors and nothing else.
     pins: pins([
       { gpio: 2, adc: 1, touch: 2 },
       { gpio: 4, adc: 3, touch: 4 },
@@ -344,7 +359,7 @@ export const PINOUTS: Record<string, Pinout> = {
       { gpio: 14, touch: 14 },
       { gpio: 9, adc: 8, touch: 9 },
     ]),
-    i2c: { sda: 48, scl: 47 },
+    i2c: { sda: 48, scl: 47, own: 'the touch panel and the IMU' },
     fiveVolt: '5V',
     notes: ['The header shares its pins with the camera connector: with a camera fitted, only GPIO 18 is free for parts.'],
     source: 'Waveshare ESP32-S3-Touch-LCD-2 pinout and schematic',
@@ -352,7 +367,7 @@ export const PINOUTS: Record<string, Pinout> = {
   'waveshare-esp32-s3-touch-amoled-1.32': {
     // The SH1.0 12-pin connector: GP1, GP2 and the board's own I2C bus (touch, codec). GP0 is BOOT.
     pins: pins([{ gpio: 1, adc: 0, touch: 1 }, { gpio: 2, adc: 1, touch: 2 }, 47, 48]),
-    i2c: { sda: 47, scl: 48 },
+    i2c: { sda: 47, scl: 48, own: 'the touch panel and the audio codec' },
     notes: ['Everything goes through the 12-pin SH1.0 connector: two GPIOs and the I2C bus, so this board takes few parts.'],
     source: 'Waveshare ESP32-S3-Touch-AMOLED-1.32 schematic',
   },
@@ -374,7 +389,7 @@ export const PINOUTS: Record<string, Pinout> = {
       39,
       38,
     ]),
-    i2c: { sda: 40, scl: 39 },
+    i2c: { sda: 40, scl: 39, own: 'the IMU (and the touch panel, on the touch version)' },
     fiveVolt: 'VBUS',
     notes: ['GPIO 26 and 33–37 are printed on the headers, but the PSRAM inside the chip uses them: never wire to them.'],
     source: 'Waveshare ESP32-S3-AMOLED-1.91 pinout and schematic',
@@ -393,6 +408,8 @@ export interface Wire {
   role?: string;
   /** No free pin could take it. */
   missing?: boolean;
+  /** From a supply of its own rather than the board: what it must deliver ("5 V, 4 A or more"). */
+  supply?: string;
   note?: string;
 }
 
@@ -424,6 +441,12 @@ export interface Wiring {
 export function onBoard(device: DeviceProfile, board: Board): DeviceProfile {
   const din = PINOUTS[board.id]?.display?.leds;
   return device.tech === 'led' && din !== undefined && device.wiring?.DIN !== din ? { ...device, wiring: { ...device.wiring, DIN: din } } : device;
+}
+
+/** A chip without touch pins (the ESP32-C6): a touch part is a TTP223 module, on the desk too. */
+export function touchByModule(boardId: string): boolean {
+  const p = PINOUTS[boardId];
+  return !!p && !p.pins.some((g) => g.touch !== undefined);
 }
 
 /** How a GPIO is named on this board ("GPIO 4", or "G26" on an M5Stick). */
@@ -464,7 +487,8 @@ function displayPin(name: string, device: DeviceProfile, p: Pinout | undefined):
     case '5V':
       return { rail: '5V' };
     case 'BLK':
-      return { rail: '3V3', note: 'backlight always on' };
+      // PWM on its pin dims the backlight, as apps do in Bench; no pin, and it's always on.
+      return d?.bl !== undefined ? { gpio: d.bl, role: 'backlight PWM' } : { rail: '3V3', note: 'backlight always on' };
     case 'SCL':
       return i2c ? { gpio: p?.i2c.scl, role: 'I2C SCL' } : { gpio: d?.sclk, role: 'SPI clock' };
     case 'SDA':
@@ -487,18 +511,37 @@ function displayPin(name: string, device: DeviceProfile, p: Pinout | undefined):
   }
 }
 
+/** A WS2812B at full white, mA. */
+const LED_MA = 60;
+/** What a dev board's 5V pin passes on from a USB port, mA. */
+const USB_MA = 500;
+/** LEDs one end of a strip feeds before the far end dims and turns yellow. */
+const FEED_EVERY = 60;
+
 /** The output's wiring on a dev board; undefined when the output is part of the board. */
 function outputWiring(device: DeviceProfile, board: Board, pinout: Pinout | undefined): WiredPart | undefined {
   if (!GENERIC_BOARDS.includes(board.id)) return undefined;
   const header = device.enclosure?.parts?.find((x) => x.kind === 'header' && x.label);
   const names = device.tech === 'led' ? ['5V', 'DIN', 'GND'] : header?.kind === 'header' ? (header.label ?? '').split(/\s+/).filter(Boolean) : [];
+  // More LEDs than USB can light at full white take their 5 V from a supply of their own.
+  const n = device.tech === 'led' ? device.width * device.height : 0;
+  const amps = (n * LED_MA) / 1000;
+  const own = n * LED_MA > USB_MA ? `5 V, ${Math.ceil(amps)} A or more` : undefined;
   const wires: Wire[] = names.map((name) => {
+    if (own && name === '5V') return { pin: name, supply: own };
+    if (own && name === 'GND') return { pin: name, rail: 'GND', note: "and the supply's −" };
     const w = displayPin(name, device, pinout);
     return { pin: name, ...w, ...(w.rail || w.gpio !== undefined ? {} : { missing: true }) };
   });
   const notes =
     device.tech === 'led'
-      ? (device.porting ?? []).slice(0, 3)
+      ? [
+          ...(device.porting ?? []).slice(0, 2),
+          own
+            ? `${n} LEDs at full white draw about ${amps.toFixed(1)} A, more than the board passes on from USB (about ${USB_MA / 1000} A): power them from a ${own} supply, join its − to the board's GND, and leave the board's 5V pin out of it.`
+            : `${n} LEDs at full white draw about ${Math.round(n * LED_MA)} mA, within what the board passes on from USB.`,
+          ...(n > FEED_EVERY ? [`Over ${FEED_EVERY} LEDs, feed 5 V and GND into both ends of the chain too, or the far end dims and turns yellow at full white.`] : []),
+        ]
       : device.bus.kind === 'i2c'
         ? [`On the I2C bus at 0x${(device.bus.i2cAddress ?? 0x3c).toString(16)}, shared with any I2C sensor.`]
         : [];
@@ -513,8 +556,10 @@ export function wiring(device: DeviceProfile, board: Board, hardware: (PartSpec 
   const pinout = PINOUTS[board.id];
   const output = outputWiring(device, board, pinout);
   const problems: string[] = [];
-  // GPIO → who has it; the I2C bus is 'I2C', shared by everything on it.
+  // GPIO → who has it; the I2C bus is 'I2C', shared by everything on it. A board's own bus is
+  // only ever I2C.
   const taken = new Map<number, string>();
+  if (pinout?.i2c.own) for (const g of [pinout.i2c.sda, pinout.i2c.scl]) taken.set(g, 'I2C');
   for (const w of output?.wires ?? []) if (w.gpio !== undefined) taken.set(w.gpio, w.role?.startsWith('I2C') ? 'I2C' : output!.label);
 
   // The plainest free pin that fits; among equals, the next one along the header from this part's
@@ -543,13 +588,31 @@ export function wiring(device: DeviceProfile, board: Board, hardware: (PartSpec 
 
   const parts: WiredPart[] = [];
   const builtins: Wiring['builtins'] = [];
+  // The keys Bench's own firmware reads: on the board, or a button of their own, first.
+  const keys = (pinout?.keys ?? []).filter((k) => !k.output || k.output === device.id);
+  keys.forEach((k, i) => {
+    const label = `Key ${'AB'[i]}`;
+    taken.set(k.gpio, label);
+    if (k.onBoard) builtins.push({ id: `key-${i}`, label: `${label} (${k.onBoard})` });
+    else
+      parts.push({
+        id: `key-${i}`,
+        label,
+        kind: 'button',
+        module: MODULES.button.name,
+        wires: [
+          { pin: '1', gpio: k.gpio, role: `button ${'AB'[i]}` },
+          { pin: '2', rail: 'GND' },
+        ],
+        notes: [...(MODULES.button.notes ?? []), `Bench's firmware for this board reads ${gpioName(pinout, k.gpio)} as ${label.toLowerCase()}, so it stays on that pin.`],
+      });
+  });
   for (const h of hardware) {
     if (h.builtin) {
       builtins.push({ id: h.id, label: h.label });
       continue;
     }
-    const noTouch = h.kind === 'touch' && pinout && !pinout.pins.some((g) => g.touch !== undefined);
-    const module = noTouch ? TTP223 : MODULES[h.kind];
+    const module = h.kind === 'touch' && touchByModule(board.id) ? TTP223 : MODULES[h.kind];
     let last = -1;
     const wires: Wire[] = module.pins.map((p) => {
       if (p.to === null) return { pin: p.name, note: 'not connected' };
@@ -583,7 +646,7 @@ export function wiringLines(w: Wiring): string[] {
   const one = (p: WiredPart) =>
     `${p.label} (${p.module}): ${p.wires
       .filter((x) => !x.note?.startsWith('not connected'))
-      .map((x) => `${x.pin} → ${x.rail ?? (x.gpio !== undefined ? gpioName(w, x.gpio) : '?')}${x.role ? ` (${x.role})` : ''}`)
+      .map((x) => `${x.pin} → ${x.supply ? `its own supply (${x.supply})` : (x.rail ?? (x.gpio !== undefined ? gpioName(w, x.gpio) : '?'))}${x.role ? ` (${x.role})` : ''}`)
       .join(', ')}`;
   return [...(w.output ? [one(w.output)] : []), ...w.parts.map(one)];
 }

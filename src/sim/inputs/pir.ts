@@ -1,5 +1,5 @@
 import type { SimClock } from '../clock';
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface PirOptions {
   label?: string;
@@ -47,5 +47,3 @@ export class Pir extends SimInput {
     return this.motion() ? 1 : 0;
   }
 }
-
-export const pir = (opts: PirOptions = {}): InputSpec<Pir> => ({ create: ({ clock }) => new Pir(opts, clock) });

@@ -14,8 +14,6 @@ import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
 import { benchApp } from './sim/generate';
 import { ledProfile, MATRIX_SIZES, type OutputKind, RING_COUNTS, STRIP_COUNTS } from './sim/leds';
 import { devices, findDevice } from './sim/devices';
-import type { Button } from './sim/inputs/button';
-import type { Knob } from './sim/inputs/knob';
 import { type LogLine, SketchRun } from './sim/runner';
 import type { InputSpecs, Sketch } from './sim/sketch';
 import { About } from './ui/About';
@@ -60,6 +58,25 @@ function saveParts(parts: PartSpec[]) {
     localStorage.setItem('bench:parts', JSON.stringify(parts));
   } catch {
     /* not persisted */
+  }
+}
+
+/** Forget what was saved for a part taken off the bench: connections to it, and its place on each desk. */
+function forgetPart(id: string) {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? '');
+    for (const k of keys) {
+      if (k.startsWith('bench:binding:') && localStorage.getItem(k)?.startsWith(`${id}:`)) localStorage.removeItem(k);
+      if (k.startsWith('bench:desk:')) {
+        const desk = JSON.parse(localStorage.getItem(k) ?? '{}') as Record<string, unknown>;
+        if (id in desk) {
+          delete desk[id];
+          localStorage.setItem(k, JSON.stringify(desk));
+        }
+      }
+    }
+  } catch {
+    /* nothing saved to forget */
   }
 }
 
@@ -166,12 +183,15 @@ export default function App() {
     .map((e) => ({ name: e.name, why: misfits(e.needs!, caps) }))
     .filter((e) => e.why.length);
   const entry = entries.find((s) => s.id === sketchId) ?? entries[0];
+  // Your own app stays in the menu whatever it needs, but says when this output and board can't run it.
+  const liveWhy = useMemo(() => (live ? misfits(appNeeds(live.code), caps) : []), [live, caps]);
 
   // The bench: the board's own hardware plus your parts. It outlives app switches (a new board
   // brings its own built-ins), and every add or remove is saved in this browser.
   const bench = useMemo(() => {
     const b = boardBench(device, clock, loadParts());
     b.onEdit = saveParts;
+    b.onRemove = forgetPart;
     return b;
   }, [device, clock]);
 
@@ -205,31 +225,13 @@ export default function App() {
     };
   }, [entry.sketch, device, clock, bench, restarts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keyboard → buttons and knobs declared by the sketch.
+  // Keyboard → the app's controls (each knows its keys).
   useEffect(() => {
     if (!run) return;
     const handler = (down: boolean) => (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest?.('input, select, textarea')) return;
       let handled = false;
       for (const control of run.controls) if (control.handleKey(e.code, down)) handled = true;
-      for (const input of run.declared) {
-        if (input.kind === 'button') {
-          const b = input as Button;
-          if (b.key === e.code) {
-            b.setDown(down);
-            handled = true;
-          }
-        } else if (input.kind === 'knob') {
-          const k = input as Knob;
-          if (e.code === k.keys.left || e.code === k.keys.right) {
-            if (down) k.turn(e.code === k.keys.left ? -1 : 1);
-            handled = true;
-          } else if (e.code === k.keys.press) {
-            k.button.setDown(down);
-            handled = true;
-          }
-        }
-      }
       if (handled) e.preventDefault();
     };
     const onDown = handler(true);
@@ -347,6 +349,11 @@ export default function App() {
               )}
             </select>
             {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
+            {entry.id === 'resident:live' && liveWhy.length > 0 && (
+              <p className="hint warn">
+                It won't run on this {device.tech === 'led' ? 'output' : 'display'} and board as it is: {liveWhy.join(', ')}. Bench runs it anyway, but a real {board.name.replace(/ \(.*\)$/, '')} wouldn't.
+              </p>
+            )}
 
             <h3>New app</h3>
             <div className="app-actions">
@@ -354,7 +361,7 @@ export default function App() {
                 onClick={() =>
                   session.setLive({
                     name: 'My bench',
-                    code: benchApp(target, bench.hardware()),
+                    code: benchApp(target, bench.hardware(), caps.libraries),
                     source: 'editor',
                     description: 'Every input on your bench, shown live. Edit the code below to make it your own.',
                   })
@@ -396,7 +403,7 @@ export default function App() {
             view={view}
             error={error}
             onDropApp={(name, code) => session.setLive({ name: name.replace(/\.lua$/, ''), code, source: 'file' })}
-            on3dFailed={() => setView((v) => ({ ...v, mode: 'flat' }))}
+            onViewFailed={() => setView((v) => ({ ...v, mode: 'flat' }))}
             notice={notice}
             onDismiss={() => setNotice(null)}
           />

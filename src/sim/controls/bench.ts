@@ -143,8 +143,6 @@ interface Entry {
   part: SimInput;
   /** Built into the board: its n-th button (`button`), or its IMU / buzzer. Not removable. */
   builtin?: { index?: number };
-  /** Put there by a sketch for its own use (concrete hardware), not saved with the bench. */
-  declared?: boolean;
 }
 
 /** What a control would like to connect to first. */
@@ -167,6 +165,9 @@ export class Bench {
   private version = 0;
   /** Called when you add or remove parts, with what to save. */
   onEdit?: (parts: PartSpec[]) => void;
+  /** A part was taken off: whatever was saved for it (its connections, its place on the desk) goes too,
+   *  or the next part given its id would inherit them. */
+  onRemove?: (id: string) => void;
 
   constructor(readonly clock: SimClock) {}
 
@@ -209,16 +210,8 @@ export class Bench {
     if (!e || e.builtin) return;
     this.list = this.list.filter((x) => x !== e);
     for (const [owner, c] of this.links) if (c?.part === id) this.links.set(owner, null);
+    this.onRemove?.(id);
     this.edited();
-  }
-
-  /** A part a sketch declared for its own use (old-style concrete hardware). */
-  addDeclared(part: SimInput): void {
-    let id = part.name || part.kind;
-    while (this.list.some((e) => e.id === id)) id += '+';
-    part.name = id;
-    this.list.push({ id, part, declared: true });
-    this.changed();
   }
 
   parts(): SimInput[] {
@@ -247,13 +240,13 @@ export class Bench {
     if (found) return { part: found, added: false };
     return { part: this.add(kind) as T, added: true };
   }
-  /** Everything on the bench but what a sketch declared: the board's own hardware, then yours. */
+  /** Everything on the bench: the board's own hardware, then yours. */
   hardware(): (PartSpec & { builtin: boolean })[] {
-    return this.list.filter((e) => !e.declared).map((e) => ({ id: e.id, kind: e.part.kind as PartKind, label: e.part.label, builtin: !!e.builtin }));
+    return this.list.map((e) => ({ id: e.id, kind: e.part.kind as PartKind, label: e.part.label, builtin: !!e.builtin }));
   }
   /** What to save: the parts you added. */
   specs(): PartSpec[] {
-    return this.list.filter((e) => !e.builtin && !e.declared).map((e) => ({ id: e.id, kind: e.part.kind as PartKind, label: e.part.label }));
+    return this.list.filter((e) => !e.builtin).map((e) => ({ id: e.id, kind: e.part.kind as PartKind, label: e.part.label }));
   }
 
   // ---- connections ---------------------------------------------------------------------------

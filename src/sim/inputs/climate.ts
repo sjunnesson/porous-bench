@@ -1,4 +1,4 @@
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface ClimateOptions {
   label?: string;
@@ -44,5 +44,3 @@ export class Climate extends SimInput {
     return Math.round(Math.min(100, Math.max(0, this.h + (Math.random() - 0.5) * 0.6)) * 10) / 10;
   }
 }
-
-export const climate = (opts: ClimateOptions = {}): InputSpec<Climate> => ({ create: () => new Climate(opts) });

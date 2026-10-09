@@ -9,6 +9,8 @@ import { Dial, Trigger } from '../src/sim/controls/controls';
 import { findDevice } from '../src/sim/devices';
 import type { DeviceProfile } from '../src/sim/devices/types';
 import { Display } from '../src/sim/display';
+import { appNeeds, misfits, outputCaps } from '../src/resident/needs';
+import { boardsFor } from '../src/sim/boards';
 import { benchApp } from '../src/sim/generate';
 import { ledProfile, MATRIX_SIZES } from '../src/sim/leds';
 import { Imu } from '../src/sim/inputs/imu';
@@ -129,6 +131,18 @@ describe('apps generated from the bench', () => {
     expect(sources).not.toContain('none');
     expect(new Set(sources).size).toBe(sources.length);
   });
+
+  it('writes lgfx instead of LVGL for a board without it, and fits that board', async () => {
+    const code = benchApp('display', parts, ['screen', 'lgfx']);
+    expect(code).not.toContain('lvgl');
+    for (const device of OUTPUTS.display) expect(await runApp(code, device, 600, parts), `lgfx bench app on ${device.id}`).toEqual([]);
+    // The two boards Bench ships tested firmware for, neither with LVGL.
+    for (const id of ['waveshare-epd-2.13-v4', 'waveshare-esp32-c6-lcd-1.47']) {
+      const device = findDevice(id)!;
+      const board = boardsFor(device)[0];
+      expect(misfits(appNeeds(benchApp('display', DEFAULT_PARTS, board.libraries)), outputCaps(device, board)), id).toEqual([]);
+    }
+  }, 60_000);
 
   it('still runs with an empty bench', async () => {
     expect(await runApp(benchApp('matrix', []), OUTPUTS.matrix[0], 200, [])).toEqual([]);

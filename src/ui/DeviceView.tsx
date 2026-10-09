@@ -29,8 +29,8 @@ interface Props {
   error: string | null;
   /** A .lua file was dropped on the device. */
   onDropApp?(name: string, code: string): void;
-  /** The 3D view couldn't start (no WebGL, or its code didn't load): switch to flat. */
-  on3dFailed?(): void;
+  /** The 3D or Wiring view failed (no WebGL, its code didn't load, it threw): switch to flat. */
+  onViewFailed?(): void;
   /** A note from Bench over the stage, until it's dismissed. */
   notice?: string | null;
   onDismiss?(): void;
@@ -42,7 +42,7 @@ interface Stats {
   frameKB: number;
 }
 
-export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFailed, notice, onDismiss }: Props) {
+export function DeviceView({ run, clock, board, view, error, onDropApp, onViewFailed, notice, onDismiss }: Props) {
   const [dragOver, setDragOver] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,12 +54,13 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFail
   const threeD = (view.mode ?? '3d') === '3d';
   const wiringMode = view.mode === 'wiring';
   const [canvas3d, setCanvas3d] = useState<HTMLCanvasElement | null>(null);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  // Why the 3D view gave way to the flat one, shown until 3D is picked again.
-  const [no3d, setNo3d] = useState<string | null>(null);
+  // The wiring diagram, once drawn (none when there's nothing to wire).
+  const [svg, setSvg] = useState<SVGSVGElement | null>(null);
+  // Why the 3D or Wiring view gave way to the flat one, shown until either is picked again.
+  const [viewNote, setViewNote] = useState<string | null>(null);
   useEffect(() => {
-    if (threeD) setNo3d(null);
-  }, [threeD]);
+    if (threeD || wiringMode) setViewNote(null);
+  }, [threeD, wiringMode]);
 
   useEffect(() => {
     const el = stageRef.current;
@@ -134,8 +135,8 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFail
 
   const screenshot = () => {
     if (wiringMode) {
-      if (!svgRef.current) return;
-      const blob = new Blob([new XMLSerializer().serializeToString(svgRef.current)], { type: 'image/svg+xml' });
+      if (!svg) return;
+      const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
       download(blob, `${device.id}-wiring.svg`);
       return;
     }
@@ -170,12 +171,20 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFail
         }}
       >
         {wiringMode ? (
-          <WiringView run={run} board={board} onSvg={(el) => (svgRef.current = el)} />
+          <ErrorBoundary
+            key={`${device.id}|${board.id}`}
+            onError={(err) => {
+              setViewNote(`The wiring diagram didn't draw (${err instanceof Error ? err.message : String(err)}): showing the flat view. Pick Wiring to try again.`);
+              onViewFailed?.();
+            }}
+          >
+            <WiringView run={run} board={board} onSvg={setSvg} />
+          </ErrorBoundary>
         ) : threeD ? (
           <ErrorBoundary
             onError={(err) => {
-              setNo3d(/webgl/i.test(String(err)) ? "3D needs WebGL, which this browser didn't give Bench: showing the flat view." : "The 3D view didn't load: showing the flat view. Reload to try 3D again.");
-              on3dFailed?.();
+              setViewNote(/webgl/i.test(String(err)) ? "3D needs WebGL, which this browser didn't give Bench: showing the flat view." : "The 3D view stopped: showing the flat view. Pick 3D to try again.");
+              onViewFailed?.();
             }}
           >
             <Suspense fallback={null}>
@@ -195,10 +204,11 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFail
             {notice}
           </button>
         ) : (
-          no3d &&
-          !threeD && (
-            <button className="stage-note" onClick={() => setNo3d(null)} title="Dismiss">
-              {no3d}
+          viewNote &&
+          !threeD &&
+          !wiringMode && (
+            <button className="stage-note" onClick={() => setViewNote(null)} title="Dismiss">
+              {viewNote}
             </button>
           )
         )}
@@ -220,7 +230,12 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFail
           {threeD || wiringMode ? '' : ` @ ${options.zoom}×`}
         </span>
         <span title="millis()">t = {(simTime / 1000).toFixed(1)} s</span>
-        <button className="link" onClick={screenshot} title={wiringMode ? 'Save the wiring diagram as an SVG, to print or share' : 'Save a PNG of the display'}>
+        <button
+          className="link"
+          onClick={screenshot}
+          disabled={wiringMode && !svg}
+          title={wiringMode ? (svg ? 'Save the wiring diagram as an SVG, to print or share' : 'Nothing to wire on this bench yet') : 'Save a PNG of the display'}
+        >
           {wiringMode ? 'Save diagram' : 'Screenshot'}
         </button>
       </div>

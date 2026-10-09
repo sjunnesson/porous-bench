@@ -110,6 +110,33 @@ describe('remote mirror', () => {
     expect(t.logs).toEqual(['got\tnote']);
   });
 
+  it("raises the radar's presence events on the board, gives the IMU's rotation, and keeps a reading an update left out", async () => {
+    const t = await device(`
+      ld2410.begin()
+      function on_tick(ctx)
+        local r = ld2410.read()
+        local _, gy = imu.gyro()
+        log.info("tick", tostring(r.moving), r.distance_cm, gy)
+      end
+      function on_event(ctx, e) if e.name == "presence" then log.info("presence", tostring(e.data.moving), e.data.distance_cm) end end`,
+      `imu = nil\n${FIRMWARE}`);
+    expect(t.error).toBeUndefined();
+    const radar = (moving: boolean, cm: number) => ({ connected: true, moving, still: false, distance_cm: cm, moving_cm: cm, moving_energy: 50, still_cm: 0, still_energy: 0, out: moving });
+    send(t.host, { s: { radar: radar(false, 0), imu: [0, 0, 1, 0, 0, 0] } });
+    await t.run(100);
+    expect(t.logs.filter((l) => l.startsWith('presence'))).toEqual([]); // the first reading is where it starts
+    send(t.host, { s: { radar: radar(true, 120), imu: [0, 0, 1, 0, 12.5, 0] } });
+    await t.run(100);
+    expect(t.logs).toContain('presence\ttrue\t120');
+    expect(t.logs.at(-1)).toBe('tick\ttrue\t120\t12.5');
+    // An update too big for the relay goes without the radar: the board keeps the last reading.
+    t.logs.length = 0;
+    send(t.host, { s: { imu: [0, 0, 1, 0, 0, 0] } });
+    await t.run(100);
+    expect(t.logs.at(-1)).toBe('tick\ttrue\t120\t0');
+    expect(t.logs.filter((l) => l.startsWith('presence'))).toEqual([]);
+  });
+
   it('sends only the stand-ins the app names', () => {
     const plain = remoteApp('function init(ctx) log.info("hi") end');
     for (const name of ['dial', 'trigger', 'light', 'pir', 'climate', 'touch', 'ld2410', 'imu', 'buzzer']) {
@@ -280,6 +307,11 @@ describe('remote mirror', () => {
     expect(snap.d.speed).toEqual([8, 0.8, 3]);
     expect(snap.t['@a']).toBeUndefined();
     expect(snap.s.pir).toEqual({ motion: true });
+    // The IMU sends its rotation rate after the acceleration.
+    bench.add('imu');
+    const imu = reader.read([speed, a], bench, { a }).s.imu as number[];
+    expect(imu).toHaveLength(6);
+    expect(imu[2]).toBeCloseTo(1, 1); // face up: 1 g on z
   });
 
   it('boots every bundled display app wrapped for a real device', async () => {

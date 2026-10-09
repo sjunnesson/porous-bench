@@ -100,6 +100,11 @@ button.link {
 button.link:hover {
   color: var(--blue);
 }
+button.link:disabled {
+  opacity: 0.45;
+  cursor: default;
+  color: var(--muted);
+}
 
 /* Duscha's picker: a real <select> dressed as an outlined box. */
 select {

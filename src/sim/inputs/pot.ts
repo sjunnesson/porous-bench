@@ -1,4 +1,4 @@
-import { type InputSpec, SimInput } from './input';
+import { SimInput } from './input';
 
 export interface PotOptions {
   label?: string;
@@ -45,5 +45,3 @@ export class Pot extends SimInput {
     return Math.round((this.read() / 4095) * 3300);
   }
 }
-
-export const pot = (opts: PotOptions = {}): InputSpec<Pot> => ({ create: () => new Pot(opts) });
