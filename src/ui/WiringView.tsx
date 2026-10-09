@@ -16,6 +16,7 @@ const GUTTER = 190;
 const PART_W = 250;
 const GAP = 18;
 const RAILS: Rail[] = ['3V3', '5V', 'GND'];
+const DISCLAIMER = "Please verify that the wiring is correct against your board's own pinout before you power it up.";
 const RAIL_X: Record<Rail, number> = { '3V3': 26, '5V': 44, GND: 62 };
 
 const STYLE = `
@@ -79,7 +80,8 @@ export function WiringView({ run, board, onSvg }: { run: SketchRun; board: Board
   const boardR = PAD + BOARD_W;
   const partL = boardR + GUTTER;
   const width = partL + PART_W + PAD;
-  const height = bottom + PAD;
+  // Room under the diagram for the disclaimer, so a printed copy carries it too.
+  const height = bottom + PAD + 22;
   const railTop = (r: Rail) => PAD + 44 + rails.indexOf(r) * ROW + ROW / 2;
   const railBottom = (r: Rail) => Math.max(railTop(r), ...laid.flatMap((l) => l.part.wires.flatMap((x, i) => (x.rail === r ? [l.rows[i]] : []))));
 
@@ -97,6 +99,7 @@ export function WiringView({ run, board, onSvg }: { run: SketchRun; board: Board
             ? 'Nothing to wire: everything on this bench is on the board. Add an input to see where it goes.'
             : `Build this bench on a desk: each part's pins and the board pin each one goes to.${w.pinout ? ` Pins from the ${w.pinout.source}.` : ''}`}
         </p>
+        {!nothing && <p className="wiring-check">{DISCLAIMER} Bench picks these pins from datasheets and schematics, and it can get one wrong.</p>}
         {w.problems.map((p) => (
           <p key={p} className="warn">
             {p}
@@ -164,6 +167,9 @@ export function WiringView({ run, board, onSvg }: { run: SketchRun; board: Board
               ))}
             </g>
           ))}
+          <text className="small" x={PAD} y={bottom + PAD + 10}>
+            {DISCLAIMER}
+          </text>
         </svg>
       )}
 

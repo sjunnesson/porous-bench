@@ -346,6 +346,10 @@ details.raw p.hex {
 .wiring-head p.warn {
   color: var(--now);
 }
+.wiring-head p.wiring-check {
+  font-size: 12px;
+  color: var(--muted);
+}
 .wiring svg {
   display: block;
   width: 100%;

@@ -245,6 +245,8 @@ to the pots and sliders, analog reads go to ADC1 since ADC2 stops under Wi-Fi), 
 other pins where it can: the same bench always wires the same way, and adding a part moves no wire.
 I2C parts share one bus with an I2C display. When a board runs out of pins, or Bench doesn't know a
 board's headers yet, the diagram says so. The firmware prompt (**Real device**) carries the same pins.
+The view and the saved diagram ask you to verify the wiring against your board's own pinout before
+powering up: the pins come from datasheets and schematics, and Bench can get one wrong.
 
 ### Bench drivers
 
