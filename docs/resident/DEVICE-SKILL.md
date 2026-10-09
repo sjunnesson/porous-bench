@@ -65,7 +65,7 @@ The board driving the output decides what an app gets. Bench shows it under the 
 
 | Board | Libraries | Memory for apps |
 |---|---|---|
-| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-AMOLED-1.32, Waveshare ESP32-S3-AMOLED-1.91 and its Touch version | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
+| M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Seeed Studio XIAO ESP32S3, Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-AMOLED-1.32, Waveshare ESP32-S3-AMOLED-1.91 and its Touch version | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
 | ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~52 KB |
 | Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`; no `lvgl` | ~84 KB |
 

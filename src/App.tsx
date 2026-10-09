@@ -8,6 +8,7 @@ import { appHeader, residentApps } from './resident-apps';
 import { type AppNeeds, appNeeds, misfits, outputCaps } from './resident/needs';
 import { noteRunning, recoverFromFreeze } from './freeze';
 import { boardsFor } from './sim/boards';
+import { onBoard } from './sim/wiring';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
 import { benchApp } from './sim/generate';
@@ -407,7 +408,7 @@ export default function App() {
               run={run}
               output={
                 <DeviceInfo
-                  device={device}
+                  device={onBoard(device, board)}
                   facts={
                     board
                       ? [

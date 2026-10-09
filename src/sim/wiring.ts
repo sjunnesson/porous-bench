@@ -157,6 +157,8 @@ export interface Gpio {
   touch?: number;
   /** No output and no pull-up (an ESP32's 34–39). */
   inputOnly?: boolean;
+  /** Usable, but handed out only when nothing else fits (a serial port's pin). */
+  last?: boolean;
 }
 
 export interface Pinout {
@@ -177,6 +179,9 @@ export interface Pinout {
 }
 
 const pins = (list: (number | Gpio)[]): Gpio[] => list.map((p) => (typeof p === 'number' ? { gpio: p } : p));
+
+/** The XIAO ESP32S3's D0–D10, by GPIO. */
+const XIAO_D = [1, 2, 3, 4, 5, 6, 43, 44, 7, 8, 9];
 
 export const PINOUTS: Record<string, Pinout> = {
   'esp32-s3-devkitc-1-n16r8': {
@@ -243,6 +248,23 @@ export const PINOUTS: Record<string, Pinout> = {
     display: { sclk: 18, mosi: 23, dc: 16, rst: 17, leds: 18 },
     fiveVolt: '5V',
     source: 'Espressif ESP32-DevKitC V4 user guide and ESP32 datasheet',
+  },
+  'seeed-xiao-esp32s3': {
+    // D0–D3, D8–D10, then I2C on D4/D5 and the serial port's D7/D6 last: the chip prints its boot
+    // log on D6 (GPIO 43) at reset. Every other pin has ADC1 and touch. GPIO 3 (D2) is a strap
+    // only once an eFuse selects pad JTAG, which a XIAO doesn't.
+    pins: pins([
+      ...[1, 2, 3, 4, 7, 8, 9, 5, 6].map((g) => ({ gpio: g, adc: g - 1, touch: g })),
+      { gpio: 44, last: true },
+      { gpio: 43, last: true },
+    ]),
+    i2c: { sda: 5, scl: 6 },
+    // SPI on D8 (SCK) and D10 (MOSI), DC on D9, reset on D3; LED data on D0.
+    display: { sclk: 7, mosi: 9, dc: 8, rst: 4, leds: 1 },
+    fiveVolt: '5V',
+    printed: (g) => `D${XIAO_D.indexOf(g)} (GPIO ${g})`,
+    notes: ['The XIAO prints its pins as D0–D10: the diagram gives both names.', 'D6 and D7 are the chip\'s serial port, and it prints its boot log on D6 at reset: Bench uses them last.'],
+    source: 'Seeed Studio XIAO ESP32S3 pinout and ESP32-S3 datasheet',
   },
   'waveshare-esp32-epaper-driver': {
     // The DevKitC's header layout (J4, then J3), less the e-paper's 13–15 and 25–27, the BOOT key
@@ -398,6 +420,12 @@ export interface Wiring {
   problems: string[];
 }
 
+/** An LED chain shows the data pin the board's wiring uses (GPIO 18 on the Espressif dev kits). */
+export function onBoard(device: DeviceProfile, board: Board): DeviceProfile {
+  const din = PINOUTS[board.id]?.display?.leds;
+  return device.tech === 'led' && din !== undefined && device.wiring?.DIN !== din ? { ...device, wiring: { ...device.wiring, DIN: din } } : device;
+}
+
 /** How a GPIO is named on this board ("GPIO 4", or "G26" on an M5Stick). */
 export function gpioName(w: Wiring | Pinout | undefined, gpio: number): string {
   const p = w && 'board' in w ? w.pinout : w;
@@ -406,7 +434,7 @@ export function gpioName(w: Wiring | Pinout | undefined, gpio: number): string {
 
 /** What a GPIO can do, in units of what a part might need of it. Lower is plainer. */
 function worth(g: Gpio, i2c: Pinout['i2c']): number {
-  return (g.inputOnly ? 0 : 2) + (g.adc !== undefined ? 1 : 0) + (g.touch !== undefined ? 1 : 0) + (g.gpio === i2c.sda || g.gpio === i2c.scl ? 2 : 0);
+  return (g.inputOnly ? 0 : 2) + (g.adc !== undefined ? 1 : 0) + (g.touch !== undefined ? 1 : 0) + (g.gpio === i2c.sda || g.gpio === i2c.scl ? 2 : 0) + (g.last ? 10 : 0);
 }
 function fits(g: Gpio, need: Need): boolean {
   switch (need) {

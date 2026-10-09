@@ -5,7 +5,7 @@
 import type { Board } from '../sim/boards';
 import type { PartSpec } from '../sim/controls/bench';
 import type { DeviceProfile } from '../sim/devices/types';
-import { type Wiring, wiring, wiringLines } from '../sim/wiring';
+import { gpioName, type Wiring, wiring, wiringLines } from '../sim/wiring';
 
 const RESIDENT = 'https://github.com/inanimate-tech/resident';
 const START_BUILDING = 'https://raw.githubusercontent.com/inanimate-tech/resident/main/docs/start-building.md';
@@ -65,12 +65,14 @@ function hardwareSection(p: DeviceProfile, board?: Board, wired?: Wiring): strin
   const lines: string[] = [];
   // A bare module or LED chain wired to a dev board, as Bench's Wiring view shows it.
   const shown = wired?.output && !wired.output.wires.some((w) => w.missing) ? wiringLines({ ...wired, parts: [] })[0] : undefined;
+  const dinGpio = wired?.output?.wires.find((w) => w.pin === 'DIN')?.gpio;
+  const din = dinGpio !== undefined ? gpioName(wired, dinGpio) : `GPIO ${p.wiring?.DIN ?? 18}`;
   const leds = p.look.leds;
   if (leds) {
     const n = p.width * p.height;
     const shape = leds.layout === 'grid' ? `a ${p.width}×${p.height} matrix, wired row by row from the top left` : leds.layout === 'ring' ? `a ring of ${n}` : `a strip of ${n}`;
     lines.push(
-      `- **Output:** WS2812B addressable LEDs, ${shape} (${n} LEDs, 800 kHz one-wire, GRB). Bench assumes data in on **GPIO ${p.wiring?.DIN ?? 18}** of an ESP32 board.`,
+      `- **Output:** WS2812B addressable LEDs, ${shape} (${n} LEDs, 800 kHz one-wire, GRB). Bench assumes data in on **${din}** of an ESP32 board.`,
       board ? chosenBoard(board, shown ? 'whether the strip is wired as below' : 'which pin the data line is on') : '- **Board:** any ESP32 dev board. Ask me which one I have (and which pin the data line is on) before writing code.',
     );
     if (shown) lines.push(`- **Wiring, as Bench's Wiring view shows it:** ${shown}.`);
@@ -146,6 +148,12 @@ function planSection(p: DeviceProfile, board?: Board): string[] {
       `- Resident's libraries need three fixes on core 3.x, all in \`firmware/c6-lcd147/\` in ${REPO}: Courier's \`esp_websocket_client\` from Espressif's component registry (ESP-IDF 5 moved it out of the core), \`<string>\` force-included for Esp32Lua's C++ wrapper, and Esp32Lua's standalone \`lua.c\`/\`luac.c\` left out of the build (\`core3.py\`). Core 3.x already compiles C++17 and newer, so skip the \`gnu++17\` flags.`,
       '- The C6 has 512 KB of SRAM and no PSRAM: a full RGB565 frame competes with Wi-Fi, TLS and Lua for it. Rebuilding the core with less code in IRAM (pioarduino\'s `custom_sdkconfig`) frees ~36 KB.',
       '- It has native USB: add `-DARDUINO_USB_MODE=1 -DARDUINO_USB_CDC_ON_BOOT=1` or serial stays silent. If the port doesn\'t show up, I hold BOOT while plugging it in.',
+    );
+  }
+  if (board?.id === 'seeed-xiao-esp32s3') {
+    lines.push(
+      '- **XIAO ESP32S3:** PlatformIO board `seeed_xiao_esp32s3` (8 MB flash, 8 MB octal PSRAM). Its pins are printed D0–D10, not GPIO numbers: the wiring above gives both.',
+      '- It has native USB only: add `-DARDUINO_USB_MODE=1 -DARDUINO_USB_CDC_ON_BOOT=1` or serial stays silent. If the port doesn\'t show up, I hold B (BOOT) while plugging it in.',
     );
   }
   lines.push('- Flashing replaces whatever is on the board: confirm the port with me before the first upload.');

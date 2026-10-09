@@ -51,8 +51,9 @@ describe('output capabilities', () => {
   it('offers the paired boards for the e-paper module, and generic ones for bare modules and LEDs', () => {
     expect(boardsFor(epaper).map((b) => b.id)).toEqual(['waveshare-esp32-epaper-driver', 'esp32-s3-devkitc-1-n16r8']);
     expect(boardsFor(findDevice('m5stickc-plus2')!).map((b) => b.id)).toEqual(['m5stickc-plus2']);
-    expect(boardsFor(findDevice('ssd1306-128x64')!).length).toBe(2);
-    expect(boardsFor(ledProfile({ kind: 'strip', count: 30 })).length).toBe(2);
+    const generic = ['esp32-s3-devkitc-1-n16r8', 'esp32-devkitc', 'seeed-xiao-esp32s3'];
+    expect(boardsFor(findDevice('ssd1306-128x64')!).map((b) => b.id)).toEqual(generic);
+    expect(boardsFor(ledProfile({ kind: 'strip', count: 30 })).map((b) => b.id)).toEqual(generic);
     expect(outputCaps(ledProfile({ kind: 'strip', count: 30 }), s3).libraries).toEqual(['leds']);
     expect(outputCaps(ledProfile({ kind: 'matrix', w: 8, h: 8 }), s3).libraries).toEqual(['leds', 'lgfx']);
   });

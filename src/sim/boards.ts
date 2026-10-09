@@ -42,6 +42,13 @@ export const BOARDS: Board[] = [
     note: 'ESP32-WROOM-32, no PSRAM: ~70 KB of heap after Wi-Fi and TLS, of which Bench\'s firmware gives Lua a 56 KB heap of its own (~52 KB free for an app, measured); LVGL\'s first bind alone takes ~30 KB.',
   },
   {
+    id: 'seeed-xiao-esp32s3',
+    name: 'Seeed Studio XIAO ESP32S3',
+    libraries: ['screen', 'lgfx', 'lvgl'],
+    appRamKb: 8192,
+    note: '8 MB PSRAM: Lua and LVGL live there.',
+  },
+  {
     id: 'm5stickc-plus2',
     name: 'M5StickC Plus2 (ESP32-PICO-V3-02)',
     libraries: ['screen', 'lgfx', 'lvgl'],
@@ -86,7 +93,7 @@ export const BOARDS: Board[] = [
 ];
 
 /** What a bare module or an LED chain can be wired to. The first is the default. */
-export const GENERIC_BOARDS = ['esp32-s3-devkitc-1-n16r8', 'esp32-devkitc'];
+export const GENERIC_BOARDS = ['esp32-s3-devkitc-1-n16r8', 'esp32-devkitc', 'seeed-xiao-esp32s3'];
 
 export function findBoard(id: string): Board | undefined {
   return BOARDS.find((b) => b.id === id);

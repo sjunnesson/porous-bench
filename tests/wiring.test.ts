@@ -4,7 +4,7 @@ import { BOARDS, findBoard } from '../src/sim/boards';
 import { DEFAULT_PARTS, type PartKind, type PartSpec } from '../src/sim/controls/bench';
 import { devices, findDevice } from '../src/sim/devices';
 import { ledProfile } from '../src/sim/leds';
-import { gpioName, PINOUTS, type Wiring, wiring } from '../src/sim/wiring';
+import { gpioName, onBoard, PINOUTS, type Wiring, wiring } from '../src/sim/wiring';
 
 const hw = (parts: PartSpec[]) => parts.map((p) => ({ ...p, builtin: false }));
 const part = (kind: PartKind, n = 1): PartSpec => ({ id: `${kind}-${n}`, kind, label: `${kind} ${n}` });
@@ -80,6 +80,18 @@ describe('wiring', () => {
     expect(['CLK', 'DT', 'SW'].map((p) => pinOf(w, 'knob-1', p))).toEqual([42, 41, 40]);
   });
 
+  it('wires LEDs to a XIAO ESP32S3 by the D-names it prints, and its serial pins last', () => {
+    const xiao = findBoard('seeed-xiao-esp32s3')!;
+    const strip = ledProfile({ kind: 'strip', count: 30 });
+    const w = wiring(strip, xiao, hw([...DEFAULT_PARTS, part('pir')]));
+    const din = w.output!.wires.find((x) => x.pin === 'DIN')!.gpio!;
+    expect(gpioName(w, din)).toBe('D0 (GPIO 1)');
+    expect(w.problems).toEqual([]);
+    expect([...uses(w).keys()]).not.toContain(43);
+    expect(onBoard(strip, xiao).wiring?.DIN).toBe(1);
+    expect(firmwarePrompt(strip, xiao, hw(DEFAULT_PARTS))).toContain('data in on **D0 (GPIO 1)**');
+  });
+
   it('says which part runs out of pins', () => {
     const w = wiring(st7789, devkitc, hw(Array.from({ length: 20 }, (_, i) => part('button', i + 1))));
     expect(w.problems.some((p) => /^button \d+: no free GPIO left/.test(p))).toBe(true);
@@ -97,6 +109,7 @@ describe('wiring', () => {
     const avoid: Record<string, number[]> = {
       'esp32-s3-devkitc-1-n16r8': [0, 3, 45, 46, 19, 20, 43, 44, 35, 36, 37, 38, 48],
       'esp32-devkitc': [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 15],
+      'seeed-xiao-esp32s3': [0, 19, 20, 21, 35, 36, 37, 45, 46],
       'waveshare-esp32-epaper-driver': [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 25, 26, 27],
       'waveshare-esp32-c6-lcd-1.47': [4, 5, 8, 9, 12, 13, 15, 16, 17],
       'm5stickc-plus2': [0, 25, 34, 38],

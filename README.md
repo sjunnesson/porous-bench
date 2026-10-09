@@ -303,8 +303,9 @@ the LED matrix instead of crashing on its first `leds` call.
 The App menu lists only the apps the chosen output and the board driving it can run; a line under
 it counts the examples left out, and hovering it says why. The board comes from the output: a
 board with a built-in display (M5StickC Plus2, M5StickS3, the Waveshare boards) is fixed,
-and a bare module or an LED chain gets a **Board** menu (`src/sim/boards.ts`: the 2.13" e-paper
-offers the Waveshare ESP32 e-Paper Driver Board and an ESP32-S3 DevKitC-1 N16R8). A board brings
+and a bare module or an LED chain gets a **Board** menu (`src/sim/boards.ts`: an ESP32-S3
+DevKitC-1 N16R8, an ESP32 DevKitC or a Seeed Studio XIAO ESP32S3; the 2.13" e-paper offers the
+Waveshare ESP32 e-Paper Driver Board and the DevKitC-1). A board brings
 its drawing libraries and the memory an app gets; the output brings its kind, size, colour, and
 whether it can animate (e-paper can't).
 
