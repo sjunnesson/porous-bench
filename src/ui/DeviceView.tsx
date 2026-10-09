@@ -179,7 +179,7 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFail
             }}
           >
             <Suspense fallback={null}>
-              <Device3D run={run} clock={clock} mount={() => optionsRef.current.mount()} onCanvas={setCanvas3d} />
+              <Device3D run={run} clock={clock} board={board} mount={() => optionsRef.current.mount()} onCanvas={setCanvas3d} />
             </Suspense>
           </ErrorBoundary>
         ) : (

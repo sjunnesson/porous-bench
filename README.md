@@ -92,7 +92,9 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
   can use: a rotary encoder (drag the ring, press the centre, scroll), tactile buttons, a slide pot,
   a piezo that pulses while it sounds, and the LD2410 with its detection fan and a little character
   who walks, blinks and looks around; click anywhere to send it walking there, or pick it up by the head to carry it. Each part is wired back
-  to the device. With an IMU the device itself tilts and shakes.
+  to the device; a bare display module or an LED chain gets the dev board that drives it on the desk
+  (an ESP32-S3 DevKitC-1, ESP32 DevKitC or XIAO ESP32S3), with the parts wired to the board and the
+  board to the output, as on a real desk. With an IMU the device itself tilts and shakes.
 - **Hot reload.** Edit an app in the code panel and press Run (⌘↵), open a `.lua` file (**Open
   .lua…**) or drop one on the device, or save a bundled one: it restarts in place.
 

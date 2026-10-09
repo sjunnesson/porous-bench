@@ -40,6 +40,8 @@ export interface Peripheral {
   handles: THREE.Object3D[];
   /** The bench input this part stands for (set by buildPeripherals). */
   input?: SimInput;
+  /** The body's outline on the desk, centred on the root, when wires end at it (a board's). */
+  body?: { w: number; h: number };
   grab(hit: THREE.Object3D, ray: THREE.Ray): Grab | null;
   wheel?(hit: THREE.Object3D, dy: number): void;
   title(hit: THREE.Object3D): string;
@@ -144,6 +146,13 @@ function handle(w: number, h: number, d: number, z0 = 0, x = 0, y = 0): THREE.Me
 
 function place<T extends THREE.Object3D>(obj: T, x: number, y: number, z: number): T {
   obj.position.set(x, y, z);
+  return obj;
+}
+
+/** Move a part sideways on the desk, keeping the height it was built at. */
+function xy<T extends THREE.Object3D>(obj: T, x: number, y: number): T {
+  obj.position.x = x;
+  obj.position.y = y;
   return obj;
 }
 
@@ -971,6 +980,64 @@ function character() {
   };
 }
 
+// ---- the microcontroller ---------------------------------------------------------------------
+
+/**
+ * Dev boards that drive a bare module or an LED chain, as they lie on the desk (mm, approximated
+ * from the makers' drawings): long side along x, USB at the left end, the module's antenna at the
+ * right. `pins` per header row; `rowY`: the rows' distance from the centre line.
+ */
+const MCU: Record<string, { name: string; w: number; h: number; pins: number; rowY: number; module?: { w: number; h: number }; can: { w: number; h: number; x: number }; usb: { w: number; h: number; n: number } }> = {
+  'esp32-s3-devkitc-1-n16r8': { name: 'ESP32-S3-DevKitC-1', w: 62.7, h: 25.4, pins: 22, rowY: 11.4, module: { w: 25.5, h: 18 }, can: { w: 17.6, h: 15.8, x: -2.6 }, usb: { w: 7.4, h: 9, n: 2 } },
+  'esp32-devkitc': { name: 'ESP32-DevKitC', w: 54.4, h: 27.9, pins: 19, rowY: 12.7, module: { w: 25.5, h: 18 }, can: { w: 17.6, h: 15.8, x: -2.6 }, usb: { w: 5.8, h: 7.8, n: 1 } },
+  'seeed-xiao-esp32s3': { name: 'XIAO ESP32S3', w: 21, h: 17.8, pins: 7, rowY: 7.6, can: { w: 12.5, h: 11, x: 2.4 }, usb: { w: 7.4, h: 9, n: 1 } },
+};
+
+/**
+ * The microcontroller board between the parts and a bare module or LED chain: its PCB, the module's
+ * shield can and antenna, the USB port and the pins along both long edges. Null for a board Bench
+ * has no outline for (one with its own display is the device itself).
+ */
+export function microcontroller(boardId: string): Peripheral | null {
+  const m = MCU[boardId];
+  if (!m) return null;
+  const root = new THREE.Group();
+  const pcb = 1.6;
+  root.add(block(m.w, m.h, pcb));
+  // The module: its own PCB with the antenna past the shield can, overhanging the board's end.
+  let canX = m.can.x;
+  if (m.module) {
+    const mx = m.w / 2 - m.module.w / 2 + 2;
+    root.add(xy(block(m.module.w, m.module.h, 0.8, pcb), mx, 0));
+    canX = mx + m.can.x;
+  }
+  root.add(xy(block(m.can.w, m.can.h, 2.4, pcb + (m.module ? 0.8 : 0)), canX, 0));
+  // USB at the left end, sticking out a little.
+  for (let i = 0; i < m.usb.n; i++) {
+    const y = m.usb.n === 1 ? 0 : (i - (m.usb.n - 1) / 2) * (m.usb.h + 2.6);
+    root.add(xy(block(m.usb.w, m.usb.h, 3.2, pcb), -m.w / 2 + m.usb.w / 2 - 1, y));
+  }
+  // A pad per pin along both long edges, 2.54 mm apart.
+  const span = (m.pins - 1) * 2.54;
+  for (const side of [-1, 1])
+    for (let i = 0; i < m.pins; i++) root.add(xy(block(1.2, 1.2, 0.2, pcb, LINE_DIM), -span / 2 + i * 2.54, side * m.rowY));
+  withLabel(root, m.name, -m.h / 2 - 4);
+  const body = handle(m.w, m.h, 4, 0);
+  root.add(body);
+  return {
+    root,
+    w: m.w + 6,
+    h: m.h + 10,
+    body: { w: m.w, h: m.h },
+    anchor: new THREE.Vector3(m.w / 2, 0, 0.8),
+    targets: [],
+    handles: [body],
+    grab: () => null,
+    title: () => m.name,
+    update() {},
+  };
+}
+
 /**
  * A part on the desk for every piece of hardware on the bench, except buttons the device itself
  * provides (`onDevice`) and the IMU, which is shown by tilting the device.
@@ -1012,15 +1079,20 @@ export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>):
   return parts;
 }
 
-/** A dashed wire lying on the desk from a part back to the device. */
-export function wire(from: THREE.Vector3, to: THREE.Vector3): THREE.Line {
+/** A wire's path on the desk; `bow` bends it sideways, out of the way of parts in between. */
+export function wirePath(from: THREE.Vector3, to: THREE.Vector3, bow?: THREE.Vector3): THREE.CubicBezierCurve3 {
   const mid = from.clone().lerp(to, 0.5);
-  const c = new THREE.CubicBezierCurve3(
+  return new THREE.CubicBezierCurve3(
     from,
-    new THREE.Vector3(mid.x, from.y, from.z),
-    new THREE.Vector3(mid.x, to.y, to.z),
+    new THREE.Vector3(mid.x, from.y, from.z).add(bow ?? new THREE.Vector3()),
+    new THREE.Vector3(mid.x, to.y, to.z).add(bow ?? new THREE.Vector3()),
     to,
   );
+}
+
+/** A dashed wire lying on the desk from a part back to the device (or its board). */
+export function wire(from: THREE.Vector3, to: THREE.Vector3, bow?: THREE.Vector3): THREE.Line {
+  const c = wirePath(from, to, bow);
   const line = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(c.getPoints(40)),
     new THREE.LineDashedMaterial({ color: BLUE, dashSize: 1.6, gapSize: 1.4, transparent: true, opacity: 0.35, depthWrite: false }),

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
+import type { Board } from '../sim/boards';
 import type { SimClock } from '../sim/clock';
 import type { Imu } from '../sim/inputs/imu';
 import type { SketchRun } from '../sim/runner';
 import { drawLeds, ledCells } from '../sim/leds';
 import { buildModel, type ModelButton } from './three/model';
-import { buildPeripherals, type Grab, type Peripheral, wire } from './three/peripherals';
+import { buildPeripherals, type Grab, microcontroller, type Peripheral, wire, wirePath } from './three/peripherals';
 
 interface Props {
   run: SketchRun;
   clock: SimClock;
+  /** The board driving the output: a dev board stands on the desk between the parts and the output. */
+  board?: Board;
   /** Quarter turns clockwise: how the module is mounted. */
   mount: () => number;
   onCanvas?(c: HTMLCanvasElement | null): void;
@@ -85,7 +88,7 @@ function nearestOnRect(p: THREE.Vector3, box: THREE.Box3): THREE.Vector3 {
  * moves anything; double-click it to put it back); shift-drag the device to tilt it when the sketch
  * has an IMU. F fits everything in view. Until you zoom or pan, the view keeps everything fitted.
  */
-export function Device3D({ run, clock, mount, onCanvas }: Props) {
+export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef(mount);
   mountRef.current = mount;
@@ -156,10 +159,13 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
     const inputFor = (b: ModelButton) => (b.input === undefined ? undefined : run.bench.builtinButton(b.input));
     const onDevice = new Set(hardware.filter((p) => run.bench.isBuiltin(p)));
 
-    // External parts on the desk, plus wires back to the device.
-    const parts: Peripheral[] = buildPeripherals(hardware, onDevice);
+    // External parts on the desk, plus wires back to the device. A bare module or an LED chain
+    // can't read them itself: its dev board stands first on the desk, the parts wired to it and it
+    // to the output, as they would be on a real desk.
+    const mcu = board ? microcontroller(board.id) : null;
+    const parts: Peripheral[] = [...(mcu ? [mcu] : []), ...buildPeripherals(hardware, onDevice)];
     // Where you put a part is remembered by its id on the bench.
-    const partKeys = parts.map((p, i) => (p.input && run.bench.idOf(p.input)) ?? `part:${i}`);
+    const partKeys = parts.map((p, i) => (p === mcu ? 'board' : p.input && run.bench.idOf(p.input)) || `part:${i}`);
     const desk = new THREE.Group();
     content.add(desk);
     for (const p of parts) desk.add(p.root);
@@ -307,17 +313,55 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       placeCamera();
     };
 
-    /** Redraw every wire, from its part to the nearest edge of the device. */
+    /** Redraw every wire, from its part to the nearest edge of the board, or of the device without one. */
     const updateWires = () => {
       wires.children.forEach((w) => (w as THREE.Line).geometry.dispose());
       wires.clear();
       content.updateMatrixWorld(true);
       const dev = devBox.clone().translate(deskGroup.position);
-      for (const p of parts) {
+      let hub = dev;
+      if (mcu?.body) {
+        const c = mcu.root.position;
+        hub = new THREE.Box3(new THREE.Vector3(c.x - mcu.body.w / 2, c.y - mcu.body.h / 2, deskZ), new THREE.Vector3(c.x + mcu.body.w / 2, c.y + mcu.body.h / 2, deskZ));
+        // The board to the output: from the board's edge nearest the device.
+        const to = nearestOnRect(c.clone().setZ(deskZ), dev);
+        wires.add(wire(nearestOnRect(to, hub), to));
+      }
+      // Wires to the board would cross the parts between: bend one sideways, as little as clears
+      // them, preferring the side away from the output, so the wires gather at the board.
+      const devC = dev.getCenter(new THREE.Vector3());
+      const rects = parts.map((p) => {
+        const c = p.root.position;
+        const w = (p.body?.w ?? p.w) * 0.42;
+        const h = (p.body?.h ?? p.h) * 0.42;
+        return { x0: c.x - w, x1: c.x + w, y0: c.y - h, y1: c.y + h };
+      });
+      const bow = (from: THREE.Vector3, to: THREE.Vector3, own: number) => {
+        if (hub === dev) return undefined;
+        const blocked = (b?: THREE.Vector3) =>
+          wirePath(from, to, b)
+            .getPoints(24)
+            .some((pt) => rects.some((r, i) => i !== own && parts[i] !== mcu && pt.x > r.x0 && pt.x < r.x1 && pt.y > r.y0 && pt.y < r.y1));
+        if (!blocked()) return undefined;
+        const d = new THREE.Vector3(to.x - from.x, to.y - from.y, 0);
+        const n = new THREE.Vector3(-d.y, d.x, 0).normalize();
+        const mid = from.clone().lerp(to, 0.5);
+        if (n.x * (devC.x - mid.x) + n.y * (devC.y - mid.y) > 0) n.negate();
+        let last = n;
+        for (const k of [16, 28, 42, 58, 76])
+          for (const side of [n, n.clone().negate()]) {
+            last = side.clone().multiplyScalar(k);
+            if (!blocked(last)) return last;
+          }
+        return n.clone().multiplyScalar(76);
+      };
+      parts.forEach((p, i) => {
+        if (p === mcu) return;
         const from = content.worldToLocal(p.root.localToWorld(p.anchor.clone()));
         from.z = deskZ;
-        wires.add(wire(from, nearestOnRect(from, dev)));
-      }
+        const to = nearestOnRect(from, hub);
+        wires.add(wire(from, to, bow(from, to, i)));
+      });
     };
 
     /** Where each part goes under one automatic flow (null for parts placed by hand). */
@@ -585,7 +629,9 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
         el.title =
           hit.key === 'device'
             ? `Drag to slide the device across the desk${imu ? ' · shift-drag to tilt it' : ''} · double-click to put it back`
-            : 'Drag to slide it across the desk · double-click to put it back';
+            : hit.key === 'board'
+              ? `${board?.name}, driving the ${device.tech === 'led' ? 'LEDs' : 'display'}: the parts are wired to it · drag to slide it across the desk · double-click to put it back`
+              : 'Drag to slide it across the desk · double-click to put it back';
       } else {
         el.style.cursor = 'grab';
         el.title = 'Drag to orbit · scroll or pinch to zoom · right-drag to pan · double-click to reset the view · ⌥ Option-drag moves anything';
@@ -759,7 +805,7 @@ export function Device3D({ run, clock, mount, onCanvas }: Props) {
       el.remove();
       onCanvas?.(null);
     };
-  }, [run, clock, onCanvas, benchVersion]);
+  }, [run, clock, onCanvas, benchVersion, board?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div ref={hostRef} className="device-3d">
