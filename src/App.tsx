@@ -287,9 +287,12 @@ export default function App() {
             <button className={view.mode === 'flat' ? 'active' : ''} onClick={() => setView({ ...view, mode: 'flat' })} title="Just the glass, pixel-exact">
               Flat
             </button>
+            <button className={view.mode === 'wiring' ? 'active' : ''} onClick={() => setView({ ...view, mode: 'wiring' })} title="The bench as a wiring diagram: which pin each part goes to on the real board">
+              Wiring
+            </button>
           </div>
           <select
-            disabled={(view.mode ?? '3d') === '3d'}
+            disabled={view.mode !== 'flat'}
             value={String(view.zoom)}
             onChange={(e) => (setView({ ...view, zoom: e.target.value === 'fit' ? 'fit' : Number(e.target.value) }), e.target.blur())}
             title="Zoom"
@@ -301,10 +304,11 @@ export default function App() {
               </option>
             ))}
           </select>
-          <button disabled={(view.mode ?? '3d') === '3d'} className={view.grid ? 'active' : ''} onClick={() => setView({ ...view, grid: !view.grid })} title="Show pixel grid">
+          <button disabled={view.mode !== 'flat'} className={view.grid ? 'active' : ''} onClick={() => setView({ ...view, grid: !view.grid })} title="Show pixel grid">
             Grid
           </button>
           <button
+            disabled={view.mode === 'wiring'}
             onClick={() => setView({ ...view, rotation: view.rotation === 'auto' ? 0 : view.rotation === 3 ? 'auto' : view.rotation + 1 })}
             title="How the module is mounted. Auto follows the sketch's setRotation()."
           >
@@ -387,6 +391,7 @@ export default function App() {
           <DeviceView
             run={run}
             clock={clock}
+            board={board}
             view={view}
             error={error}
             onDropApp={(name, code) => session.setLive({ name: name.replace(/\.lua$/, ''), code, source: 'file' })}

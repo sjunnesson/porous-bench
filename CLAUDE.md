@@ -7,7 +7,8 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
 
 - `src/sim/`: the simulated hardware. `devices/` (one profile per output), `boards.ts` (the boards
   that drive them: libraries, app memory), `display.ts` + `panels/` (bus and refresh timing),
-  `controls/` (the bench: parts, dials, triggers), `inputs/`.
+  `controls/` (the bench: parts, dials, triggers), `inputs/`, `wiring.ts` (which board pin each part
+  goes to: the Wiring view).
 - `src/resident/`: the Resident runtime in the browser (`host.ts`), matching apps to hardware
   (`needs.ts`), the mirror to a real board (`remote.ts` + `lua/remote.lua`, the shim it wraps apps
   in), and the prompts Bench copies for Claude (`prompt.ts` for apps, `firmware.ts` for firmware).
@@ -35,7 +36,9 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
 - **A new output or board** goes in `src/sim/devices/` or `src/sim/boards.ts` with its libraries
   and its app memory: the PSRAM size on a board with PSRAM, otherwise *measured*
   (`heap_caps_get_free_size(MALLOC_CAP_8BIT)` after Wi-Fi + TLS, not `ESP.getFreeHeap()`);
-  unmeasured stays unset. Keep the Boards table in DEVICE-SKILL.md in step
+  unmeasured stays unset. A board also gets its free header GPIOs in `src/sim/wiring.ts` (from its
+  schematic, leaving out straps, flash/PSRAM, USB and what the board uses), which the Wiring view and
+  the firmware prompt wire parts to. Keep the Boards table in DEVICE-SKILL.md in step
   (`tests/device-skill.test.ts` checks its displays, boards, Lua modules and Mirror stand-ins).
 - **The mirror shim is compiled on the device**, often in ~70 KB: keep `lua/remote.lua` small, put
   each stand-in between `-- @@part <module>` / `-- @@end` (sent only to apps that name it). While

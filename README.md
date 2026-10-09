@@ -85,8 +85,9 @@ views with Vercel Web Analytics: no cookies, and nothing about your apps or your
   and the real display follows.
 - **Time control.** Pause, single-step and run at 0.1×–4×. Delays, bus transfers, refreshes and
   sensor data all follow the simulated clock.
-- **Two views.** A ghosted 3D wireframe of the actual part, with the live screen on it, or the bare
-  glass, flat and pixel-exact, with zoom and a pixel grid.
+- **Three views.** A ghosted 3D wireframe of the actual part, with the live screen on it; the bare
+  glass, flat and pixel-exact, with zoom and a pixel grid; or **Wiring**, the bench as a wiring
+  diagram to build it on a real desk.
 - **The whole bench in 3D.** Inputs the device doesn't have sit on the desk beside it as parts you
   can use: a rotary encoder (drag the ring, press the centre, scroll), tactile buttons, a slide pot,
   a piezo that pulses while it sounds, and the LD2410 with its detection fan and a little character
@@ -226,6 +227,24 @@ logged and flashed (and clicked on the buzzer, if there is one). The code is in 
 and Run: keep the inputs you need and replace `pressed()` and the drawing with what your app should
 do. Change the bench and make it again whenever you like; it's written in the browser, nothing is
 sent anywhere.
+
+### Build it for real: the wiring view
+
+**Wiring** (next to 3D and Flat) draws the bench as a wiring diagram for the board chosen under the
+output: the board on the left with the GPIOs in use, the 3V3, 5V and GND rails down the middle, and
+each part on the right with its module's own pins (a KY-040's CLK, DT, SW, + and GND), every wire
+labelled at both ends. Each part says which of the app's controls it drives, as Connections has it,
+so a student can wire the desk to match the bench. A display module or LED chain on a dev board is
+wired too; a board's own display, buttons, IMU and buzzer need nothing. Under the diagram: what to
+check before powering up, part by part. **Save diagram** downloads it as an SVG to print.
+
+Pins come from `src/sim/wiring.ts`. Each board lists the GPIOs its headers reach and what each can do
+(ADC1, touch, input-only), leaving out strapping, flash, PSRAM and USB pins and what the board itself
+uses. Parts take pins in bench order, each the plainest free pin that fits (a button leaves ADC pins
+to the pots and sliders, analog reads go to ADC1 since ADC2 stops under Wi-Fi), next to the part's
+other pins where it can: the same bench always wires the same way, and adding a part moves no wire.
+I2C parts share one bus with an I2C display. When a board runs out of pins, or Bench doesn't know a
+board's headers yet, the diagram says so. The firmware prompt (**Real device**) carries the same pins.
 
 ### Bench drivers
 
@@ -513,6 +532,7 @@ src/sim/            simulator core, framework-free
   runner.ts           runs a program       renderer.ts      flat canvas view
   controls/           the bench, dials and triggers          leds.ts   LED strips, rings, matrices
   generate.ts         writes a Lua app for the bench
+  wiring.ts           which board pin each part goes to (the wiring view, the firmware prompt)
 src/resident/       Lua runtime: wasmoon host, Resident sandbox prelude, Bench drivers, relay, datetime
 src/resident-apps/  bundled Lua apps (Bench's examples and Resident's)
 src/ui/             React UI; ui/three/ builds the wireframe models from each enclosure

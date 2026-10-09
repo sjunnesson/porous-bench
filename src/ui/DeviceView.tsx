@@ -1,16 +1,19 @@
 import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Board } from '../sim/boards';
 import type { SimClock } from '../sim/clock';
 import { canvasToNative, fitZoom, PanelRenderer, type ViewOptions } from '../sim/renderer';
 import type { SketchRun } from '../sim/runner';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useAnimationFrame } from './hooks';
+import { WiringView } from './WiringView';
 
 // three.js is big: load the 3D view on demand.
 const Device3D = lazy(() => import('./Device3D').then((m) => ({ default: m.Device3D })));
 
 export interface ViewState {
-  /** '3d' = the device as a ghosted wireframe; 'flat' = just the glass, pixel-exact with zoom and grid. */
-  mode?: '3d' | 'flat';
+  /** '3d' = the device as a ghosted wireframe; 'flat' = just the glass, pixel-exact with zoom and grid;
+   *  'wiring' = the bench as a wiring diagram, to build it for real. */
+  mode?: '3d' | 'flat' | 'wiring';
   zoom: number | 'fit';
   grid: boolean;
   /** How the module is mounted. 'auto' turns it so whatever setRotation() the sketch chose reads upright. */
@@ -20,6 +23,8 @@ export interface ViewState {
 interface Props {
   run: SketchRun;
   clock: SimClock;
+  /** The board driving the output: the wiring view wires the bench to it. */
+  board: Board;
   view: ViewState;
   error: string | null;
   /** A .lua file was dropped on the device. */
@@ -37,7 +42,7 @@ interface Stats {
   frameKB: number;
 }
 
-export function DeviceView({ run, clock, view, error, onDropApp, on3dFailed, notice, onDismiss }: Props) {
+export function DeviceView({ run, clock, board, view, error, onDropApp, on3dFailed, notice, onDismiss }: Props) {
   const [dragOver, setDragOver] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,7 +52,9 @@ export function DeviceView({ run, clock, view, error, onDropApp, on3dFailed, not
   const device = run.device;
   const renderer = useMemo(() => new PanelRenderer(device), [device]);
   const threeD = (view.mode ?? '3d') === '3d';
+  const wiringMode = view.mode === 'wiring';
   const [canvas3d, setCanvas3d] = useState<HTMLCanvasElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   // Why the 3D view gave way to the flat one, shown until 3D is picked again.
   const [no3d, setNo3d] = useState<string | null>(null);
   useEffect(() => {
@@ -126,13 +133,14 @@ export function DeviceView({ run, clock, view, error, onDropApp, on3dFailed, not
   }, [run, clock]);
 
   const screenshot = () => {
+    if (wiringMode) {
+      if (!svgRef.current) return;
+      const blob = new Blob([new XMLSerializer().serializeToString(svgRef.current)], { type: 'image/svg+xml' });
+      download(blob, `${device.id}-wiring.svg`);
+      return;
+    }
     (threeD ? canvas3d : canvasRef.current)?.toBlob((blob) => {
-      if (!blob) return;
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${device.id}-${run.sketch.name.replace(/\W+/g, '-').toLowerCase()}.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      if (blob) download(blob, `${device.id}-${run.sketch.name.replace(/\W+/g, '-').toLowerCase()}.png`);
     });
   };
 
@@ -142,7 +150,7 @@ export function DeviceView({ run, clock, view, error, onDropApp, on3dFailed, not
   return (
     <section className="stage-wrap">
       <div
-        className={`stage ${threeD ? 'stage-3d' : ''} ${dragOver ? 'drop-target' : ''}`}
+        className={`stage ${threeD ? 'stage-3d' : ''} ${wiringMode ? 'stage-wiring' : ''} ${dragOver ? 'drop-target' : ''}`}
         ref={stageRef}
         onDragOver={(e) => {
           if (!onDropApp) return;
@@ -161,7 +169,9 @@ export function DeviceView({ run, clock, view, error, onDropApp, on3dFailed, not
           }
         }}
       >
-        {threeD ? (
+        {wiringMode ? (
+          <WiringView run={run} board={board} onSvg={(el) => (svgRef.current = el)} />
+        ) : threeD ? (
           <ErrorBoundary
             onError={(err) => {
               setNo3d(/webgl/i.test(String(err)) ? "3D needs WebGL, which this browser didn't give Bench: showing the flat view." : "The 3D view didn't load: showing the flat view. Reload to try 3D again.");
@@ -207,13 +217,21 @@ export function DeviceView({ run, clock, view, error, onDropApp, on3dFailed, not
         <span>{busLabel}</span>
         <span>
           {device.width}×{device.height}
-          {threeD ? '' : ` @ ${options.zoom}×`}
+          {threeD || wiringMode ? '' : ` @ ${options.zoom}×`}
         </span>
         <span title="millis()">t = {(simTime / 1000).toFixed(1)} s</span>
-        <button className="link" onClick={screenshot} title="Save a PNG of the display">
-          Screenshot
+        <button className="link" onClick={screenshot} title={wiringMode ? 'Save the wiring diagram as an SVG, to print or share' : 'Save a PNG of the display'}>
+          {wiringMode ? 'Save diagram' : 'Screenshot'}
         </button>
       </div>
     </section>
   );
+}
+
+function download(blob: Blob, name: string) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

@@ -3,7 +3,9 @@
 // mirror to. Grounded in Resident's own guide (docs/start-building.md) and Bench's profile of the part.
 
 import type { Board } from '../sim/boards';
+import type { PartSpec } from '../sim/controls/bench';
 import type { DeviceProfile } from '../sim/devices/types';
+import { type Wiring, wiring, wiringLines } from '../sim/wiring';
 
 const RESIDENT = 'https://github.com/inanimate-tech/resident';
 const START_BUILDING = 'https://raw.githubusercontent.com/inanimate-tech/resident/main/docs/start-building.md';
@@ -59,16 +61,19 @@ function chosenBoard(board: Board, what: string): string {
   return `- **Board:** a ${board.name}, my choice in Bench (${board.note}). Confirm it with me, and ask ${what} before writing code.`;
 }
 
-function hardwareSection(p: DeviceProfile, board?: Board): string[] {
+function hardwareSection(p: DeviceProfile, board?: Board, wired?: Wiring): string[] {
   const lines: string[] = [];
+  // A bare module or LED chain wired to a dev board, as Bench's Wiring view shows it.
+  const shown = wired?.output && !wired.output.wires.some((w) => w.missing) ? wiringLines({ ...wired, parts: [] })[0] : undefined;
   const leds = p.look.leds;
   if (leds) {
     const n = p.width * p.height;
     const shape = leds.layout === 'grid' ? `a ${p.width}×${p.height} matrix, wired row by row from the top left` : leds.layout === 'ring' ? `a ring of ${n}` : `a strip of ${n}`;
     lines.push(
       `- **Output:** WS2812B addressable LEDs, ${shape} (${n} LEDs, 800 kHz one-wire, GRB). Bench assumes data in on **GPIO ${p.wiring?.DIN ?? 18}** of an ESP32 board.`,
-      board ? chosenBoard(board, 'which pin the data line is on') : '- **Board:** any ESP32 dev board. Ask me which one I have (and which pin the data line is on) before writing code.',
+      board ? chosenBoard(board, shown ? 'whether the strip is wired as below' : 'which pin the data line is on') : '- **Board:** any ESP32 dev board. Ask me which one I have (and which pin the data line is on) before writing code.',
     );
+    if (shown) lines.push(`- **Wiring, as Bench's Wiring view shows it:** ${shown}.`);
   } else {
     const turned = (p.firmwareRotation ?? 0) % 2 === 1;
     lines.push(
@@ -84,7 +89,8 @@ function hardwareSection(p: DeviceProfile, board?: Board): string[] {
           ? `- **Module:** a bare display module${header ? ` (pins: ${header})` : ''}.`
           : `- **Board:** this is a bare display module${header ? ` (pins: ${header})` : ''}, wired to an ESP32 board. Ask me which board I have and how it's wired before writing code.`,
       );
-      if (board) lines.push(chosenBoard(board, "how it's wired"));
+      if (board) lines.push(chosenBoard(board, shown ? "whether it's wired as below" : "how it's wired"));
+      if (shown) lines.push(`- **Wiring, as Bench's Wiring view shows it:** ${shown}.`);
     }
   }
   const buttons = (p.enclosure?.parts ?? []).flatMap((x) => (x.kind === 'button' && x.input !== undefined ? [{ label: x.label ?? 'button', input: x.input }] : []));
@@ -154,14 +160,29 @@ function lvglAdvice(board?: Board): string {
     : 'Skip `lvgl`: this board has no PSRAM and LVGL doesn\'t fit next to Wi-Fi and TLS; Bench lists only `screen` and `lgfx` apps for it.';
 }
 
-/** The firmware prompt, as Markdown. `board`: the board chosen in Bench for a bare module or LEDs. */
-export function firmwarePrompt(device: DeviceProfile, board?: Board): string {
+/** The parts I added to the bench, wired to the board as Bench's Wiring view shows them. */
+function partsSection(wired?: Wiring): string[] {
+  if (!wired?.parts.length || !wired.pinout) return ['- Sensors and controls (encoder, PIR, light …) come from Bench while it mirrors, so the firmware needs no drivers for them.'];
+  const lines = wiringLines({ ...wired, output: undefined });
+  return [
+    '- **Parts on my bench**, wired as Bench\'s Wiring view shows them. While Bench mirrors, their readings come from Bench, so the firmware needs no drivers for them; if I ask for the real parts to work on their own, put their drivers on exactly these pins:',
+    ...lines.map((l) => `  - ${l}`),
+    ...[...(wired.pinout.notes ?? []), ...wired.problems].map((p) => `  - ${p}`),
+  ];
+}
+
+/**
+ * The firmware prompt, as Markdown. `board`: the board chosen in Bench for a bare module or LEDs.
+ * `hardware`: what's on the bench (`Bench.hardware()`), for the pins its parts go to.
+ */
+export function firmwarePrompt(device: DeviceProfile, board?: Board, hardware: (PartSpec & { builtin: boolean })[] = []): string {
+  const wired = board ? wiring(device, board, hardware) : undefined;
   return [
     `Put Resident firmware on my ${device.look.leds ? `ESP32 driving a ${device.name}` : device.name}, so it comes online on Resident's relay with a device ID. I'll then drive it from porous.systems Bench (${SITE}): its Real device panel mirrors an app onto the device and streams the virtual inputs to it.`,
     '',
     '## The hardware (from Bench)',
-    ...hardwareSection(device, board),
-    '- Sensors and controls (encoder, PIR, light …) come from Bench while it mirrors, so the firmware needs no drivers for them.',
+    ...hardwareSection(device, board, wired),
+    ...partsSection(wired),
     '',
     '## Plan',
     ...planSection(device, board),
