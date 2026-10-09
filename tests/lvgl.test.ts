@@ -2,6 +2,7 @@ import { LuaFactory } from 'wasmoon';
 import { describe, expect, it } from 'vitest';
 import { ResidentHost, resetScreen, type ResidentBoard } from '../src/resident/host';
 import { AppStore } from '../src/resident/store';
+import type { Library } from '../src/sim/boards';
 import { Zone } from '../src/resident/zone';
 import { SimClock } from '../src/sim/clock';
 import { findDevice } from '../src/sim/devices';
@@ -13,7 +14,7 @@ import { Button } from '../src/sim/inputs/button';
 
 const factory = new LuaFactory();
 
-async function boot(code: string) {
+async function boot(code: string, libraries?: Library[]) {
   const clock = new SimClock();
   clock.paused = true;
   const device = findDevice('m5stickc-plus2')!;
@@ -26,6 +27,7 @@ async function boot(code: string) {
     zone: () => new Zone('Europe/London'),
     buttons: [new Button({}, clock), new Button({}, clock)],
     store: new AppStore('lvgl-test', false),
+    libraries,
     log: (level, text) => logs.push(level === 'info' ? text : `${level}: ${text}`),
     telemetry: () => {},
     publish: () => 'sent',
@@ -59,6 +61,14 @@ function glass(d: Display, x: number, y: number): [number, number, number] {
 }
 
 describe('lvgl module', () => {
+  it("isn't there on a board whose firmware has no LVGL, as on the device", async () => {
+    const t = await boot('function init() log.info(lvgl == nil) local h = lvgl.bind("main") end', ['screen', 'lgfx']);
+    expect(t.logs).toEqual(['true']);
+    expect(t.error).toMatch(/attempt to index a nil value \(global 'lvgl'\) \(this board's firmware has no lvgl: draw with lgfx\)$/);
+    const s3 = await boot('function init() lvgl.bind("main") end', ['screen', 'lgfx', 'lvgl']);
+    expect(s3.error).toBeUndefined();
+  });
+
   it('only resolves luavgl keys after the first bind, as on the device', async () => {
     const t = await boot(`function init()
       log.info(tostring(lvgl.ALIGN), tostring(lvgl.Anim))

@@ -1,6 +1,6 @@
 // A Resident Lua app as a Bench sketch: the board (display, two buttons, IMU, buzzer) is
-// whatever display is selected, plus any dials, triggers or radar the app declares (Bench's
-// drivers). The sandbox loop runs inside loop().
+// whatever display is selected, with the drawing libraries its board's firmware has, plus any
+// dials, triggers or radar the app declares (Bench's drivers). The sandbox loop runs inside loop().
 
 import type { Display } from '../sim/display';
 import { dial, trigger } from '../sim/controls/controls';
@@ -38,7 +38,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
       b: trigger({ label: 'Button B', key: 'KeyB', builtin: 1 }),
     },
 
-    async setup({ display, device, inputs, millis, declare, bench, log, warn, error }) {
+    async setup({ display, device, inputs, millis, declare, bench, libraries, log, warn, error }) {
       // A sensor the app asks for: the one on the bench, or a new one put there for it.
       const sensor = <T extends SimInput>(kind: PartKind, setup?: (part: T) => void): T => {
         const { part, added } = bench.ensure<T>(kind);
@@ -66,6 +66,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         trigger: (name, opts) => declare(name, trigger(opts)),
         radar: (opts) => sensor<LD2410>('ld2410', (r) => opts.mode && r.setMode(opts.mode)),
         sensor: (kind) => sensor(kind),
+        libraries,
         store: new AppStore(app.storeNs ?? 'app', true, (key) => {
           warn(`store: '${key}' rejected, over the 2048-byte budget`);
           session.telemetry('store_full', { error: key });

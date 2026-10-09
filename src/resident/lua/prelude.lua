@@ -231,7 +231,8 @@ ld2410 = {
 }
 
 -- leds: a Bench driver for an addressable LED chain (WS2812 strip, ring or matrix) as the output.
--- LEDs are numbered from 0 in chain order (a matrix row by row); colours are 0xRRGGBB. Nothing
+-- LEDs are numbered from 0 in chain order; on a matrix xy(x, y) finds one, since the chain runs
+-- through the grid as the panel is wired (serpentine on flexible panels). Colours are 0xRRGGBB. Nothing
 -- lights until show(). on_frame(fn[, fps]) runs fn(ctx, dt_ms) on the driver's own frame timer
 -- (default 50 fps), so effects can move smoothly between 10 Hz ticks.
 local function chain(fname)
@@ -247,8 +248,8 @@ leds = {
   width = function() return chain("width")[1] end,
   height = function() return chain("height")[2] end,
   xy = function(x, y)
-    local s = chain("xy")
-    return ck_int(y, 2, "xy", 2) * s[1] + ck_int(x, 1, "xy", 2)
+    chain("xy")
+    return H.led_xy(ck_int(x, 1, "xy", 2), ck_int(y, 2, "xy", 2))
   end,
   set = function(i, c) chain("set") return led_set(i, c) end,
   set_rgb = function(i, r, g, b)
@@ -475,6 +476,28 @@ datetime = setmetatable({}, {
 
 for _, k in ipairs({ "os", "io", "require", "load", "loadfile", "dofile", "debug", "package" }) do _G[k] = nil end
 
+-- The drawing modules this board's firmware has for this output: the others aren't there, as on the
+-- device, where an app reaching for one fails with "attempt to index a nil value (global 'lvgl')".
+-- Bench's error says why (see handler below).
+local MISSING = {}
+do
+  local has = H.libraries()
+  if has then
+    local keep = {}
+    for _, k in ipairs(has) do keep[k] = true end
+    local chain = keep.leds and "the output is an LED chain: draw with leds" .. (keep.lgfx and " or lgfx" or "")
+    local why = {
+      lvgl = "this board's firmware has no lvgl: draw with lgfx",
+      lgfx = chain or "this board's firmware has no lgfx",
+      screen = chain or "this board's firmware has no screen",
+      leds = "the output is a display, not an LED chain: choose a strip, ring or matrix output",
+    }
+    for k, text in pairs(why) do
+      if not keep[k] then _G[k], MISSING[k] = nil, text end
+    end
+  end
+end
+
 -- ── the execution deadline ─────────────────────────────────────────────────
 --
 -- A board gives each dispatch (loading the app, init, one tick, one event, one chunk) 1000 ms of
@@ -583,7 +606,12 @@ end
 function coroutine.create(...) return co_create(hooked("create", ...)) end
 function coroutine.wrap(...) return co_wrap(hooked("wrap", ...)) end
 
-local function handler(e) return tostring(e) end
+local function handler(e)
+  e = tostring(e)
+  local g = e:match("value %(%a+ '(%w+)'%)") -- global 'lvgl', or a local of that name
+  if g and MISSING[g] then e = e .. " (" .. MISSING[g] .. ")" end
+  return e
+end
 -- One dispatch. `deadline`: whether a board would time it (everything but LVGL's pump).
 function run(deadline, f, ...)
   if halted then return true end

@@ -296,7 +296,11 @@ end)
 Also `leds.set_rgb(i, r, g, b)`, `leds.get(i)`, `leds.fill(colour[, from[, count]])` and
 `leds.clear()`. `on_frame` runs on the driver's own timer like LVGL's pump, so effects move smoothly
 between 10 Hz ticks. A matrix is also an `lgfx` display (`lgfx.bind("main")`, 8 pixels tall on an
-8×8), so text and drawing work there too; LEDs are row by row from the top-left. An app's
+8×8), so text and drawing work there too. On a matrix the chain runs through the grid as panels of
+that size are usually wired: an 8×8 row by row, a 16×16 serpentine (every other row right to left)
+and a 32×8 in serpentine columns (down the first, up the next). `leds.xy(x, y)` finds an LED either
+way; an app that computes `y * width + x` scrambles on the serpentine ones, as it would on the real
+panel. An app's
 `-- @output display|strip|matrix` line decides where it appears in the App menu (strip apps run on
 rings too). An app that arrives with that line (pushed, dropped on the device or run from the editor)
 while another kind of output is chosen switches Bench to it: a matrix app pushed at a display gets
@@ -312,7 +316,8 @@ and a bare module or an LED chain gets a **Board** menu (`src/sim/boards.ts`: an
 DevKitC-1 N16R8, an ESP32 DevKitC or a Seeed Studio XIAO ESP32S3; the 2.13" e-paper offers the
 Waveshare ESP32 e-Paper Driver Board and the DevKitC-1). A board brings
 its drawing libraries and the memory an app gets; the output brings its kind, size, colour, and
-whether it can animate (e-paper can't).
+whether it can animate (e-paper can't). A library the board's firmware lacks isn't there for the app
+either: on a board without LVGL, `lvgl` is nil and `lvgl.bind` fails as it would on the board.
 
 An app's needs come from its code (the libraries it binds, and the memory it takes to receive,
 compile and start on a real board, estimated from its size as the mirror sends it) and from a

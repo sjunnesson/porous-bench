@@ -184,7 +184,12 @@ export default function App() {
     .filter((e) => e.why.length);
   const entry = entries.find((s) => s.id === sketchId) ?? entries[0];
   // Your own app stays in the menu whatever it needs, but says when this output and board can't run it.
-  const liveWhy = useMemo(() => (live ? misfits(appNeeds(live.code), caps) : []), [live, caps]);
+  const liveFit = useMemo(() => {
+    if (!live) return { why: [], library: false };
+    const needs = appNeeds(live.code);
+    // A library the firmware doesn't have stops it on Bench too; the rest only a real board stops.
+    return { why: misfits(needs, caps), library: needs.output === caps.output && needs.libraries.some((l) => !caps.libraries.includes(l)) };
+  }, [live, caps]);
 
   // The bench: the board's own hardware plus your parts. It outlives app switches (a new board
   // brings its own built-ins), and every add or remove is saved in this browser.
@@ -206,13 +211,14 @@ export default function App() {
   }, [sketchId]);
 
   const [run, setRun] = useState<SketchRun | null>(null);
+  // A board with other drawing libraries restarts the app, as flashing that board would.
   useEffect(() => {
     const r = new SketchRun(entry.sketch, device, clock, {
       onLog: (line) => setLogs((l) => [...l.slice(-299), line]),
       onError: (err) => setError(err instanceof Error ? (err.stack ?? err.message) : String(err)),
       // Controls appear as the app declares them; each picks up the hardware chosen last time.
       bindingFor: (control) => loadBinding(entry.id, control),
-    }, bench);
+    }, bench, caps.libraries);
     setRun(r);
     setLogs([]);
     setError(null);
@@ -223,7 +229,7 @@ export default function App() {
       r.stop();
       noteRunning(null);
     };
-  }, [entry.sketch, device, clock, bench, restarts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entry.sketch, device, clock, bench, restarts, caps.libraries.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keyboard → the app's controls (each knows its keys).
   useEffect(() => {
@@ -349,9 +355,12 @@ export default function App() {
               )}
             </select>
             {entry.sketch.description && <p className="sketch-desc">{entry.sketch.description}</p>}
-            {entry.id === 'resident:live' && liveWhy.length > 0 && (
+            {entry.id === 'resident:live' && liveFit.why.length > 0 && (
               <p className="hint warn">
-                It won't run on this {device.tech === 'led' ? 'output' : 'display'} and board as it is: {liveWhy.join(', ')}. Bench runs it anyway, but a real {board.name.replace(/ \(.*\)$/, '')} wouldn't.
+                It won't run on this {device.tech === 'led' ? 'output' : 'display'} and board as it is: {liveFit.why.join(', ')}.{' '}
+                {liveFit.library
+                  ? `Like a real ${board.name.replace(/ \(.*\)$/, '')}, Bench gives it only the libraries that board's firmware has.`
+                  : `Bench runs it anyway, but a real ${board.name.replace(/ \(.*\)$/, '')} wouldn't.`}
               </p>
             )}
 

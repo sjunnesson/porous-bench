@@ -1,8 +1,9 @@
 // LED outputs: a WS2812B strip, ring or matrix, described as a DeviceProfile with tech 'led' so the
 // whole pipeline (frame buffer, bus timing, brightness, the 3D desk) works on it unchanged. The
-// chain's LEDs are the frame buffer's pixels, row by row: a strip or ring is N × 1, a matrix W × H.
+// LEDs are the frame buffer's pixels, as they sit: a strip or ring is N × 1, a matrix W × H. On a
+// matrix the chain runs through them as that size of panel is wired (chainIndex / chainPoint).
 
-import type { DeviceProfile } from './devices/types';
+import type { ChainLayout, DeviceProfile } from './devices/types';
 
 export type OutputKind = 'display' | 'strip' | 'ring' | 'matrix';
 
@@ -20,6 +21,43 @@ export const MATRIX_SIZES: [number, number][] = [
   [16, 16],
   [32, 8],
 ];
+
+/** Each matrix size wired as the panels sold at that size are (check yours: where it starts, which way it runs). */
+const MATRIX_CHAIN: Record<string, { chain: ChainLayout; panels: string }> = {
+  // Adafruit NeoMatrix, CJMCU-64: row by row, each row left to right.
+  '8x8': { chain: { along: 'rows', serpentine: false }, panels: 'rigid 8×8 boards' },
+  '16x16': { chain: { along: 'rows', serpentine: true }, panels: 'flexible 16×16 panels' },
+  // Long side across: 8 LEDs down the first column, 8 up the next, and so on.
+  '32x8': { chain: { along: 'columns', serpentine: true }, panels: 'flexible 8×32 panels' },
+};
+
+/** How the chain runs, in words: "wired row by row from the top left" and so on. */
+export function chainWords(c: ChainLayout = { along: 'rows', serpentine: false }): string {
+  if (!c.serpentine) return `wired ${c.along === 'rows' ? 'row by row' : 'column by column'} from the top left`;
+  return c.along === 'rows'
+    ? 'wired serpentine from the top left: the first row left to right, the next right to left, and so on'
+    : 'wired serpentine from the top left: down the first column, up the next, and so on';
+}
+
+/** The chain index of the LED at (x, y), or -1 off the grid. */
+export function chainIndex(p: DeviceProfile, x: number, y: number): number {
+  const { width: w, height: h } = p;
+  if (x < 0 || y < 0 || x >= w || y >= h) return -1;
+  const c = p.look.leds?.chain;
+  if (!c) return y * w + x;
+  const [line, at, len] = c.along === 'rows' ? [y, x, w] : [x, y, h];
+  return line * len + (c.serpentine && line % 2 ? len - 1 - at : at);
+}
+
+/** Where chain LED i sits: [x, y]. */
+export function chainPoint(p: DeviceProfile, i: number): [number, number] {
+  const c = p.look.leds?.chain;
+  if (!c) return [i % p.width, Math.floor(i / p.width)];
+  const len = c.along === 'rows' ? p.width : p.height;
+  const line = Math.floor(i / len);
+  const at = c.serpentine && line % 2 ? len - 1 - (i % len) : i % len;
+  return c.along === 'rows' ? [at, line] : [line, at];
+}
 
 /** NeoPixel ring outer and inner diameters, mm (Adafruit's 12, 16 and 24). */
 const RING_MM: Record<number, { od: number; id: number }> = { 12: { od: 37, id: 23 }, 16: { od: 44.5, id: 31.75 }, 24: { od: 65.6, id: 52.3 } };
@@ -86,19 +124,24 @@ export function ledProfile(o: Exclude<Output, { kind: 'display' }>): DeviceProfi
   }
   const { w, h } = o;
   const pitch = w * h <= 64 ? 8 : 10;
+  const known = MATRIX_CHAIN[`${w}x${h}`];
+  const chain: ChainLayout = known?.chain ?? { along: 'rows', serpentine: false };
   return {
     ...common,
     id: `ws2812-matrix-${w}x${h}`,
     name: `WS2812B matrix · ${w}×${h}`,
     width: w,
     height: h,
-    porting: [...porting(w * h), 'Flexible matrices are often wired serpentine (every other row runs backwards); this one is row by row.'],
+    porting: [
+      ...porting(w * h),
+      `The chain is ${chainWords(chain)}${known ? `, as ${known.panels} usually are` : ''}. Panels differ: check where yours starts and which way it runs, and make the firmware's \`leds.xy\` follow it.`,
+    ],
     enclosure: {
       style: 'pcb',
       body: { w: w * pitch + 4, h: h * pitch + 4, d: 1.2, r: 1 },
       screen: { x: 0, y: 0 },
     },
-    look: { activeWidthMm: w * pitch, activeHeightMm: h * pitch, leds: { layout: 'grid', pitchMm: pitch } },
+    look: { activeWidthMm: w * pitch, activeHeightMm: h * pitch, leds: { layout: 'grid', pitchMm: pitch, chain } },
   };
 }
 
@@ -114,7 +157,7 @@ export function ledCells(p: DeviceProfile): { w: number; h: number } {
 
 /**
  * Draw an LED chain into a rectangle: the black board, each LED's package, and its light as a
- * glowing dot. `rgba` holds each LED's emitted colour (Panel.render output), in chain order.
+ * glowing dot. `rgba` holds each LED's emitted colour (Panel.render output), row by row as they sit.
  */
 export function drawLeds(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, p: DeviceProfile, rgba: Uint8ClampedArray, x: number, y: number, w: number, h: number, board = '#0c0c0e'): void {
   const n = p.width * p.height;

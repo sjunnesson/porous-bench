@@ -111,14 +111,14 @@ leds.on_frame(function(ctx, dt_ms)
 
   local fade = dt_ms / 350
   for i = 0, N - 1 do
-    local a = age[i]
+    local a, at = age[i], leds.xy(i % W, i // W)
     if a > 0 then
-      leds.set(i, colour(a))
+      leds.set(at, colour(a))
     elseif glow[i] > 0 then
       glow[i] = math.max(0, glow[i] - fade)
-      leds.set(i, leds.hsv(hue0 + 200, 0.8, glow[i] * glow[i] * 0.3))
+      leds.set(at, leds.hsv(hue0 + 200, 0.8, glow[i] * glow[i] * 0.3))
     else
-      leds.set(i, 0)
+      leds.set(at, 0)
     end
   end
   leds.show()

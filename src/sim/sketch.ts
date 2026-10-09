@@ -1,3 +1,4 @@
+import type { Library } from './boards';
 import type { Bench } from './controls/bench';
 import type { DeviceProfile } from './devices/types';
 import type { Display } from './display';
@@ -21,6 +22,8 @@ export interface SketchContext<I = Record<string, SimInput>> {
   declare<T extends SimInput>(name: string, spec: InputSpec<T>): T;
   /** The parts on the desk (an app can ask for a sensor that isn't there yet). */
   bench: Bench;
+  /** The drawing libraries the board's firmware has for this output (unset: every one). */
+  libraries?: readonly Library[];
   /** Shows up in the console panel. */
   log(...args: unknown[]): void;
   warn(...args: unknown[]): void;

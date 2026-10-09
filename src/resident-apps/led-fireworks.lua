@@ -73,7 +73,7 @@ leds.on_frame(function(ctx, dt_ms)
   end
   sparks = still
 
-  for i = 0, W * H - 1 do leds.set_rgb(i, math.floor(r[i]), math.floor(g[i]), math.floor(b[i])) end
+  for i = 0, W * H - 1 do leds.set_rgb(leds.xy(i % W, i // W), math.floor(r[i]), math.floor(g[i]), math.floor(b[i])) end
   leds.brightness(bright:value())
   leds.show()
 end)

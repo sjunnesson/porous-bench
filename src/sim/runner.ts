@@ -1,3 +1,4 @@
+import type { Library } from './boards';
 import { type SimClock, SketchStopped, yieldToBrowser } from './clock';
 import type { DeviceProfile } from './devices/types';
 import { Bench } from './controls/bench';
@@ -40,6 +41,8 @@ export class SketchRun {
     private clock: SimClock,
     private cb: RunCallbacks = {},
     bench?: Bench,
+    /** The drawing libraries the board's firmware has for this output (unset: every one). */
+    libraries?: readonly Library[],
   ) {
     this.startMs = clock.now();
     this.display = new Display(device, clock, this.abort.signal);
@@ -54,6 +57,7 @@ export class SketchRun {
       delay: (ms) => this.clock.sleep(ms, this.abort.signal),
       declare: (name, spec) => this.addInput(name, spec),
       bench: this.bench,
+      libraries,
       log: (...args) => this.log('log', args),
       warn: (...args) => this.log('warn', args),
       error: (...args) => this.log('error', args),

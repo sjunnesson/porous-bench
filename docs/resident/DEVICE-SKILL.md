@@ -70,6 +70,11 @@ The board driving the output decides what an app gets. Bench shows it under the 
 | ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~52 KB |
 | Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`; no `lvgl` | ~84 KB |
 
+A library the board's firmware doesn't have isn't there at all: on a board without LVGL the global
+`lvgl` is nil, so `lvgl.bind` fails with "attempt to index a nil value (global 'lvgl')", on Bench as
+on the board (Bench adds why). The same goes for `leds` on a display and `screen` on LED outputs, and
+`lgfx` on a strip or ring (a matrix keeps it). `if lvgl then … end` is how an app checks.
+
 On a board without PSRAM, draw with `lgfx` (or `screen`) and keep the app small: receiving and
 compiling it takes about 6x its size, so stay under ~4 KB of Lua (~8 KB on the C6), and `datetime`
 costs ~35 KB once touched. There Lua has a heap of its own: an app that doesn't fit stops with "not
@@ -209,14 +214,18 @@ drives a WS2812B chain. Start the file with `-- @output strip` (strips and rings
 `-- @output matrix` so it's listed for that output.
 
 ```lua
-leds.count()  leds.width()  leds.height()  leds.xy(x, y)   -- LEDs from 0, chain order, a matrix row by row
+leds.count()  leds.width()  leds.height()  leds.xy(x, y)   -- LEDs from 0 in chain order; xy finds one on a matrix
 leds.set(i, 0xRRGGBB)  leds.set_rgb(i, r, g, b)  leds.get(i)  leds.fill(c[, from[, count]])  leds.clear()
 leds.hsv(hue_degrees, s, v) -> colour     leds.brightness(0..255)     leds.show()   -- nothing lights until show
 leds.on_frame(function(ctx, dt_ms) ... end[, fps])   -- the LED driver's frame timer, default 50 fps
 ```
 
 Put continuous effects in `on_frame` (on_tick is only 10 Hz). Keep brightness modest (~100): full
-white is ~60 mA an LED. A matrix is also an `lgfx` display (8 pixels tall on an 8×8, the built-in
+white is ~60 mA an LED. On a matrix, always find an LED with `leds.xy(x, y)`, never `y * width + x`:
+the chain runs through the grid as the panel is wired, and Bench wires each size as those panels
+usually are (8×8 row by row; 16×16 serpentine rows, every other one right to left; 32×8 serpentine
+columns, down the first and up the next), so an app that computes the index scrambles there, as on
+the real panel. A matrix is also an `lgfx` display (8 pixels tall on an 8×8, the built-in
 5×7 font fits), so text and shapes work with `lgfx.bind("main")` and `g:flip()`.
 
 Plus every universal module from Resident's `prompts/sandbox.md`: `log`, `events`, `store`,

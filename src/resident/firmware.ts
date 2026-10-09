@@ -5,6 +5,7 @@
 import type { Board } from '../sim/boards';
 import type { PartSpec } from '../sim/controls/bench';
 import type { DeviceProfile } from '../sim/devices/types';
+import { chainWords } from '../sim/leds';
 import { gpioName, type Wiring, wiring, wiringLines } from '../sim/wiring';
 
 const RESIDENT = 'https://github.com/inanimate-tech/resident';
@@ -70,7 +71,7 @@ function hardwareSection(p: DeviceProfile, board?: Board, wired?: Wiring): strin
   const leds = p.look.leds;
   if (leds) {
     const n = p.width * p.height;
-    const shape = leds.layout === 'grid' ? `a ${p.width}×${p.height} matrix, wired row by row from the top left` : leds.layout === 'ring' ? `a ring of ${n}` : `a strip of ${n}`;
+    const shape = leds.layout === 'grid' ? `a ${p.width}×${p.height} matrix, ${chainWords(leds.chain)}` : leds.layout === 'ring' ? `a ring of ${n}` : `a strip of ${n}`;
     lines.push(
       `- **Output:** WS2812B addressable LEDs, ${shape} (${n} LEDs, 800 kHz one-wire, GRB). Bench assumes data in on **${din}** of an ESP32 board.`,
       board ? chosenBoard(board, shown ? 'whether the strip is wired as below' : 'which pin the data line is on') : '- **Board:** any ESP32 dev board. Ask me which one I have (and which pin the data line is on) before writing code.',

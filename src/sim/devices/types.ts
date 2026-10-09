@@ -75,9 +75,10 @@ export interface DeviceProfile {
     /** Two-colour OLED glass: the first N rows use accentColor. */
     accentRows?: number;
     accentColor?: string;
-    /** LEDs: how the chain is laid out (width × height LEDs, in chain order, row by row). */
+    /** LEDs: how they sit (width × height of them; the frame buffer holds them as they sit, row by row). */
     /** `radiusMm`: a ring's LEDs sit on a circle of this radius (mm), centred on the board. */
-    leds?: { layout: 'line' | 'ring' | 'grid'; pitchMm: number; radiusMm?: number };
+    /** `chain`: on a matrix, the way the chain runs through the grid (unset: row by row). */
+    leds?: { layout: 'line' | 'ring' | 'grid'; pitchMm: number; radiusMm?: number; chain?: ChainLayout };
   };
 
   epaper?: {
@@ -86,4 +87,14 @@ export interface DeviceProfile {
     /** show('auto') does a full refresh after this many partial ones. */
     fullRefreshEvery: number;
   };
+}
+
+/**
+ * How a matrix's chain runs through its grid from the LED where data comes in, at the top left:
+ * along the rows or down the columns, and on a serpentine panel every other line backwards, so the
+ * chain never jumps back across the board.
+ */
+export interface ChainLayout {
+  along: 'rows' | 'columns';
+  serpentine: boolean;
 }

@@ -35,7 +35,7 @@ leds.on_frame(function(ctx, dt_ms)
         + sin(v_ * 0.45 - t * 1.3)
         + sin((u + v_) * 0.35 + t * 0.7)
         + sin(sqrt(dx * dx + dy * dy) * 0.8 - t * 1.6)
-      leds.set(y * W + x, pal(math.max(0, math.min(1, 0.5 + s / 5)), t))
+      leds.set(leds.xy(x, y), pal(math.max(0, math.min(1, 0.5 + s / 5)), t))
     end
   end
   leds.brightness(bright:value())

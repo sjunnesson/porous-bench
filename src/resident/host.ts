@@ -8,9 +8,11 @@ import type { LuaEngine, LuaFactory } from 'wasmoon';
 import { color565, colors, rgb565ToRgb } from '../sim/color';
 import { DIAL_VIA, type Dial, type DialOptions, TRIGGER_VIA, type Trigger, type TriggerOptions } from '../sim/controls/controls';
 import type { LD2410, LD2410Options } from '../sim/inputs/ld2410';
+import type { Library } from '../sim/boards';
 import type { Display } from '../sim/display';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
+import { chainIndex, chainPoint } from '../sim/leds';
 import type { Climate } from '../sim/inputs/climate';
 import type { SimInput } from '../sim/inputs/input';
 import type { LightSensor } from '../sim/inputs/light';
@@ -58,6 +60,11 @@ export interface ResidentBoard {
   imu?: Imu;
   buzzer?: Buzzer;
   store: AppStore;
+  /**
+   * The drawing modules the board's firmware has for this output (Bench's Boards). The others aren't
+   * there for the app, as on the device. Unset: every one.
+   */
+  libraries?: readonly Library[];
   /** Bench drivers: hardware the app declares, which appears on the desk. */
   dial?(name: string, opts: DialOptions): Dial;
   trigger?(name: string, opts: TriggerOptions): Trigger;
@@ -618,6 +625,8 @@ export class ResidentHost {
         };
       },
 
+      libraries: () => (b.libraries ? [...b.libraries] : undefined),
+
       // lvgl: the widget tree (lvgl.ts); handles, animations and timers live in lua/lvgl.lua.
       lv_claim: (name: string) => {
         if (name !== 'main') return false;
@@ -654,22 +663,21 @@ export class ResidentHost {
       },
       lv_theme: (theme: Record<string, Record<string, unknown>> | null | undefined) => this.lv!.setTheme(theme ?? null),
 
-      // leds: the LED chain when the output is one (strip, ring, matrix), chain order row by row.
+      // leds: the LED chain when the output is one (strip, ring, matrix), in chain order: on a matrix
+      // the chain runs through the grid as the panel is wired (leds.ts), and xy finds an LED in it.
       led_size: () => (d.tech === 'led' ? [d.width(), d.height()] : undefined),
+      led_xy: (x: number, y: number) => chainIndex(d.profile, x, y),
       led_set: (i: number, c: number) => {
-        const w = d.width();
-        if (i >= 0 && i < w * d.height()) d.drawPixel(i % w, Math.floor(i / w), c24(c));
+        if (i >= 0 && i < d.width() * d.height()) d.drawPixel(...chainPoint(d.profile, i), c24(c));
       },
       led_get: (i: number) => {
-        const w = d.width();
-        if (i < 0 || i >= w * d.height()) return 0;
-        const [r, g, bl] = rgb565ToRgb(d.getPixel(i % w, Math.floor(i / w)));
+        if (i < 0 || i >= d.width() * d.height()) return 0;
+        const [r, g, bl] = rgb565ToRgb(d.getPixel(...chainPoint(d.profile, i)));
         return (r << 16) | (g << 8) | bl;
       },
       led_fill: (c: number, from: number, count: number) => {
-        const w = d.width();
-        const n = w * d.height();
-        for (let i = Math.max(0, from); i < Math.min(n, from + count); i++) d.drawPixel(i % w, Math.floor(i / w), c24(c));
+        const n = d.width() * d.height();
+        for (let i = Math.max(0, from); i < Math.min(n, from + count); i++) d.drawPixel(...chainPoint(d.profile, i), c24(c));
       },
       led_show: () => this.present(),
       led_brightness: (v: number) => d.setBrightness((Math.min(255, Math.max(0, v)) / 255) * 100),

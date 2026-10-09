@@ -5,6 +5,7 @@
 import { CHANNELS, type PartKind, type PartSpec } from '../sim/controls/bench';
 import type { Board } from '../sim/boards';
 import type { DeviceProfile } from '../sim/devices/types';
+import { chainWords } from '../sim/leds';
 
 const REPO = 'https://github.com/sjunnesson/porous-bench';
 const DEVICE_SKILL = 'https://raw.githubusercontent.com/sjunnesson/porous-bench/main/docs/resident/DEVICE-SKILL.md';
@@ -63,7 +64,7 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
     const n = p.width * p.height;
     const shape =
       leds.layout === 'grid'
-        ? `a ${p.width}×${p.height} WS2812B matrix (${n} LEDs, wired row by row from the top left: \`leds.xy(x, y)\` gives the index)`
+        ? `a ${p.width}×${p.height} WS2812B matrix (${n} LEDs, ${chainWords(leds.chain)}: find an LED with \`leds.xy(x, y)\`, never \`y * width + x\`, so the app runs on any panel)`
         : leds.layout === 'ring'
           ? `a WS2812B ring of ${n} LEDs (LED 0 at the top, clockwise)`
           : `a WS2812B strip of ${n} LEDs`;

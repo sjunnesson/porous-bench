@@ -10,7 +10,7 @@ import { findDevice } from '../src/sim/devices';
 import type { DeviceProfile } from '../src/sim/devices/types';
 import { Display } from '../src/sim/display';
 import { appNeeds, misfits, outputCaps } from '../src/resident/needs';
-import { boardsFor } from '../src/sim/boards';
+import { boardsFor, type Library } from '../src/sim/boards';
 import { benchApp } from '../src/sim/generate';
 import { ledProfile, MATRIX_SIZES } from '../src/sim/leds';
 import { Imu } from '../src/sim/inputs/imu';
@@ -34,7 +34,7 @@ const apps = Object.entries(files).map(([path, code]) => ({
 }));
 const factory = new LuaFactory();
 
-async function runApp(code: string, device: DeviceProfile, ms: number, parts: PartSpec[] = DEFAULT_PARTS, controls: (Dial | Trigger)[] = []) {
+async function runApp(code: string, device: DeviceProfile, ms: number, parts: PartSpec[] = DEFAULT_PARTS, controls: (Dial | Trigger)[] = [], libraries?: readonly Library[]) {
   const clock = new SimClock();
   clock.paused = true;
   const display = new Display(device, clock);
@@ -49,6 +49,7 @@ async function runApp(code: string, device: DeviceProfile, ms: number, parts: Pa
     buttons: [new Trigger({}, bench), new Trigger({}, bench)],
     imu: new Imu({}, clock),
     store: new AppStore('apps-test', false),
+    libraries,
     dial: (_name, opts) => {
       const d = new Dial(opts, bench);
       controls.push(d);
@@ -89,9 +90,15 @@ async function runApp(code: string, device: DeviceProfile, ms: number, parts: Pa
 describe('bundled apps', () => {
   for (const app of apps) {
     it(`${app.name} runs on every kind of ${app.target}`, async () => {
+      const needs = appNeeds(app.code);
       for (const device of OUTPUTS[app.target]) {
-        if (/^--\s*@needs\b.*\btouch\b/m.test(app.code) && !device.touch) continue; // listed only where there's a touch panel
-        expect(await runApp(app.code, device, 600), `${app.name} on ${device.id}`).toEqual([]);
+        if (needs.touch && !device.touch) continue; // listed only where there's a touch panel
+        // With only the libraries of a board that has what it binds, as Bench runs it.
+        const libraries = boardsFor(device)
+          .map((b) => outputCaps(device, b).libraries)
+          .find((libs) => needs.libraries.every((l) => libs.includes(l)));
+        if (!libraries) continue; // listed only on other boards
+        expect(await runApp(app.code, device, 600, DEFAULT_PARTS, [], libraries), `${app.name} on ${device.id}`).toEqual([]);
       }
     }, 60_000);
   }
@@ -115,7 +122,9 @@ describe('apps generated from the bench', () => {
     it(`runs on every kind of ${target}`, async () => {
       const code = benchApp(target, parts);
       for (const device of OUTPUTS[target]) {
-        expect(await runApp(code, device, 600, parts), `bench app on ${device.id}`).toEqual([]);
+        // An LED chain's own libraries (a strip has no lgfx); the display app here is the LVGL one.
+        const libraries = target === 'display' ? undefined : outputCaps(device, boardsFor(device)[0]).libraries;
+        expect(await runApp(code, device, 600, parts, [], libraries), `bench app on ${device.id}`).toEqual([]);
       }
     }, 60_000);
   }
@@ -135,7 +144,7 @@ describe('apps generated from the bench', () => {
   it('writes lgfx instead of LVGL for a board without it, and fits that board', async () => {
     const code = benchApp('display', parts, ['screen', 'lgfx']);
     expect(code).not.toContain('lvgl');
-    for (const device of OUTPUTS.display) expect(await runApp(code, device, 600, parts), `lgfx bench app on ${device.id}`).toEqual([]);
+    for (const device of OUTPUTS.display) expect(await runApp(code, device, 600, parts, [], ['screen', 'lgfx']), `lgfx bench app on ${device.id}`).toEqual([]);
     // The two boards Bench ships tested firmware for, neither with LVGL.
     for (const id of ['waveshare-epd-2.13-v4', 'waveshare-esp32-c6-lcd-1.47']) {
       const device = findDevice(id)!;

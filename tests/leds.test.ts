@@ -8,11 +8,12 @@ import { findDevice } from '../src/sim/devices';
 import type { DeviceProfile } from '../src/sim/devices/types';
 import { Display } from '../src/sim/display';
 import { Button } from '../src/sim/inputs/button';
-import { ledProfile } from '../src/sim/leds';
+import type { Library } from '../src/sim/boards';
+import { chainIndex, chainPoint, ledProfile, MATRIX_SIZES } from '../src/sim/leds';
 
 const factory = new LuaFactory();
 
-async function boot(code: string, profile: DeviceProfile) {
+async function boot(code: string, profile: DeviceProfile, libraries?: Library[]) {
   const clock = new SimClock();
   clock.paused = true;
   const display = new Display(profile, clock);
@@ -23,6 +24,7 @@ async function boot(code: string, profile: DeviceProfile) {
     zone: () => new Zone('Europe/London'),
     buttons: [new Button({}, clock), new Button({}, clock)],
     store: new AppStore('leds-test', false),
+    libraries,
     log: (level, text) => logs.push(level === 'info' ? text : `${level}: ${text}`),
     telemetry: () => {},
     publish: () => 'sent',
@@ -97,6 +99,46 @@ describe('LED outputs', () => {
     const [frames, ticks] = t.logs[0].split('\t').map(Number);
     expect(ticks).toBe(5);
     expect(frames).toBeGreaterThanOrEqual(20); // ~50 fps vs 10 Hz
+  });
+
+  it('runs each matrix chain as panels of that size are wired', () => {
+    const at = (w: number, h: number, x: number, y: number) => chainIndex(ledProfile({ kind: 'matrix', w, h }), x, y);
+    // A rigid 8×8: row by row.
+    expect([at(8, 8, 7, 0), at(8, 8, 0, 1), at(8, 8, 1, 2)]).toEqual([7, 8, 17]);
+    // A flexible 16×16: the second row runs right to left.
+    expect([at(16, 16, 15, 0), at(16, 16, 15, 1), at(16, 16, 0, 1), at(16, 16, 0, 2)]).toEqual([15, 16, 31, 32]);
+    // A flexible 8×32, long side across: down the first column, up the second.
+    expect([at(32, 8, 0, 7), at(32, 8, 1, 7), at(32, 8, 1, 0), at(32, 8, 2, 0)]).toEqual([7, 8, 15, 16]);
+    expect(at(32, 8, 32, 0)).toBe(-1);
+    for (const [w, h] of MATRIX_SIZES) {
+      const p = ledProfile({ kind: 'matrix', w, h });
+      for (let i = 0; i < w * h; i++) expect(chainIndex(p, ...chainPoint(p, i)), `${w}×${h} LED ${i}`).toBe(i);
+    }
+  });
+
+  it('lights chain LED i where it sits on a serpentine matrix, and xy finds what lgfx drew', async () => {
+    const t = await boot(`function init()
+        leds.set(8, 0xFF0000)
+        local g = lgfx.bind("main")
+        g:drawPixel(5, 0, 0x00FF00)
+        log.info(leds.xy(1, 7), leds.xy(1, 0), string.format("%06X", leds.get(leds.xy(5, 0))))
+        leds.show()
+      end`, ledProfile({ kind: 'matrix', w: 32, h: 8 }));
+    expect(t.error).toBeUndefined();
+    expect(t.logs[0]).toBe('8	15	00FF00');
+    await run(t, 20);
+    expect(led(t.display, 7 * 32 + 1)).toEqual([255, 0, 0]); // LED 8: the bottom of the second column
+    expect(led(t.display, 8)).toEqual([0, 0, 0]);
+  });
+
+  it('leaves out the libraries the firmware lacks, as a board does, and says why', async () => {
+    const strip = ledProfile({ kind: 'strip', count: 8 });
+    const t = await boot('function init() log.info(lgfx == nil, screen == nil, lvgl == nil) lgfx.bind("main") end', strip, ['leds']);
+    expect(t.logs[0]).toBe('true\ttrue\ttrue');
+    expect(t.error).toMatch(/attempt to index a nil value \(global 'lgfx'\) \(the output is an LED chain: draw with leds\)/);
+    // A local of the same name is explained too.
+    const display = await boot('local leds = leds function init() leds.show() end', findDevice('m5stickc-plus2')!, ['screen', 'lgfx', 'lvgl']);
+    expect(display.error).toMatch(/\(upvalue 'leds'\) \(the output is a display, not an LED chain: choose a strip, ring or matrix output\)$/);
   });
 
   it('explains when the output is a display, not an LED chain', async () => {
