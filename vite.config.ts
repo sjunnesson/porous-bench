@@ -27,8 +27,9 @@ function shareApi(): Plugin {
 
 export default defineConfig({
   plugins: [react(), shareApi()],
-  // Two pages: Bench, and the guide (guide.html, served at /guide), which doesn't load the simulator.
-  build: { rolldownOptions: { input: { main: 'index.html', guide: 'guide.html' } } },
+  // Three pages: Bench, the guide (guide.html, served at /guide) and the privacy notice (privacy.html,
+  // at /privacy, plain HTML); neither of the last two loads the simulator.
+  build: { rolldownOptions: { input: { main: 'index.html', guide: 'guide.html', privacy: 'privacy.html' } } },
   server: {
     port: 5199,
     // The Resident relay doesn't accept calls from browser pages, so Bench reaches it through its own

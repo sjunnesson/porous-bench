@@ -49,6 +49,9 @@ export function About() {
               <a href="mailto:bench@porous.systems" title="Questions, ideas, bugs">
                 Contact: bench@porous.systems
               </a>
+              <a href="/privacy" target="_blank" title="What the site and the apps do with data">
+                Privacy
+              </a>
               <a href="https://github.com/sjunnesson/porous-bench" target="_blank" rel="noreferrer">
                 Bench on GitHub
               </a>

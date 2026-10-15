@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#E6EBEE" />
+    <title>Privacy · Bench · porous.systems</title>
+    <meta name="description" content="What Bench, the website and the apps for iPhone, iPad and Mac, does with data: very little." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect x=%224%22 y=%221%22 width=%228%22 height=%2214%22 rx=%222%22 fill=%22%231b4b7a%22/%3E%3C/svg%3E" />
+    <style>
+      html, body { background: #e6ebee; }
+      body {
+        margin: 0;
+        color: #11181c;
+        font: 16px/1.6 "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      main { max-width: 680px; margin: 0 auto; padding: 48px 16px 64px; }
+      .brand {
+        font: 500 11px "IBM Plex Mono", ui-monospace, Menlo, monospace;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: #5a666d;
+        text-decoration: none;
+      }
+      .brand b { color: #11181c; font-weight: 500; }
+      h1 { font-size: 28px; font-weight: 500; margin: 32px 0 8px; }
+      h2 {
+        font: 500 11px "IBM Plex Mono", ui-monospace, Menlo, monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #5a666d;
+        margin: 40px 0 8px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(17, 24, 28, 0.14);
+      }
+      a { color: #1b4b7a; }
+      ul { padding-left: 20px; }
+      li { margin: 6px 0; }
+      .muted { color: #5a666d; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="brand" href="/">porous.systems <b>Bench</b></a>
+      <h1>Privacy</h1>
+      <p class="muted">Bench is the website at bench.porous.systems and the Bench app for iPhone, iPad and Mac, made by
+        Vitgranen AB. Updated 15 October 2026.</p>
+
+      <p>Bench collects as little as it can: no accounts, no advertising, no tracking, and no cookies. What follows is
+        everything that leaves your device, and why.</p>
+
+      <h2>The website</h2>
+      <ul>
+        <li>Bench runs in your browser. Your bench, its apps and your own code stay in the browser's storage on your
+          device.</li>
+        <li>Page views are counted with Vercel Web Analytics, which uses no cookies and records nothing about your apps
+          or your bench. Vercel hosts the site and, as any host does, handles the requests your browser makes.</li>
+        <li><b>Share links.</b> A long link carries your setup in the link itself; nothing is stored. A short link
+          (bench.porous.systems/s/…) stores the setup you share, which can include your app's code, so that anyone with
+          the link can open it. It's kept with no end date. To limit how many links one address makes (30 an hour), your
+          IP address is held for up to an hour; it isn't kept with the setup.</li>
+        <li><b>Mirroring.</b> When you mirror an app to a device, the app and the state of your bench's controls go to
+          that device through the Resident relay, which Inanimate runs (resident.inanimate.tech).</li>
+      </ul>
+
+      <h2>The apps for iPhone, iPad and Mac</h2>
+      <ul>
+        <li>The apps collect no data: no analytics, no accounts, no tracking. Your desk, each app's stored values and
+          your settings stay on the device.</li>
+        <li><b>The relay.</b> Only when you press Connect does a device join the Resident relay, under a random ID
+          (sim-…). The apps pushed to it and the events it sends then go between the app and the relay: Inanimate's,
+          unless you set a relay of your own in Settings. Bench's maker doesn't receive that traffic.</li>
+      </ul>
+
+      <h2>Questions</h2>
+      <p>Write to <a href="mailto:bench@porous.systems">bench@porous.systems</a>. Bench is open source:
+        <a href="https://github.com/sjunnesson/porous-bench">github.com/sjunnesson/porous-bench</a>.</p>
+    </main>
+  </body>
+</html>

@@ -2,7 +2,8 @@
   "rewrites": [
     { "source": "/relay/devices/:id/send", "destination": "https://resident.inanimate.tech/devices/:id/send" },
     { "source": "/s/:id", "destination": "/index.html" },
-    { "source": "/guide", "destination": "/guide.html" }
+    { "source": "/guide", "destination": "/guide.html" },
+    { "source": "/privacy", "destination": "/privacy.html" }
   ],
   "headers": [
     {
