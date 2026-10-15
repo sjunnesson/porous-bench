@@ -25,6 +25,12 @@ Brought up and tested on hardware 2026-10-12: device type `s3-lcd2`, firmware `s
 
 ## What bring-up taught
 
+- **Staying online:** joined to a distant access point at -93 dBm (the near one reads -77 to -82),
+  every relay connect timed out, and Courier gave up after 10 attempts until a reboot. Courier has
+  two such dead ends (giving up, and a setup portal with no timeout when Wi-Fi drops mid-reconnect);
+  `keepConnecting()` in `main.cpp` reconnects out of the first and reboots out of the second when
+  the board was online earlier. The `[heartbeat]` line prints the signal, channel and access point:
+  read it first when the board drops off. Opening the serial port resets the board.
 - **Chip:** ESP32-S3 (QFN56) rev v0.2, 8 MB embedded octal PSRAM (`qio_opi`), 16 MB flash, on
   espressif32@6.12.0 (Arduino core 2.0.17). Native USB only: `ARDUINO_USB_MODE=1` and
   `ARDUINO_USB_CDC_ON_BOOT=1`, or Serial stays silent.

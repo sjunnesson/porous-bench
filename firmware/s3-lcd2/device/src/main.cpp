@@ -74,6 +74,36 @@ static Resident::SandboxConfig makeConfig() {
 
 Resident::Sandbox sandbox{makeConfig()};
 
+// Courier has two dead ends a bad stretch of Wi-Fi can leave the board in until
+// someone reboots it: after 10 failed reconnects (~10 min) it stops trying
+// ("manual reboot required"), and when Wi-Fi drops during a reconnect it opens
+// its setup portal and waits there with no timeout. Seen on this board: joined
+// to a distant access point at -93 dBm, every relay connect timed out and it
+// went offline until a reboot. The app keeps running
+// meanwhile, so the first is kicked back into reconnecting in place; the
+// portal, only when the board was online earlier this boot (a first setup
+// keeps it), is left by rebooting, which brings the saved app back.
+static void keepConnecting() {
+  static Courier::State last = Courier::State::Booting;
+  static uint32_t since = 0;
+  static bool wasOnline = false;
+  Courier::State state = sandbox.courier().getState();
+  if (state != last) {
+    last = state;
+    since = millis();
+  }
+  if (state == Courier::State::Connected) wasOnline = true;
+  uint32_t stuck = millis() - since;
+  if (state == Courier::State::ConnectionFailed && stuck >= 60000) {
+    Serial.println("[net] Courier gave up; reconnecting again");
+    sandbox.courier().reconnect();
+  } else if (state == Courier::State::WifiConfiguring && wasOnline && stuck >= 180000) {
+    Serial.println("[net] Wi-Fi lost into the setup portal; rebooting");
+    delay(100);
+    ESP.restart();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   uint32_t t0 = millis();
@@ -104,6 +134,10 @@ void setup() {
     Serial.printf("[resident] device ID %s, WS wss://%s%s\n", sandbox.getDeviceId().c_str(),
                   RESIDENT_HOST, wsPath.c_str());
   });
+
+  // The radio stays awake: the board runs on USB, so the Arduino default
+  // (modem sleep, which delays and drops packets to save power) buys nothing.
+  sandbox.onNetworkReady([]() { WiFi.setSleep(false); });
 
   // Bench sends the time zone its apps run in before each app it mirrors
   // here, so a clock shows the same time on both screens. It comes on Bench's
@@ -146,6 +180,7 @@ void loop() {
   static uint32_t loops = 0, loopUs = 0, loopMax = 0, lastStats = 0;
   uint32_t t0 = micros();
   sandbox.loop();
+  keepConnecting();
   uint32_t us = micros() - t0;
   loops++;
   loopUs += us;
@@ -167,9 +202,10 @@ void loop() {
   static uint32_t lastBeat = 0;
   if (millis() - lastBeat >= 30000) {
     lastBeat = millis();
-    Serial.printf("[heartbeat] %s, app %s, last push %lu us\n",
-                  sandbox.isConnected() ? "connected" : "offline",
-                  sandbox.isAppRunning() ? "running" : "idle", (unsigned long)Lcd::lastPushUs());
+    Serial.printf("[heartbeat] %s (courier state %d), app %s, last push %lu us; Wi-Fi %d dBm, channel %d, AP %s\n",
+                  sandbox.isConnected() ? "connected" : "offline", (int)sandbox.courier().getState(),
+                  sandbox.isAppRunning() ? "running" : "idle", (unsigned long)Lcd::lastPushUs(),
+                  (int)WiFi.RSSI(), (int)WiFi.channel(), WiFi.BSSIDstr().c_str());
     printMemory("now");
   }
 }
