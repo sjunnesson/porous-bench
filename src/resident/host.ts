@@ -512,6 +512,12 @@ export class ResidentHost {
       lg_setCursor: (x: number, y: number) => d.setCursor(x, y),
       lg_print: (s: string) => d.print(s),
       lg_drawString: (s: string, x: number, y: number) => this.drawString(s, x, y),
+      // The prelude sends each byte of the RGB565 data as the code point 256 + byte (see pushImage there).
+      lg_pushImage: (x: number, y: number, w: number, h: number, s: string) => {
+        for (let r = 0, i = 0; r < h; r++) {
+          for (let c = 0; c < w; c++, i += 2) d.drawPixel(x + c, y + r, ((s.charCodeAt(i) - 256) << 8) | (s.charCodeAt(i + 1) - 256));
+        }
+      },
       lg_width: () => d.width(),
       lg_height: () => d.height(),
       lg_flip: () => this.present(),

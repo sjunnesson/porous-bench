@@ -117,11 +117,31 @@ local LGFX = {
   setTextColor = "iI", setTextSize = "n", setTextDatum = "i", setCursor = "ii",
   print = "s", drawString = "sii", width = "", height = "", flip = "",
 }
+-- g:pushImage(x, y, w, h, data): data is w * h * 2 bytes of RGB565, big-endian, row by row. The
+-- host reads Lua strings as UTF-8, which raw bytes aren't, so each byte goes across as the code
+-- point 256 + byte (two UTF-8 bytes, never NUL). This runs as the board's C would: not counted.
+local sbyte, uchar = string.byte, utf8.char
+local SHIFT = {}
+local function pushImage(x, y, w, h, data)
+  if w <= 0 or h <= 0 then return end
+  if w > 4096 or h > 4096 or #data ~= w * h * 2 then
+    error("bad argument #5 to 'pushImage' (expected w * h * 2 bytes of RGB565, big-endian)", 3)
+  end
+  local parts = {}
+  for i = 1, #data, 2048 do
+    local bytes = { sbyte(data, i, math.min(i + 2047, #data)) }
+    for k = 1, #bytes do bytes[k] = bytes[k] + 256 end
+    parts[#parts + 1] = uchar(unpack(bytes))
+  end
+  H.lg_pushImage(x, y, w, h, concat(parts))
+end
+
 function lgfx.bind(name)
   name = ck_str(name, 1, "bind", select("#", name))
   if not H.lgfx_bind(name) then error(fmt("lgfx.bind: no display named '%s'", name), 2) end
   local g = {}
   for m, spec in pairs(LGFX) do g[m] = wrap(m, spec, fn("lg_" .. m), true) end
+  g.pushImage = wrap("pushImage", "iiiis", pushImage, true)
   return g
 end
 

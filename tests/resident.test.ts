@@ -96,6 +96,24 @@ describe('Resident sandbox', () => {
     expect(glass(t.display, 60, 60)[0]).toBeGreaterThan(240);
   });
 
+  it('pushes a block of RGB565 pixels from a string, NUL and high bytes included', async () => {
+    // Two rows of two at 60,60: red, green / black (all zero bytes), white.
+    const t = await boot(`local g = lgfx.bind("main")
+      function init(ctx)
+        g:fillScreen(0x0000FF)
+        g:pushImage(60, 60, 2, 2, "\\248\\0\\7\\224\\0\\0\\255\\255")
+        g:flip()
+        local ok, err = pcall(g.pushImage, g, 0, 0, 2, 2, "short")
+        log.info(tostring(ok) .. " " .. err)
+      end`);
+    expect(t.error).toBeUndefined();
+    await run(t, 50);
+    const px = (x: number, y: number) => t.display.getPixel(x, y);
+    expect([px(60, 60), px(61, 60), px(60, 61), px(61, 61), px(62, 60)]).toEqual([0xf800, 0x07e0, 0x0000, 0xffff, 0x001f]);
+    expect(t.logs[0]).toContain("false");
+    expect(t.logs[0]).toContain("expected w * h * 2 bytes of RGB565, big-endian");
+  });
+
   it('checks integer arguments like luaL_checkinteger, numbering method args from 1', async () => {
     const t = await boot(`local g = lgfx.bind("main")
       function init(ctx)
