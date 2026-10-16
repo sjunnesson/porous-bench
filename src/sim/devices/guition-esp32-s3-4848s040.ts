@@ -9,6 +9,8 @@ export default {
   name: 'Guition ESP32-S3-4848S040',
   tech: 'lcd',
   touch: { controller: 'GT911', i2cAddress: 0x5d },
+  // 30 FPS: the panel shows about 46 frames a second, and Plenum's surfaces redraw only what moves.
+  tickMs: 33,
   width: 480,
   height: 480,
   controller: 'ST7701S',

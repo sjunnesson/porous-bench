@@ -57,6 +57,8 @@ export interface DeviceProfile {
   firmwareRotation?: number;
   /** A touch panel over the glass: apps get `touchscreen` and `touch_*` events. */
   touch?: { controller: string; i2cAddress?: number };
+  /** How often the board's firmware calls a Resident app's on_tick, in ms (Resident's default is 100: 10 FPS). */
+  tickMs?: number;
   /** The boards (ids in src/sim/boards.ts) that can drive it, the default first. Unset: any generic board. */
   boards?: string[];
   /** Hardware built into the board besides its buttons (those come from the enclosure). */

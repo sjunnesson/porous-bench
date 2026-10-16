@@ -93,6 +93,7 @@ interface Api {
 }
 
 const RING = 8;
+/** Resident's default on_tick interval; a device profile's tickMs overrides it (the Guition ticks at 33). */
 const TICK_MS = 100;
 /** LV_DEF_REFR_PERIOD on the reference board: LVGL's anim timer and display refresh run this often. */
 const LV_PERIOD_MS = 33;
@@ -208,7 +209,7 @@ export class ResidentHost {
       if (err) this.reportError(err, false);
     }
     const now = this.board.now();
-    if (now - this.lastTick >= TICK_MS) {
+    if (now - this.lastTick >= (this.board.display.profile.tickMs ?? TICK_MS)) {
       const dt = Math.round(now - this.lastTick);
       this.lastTick = now;
       const err = this.api.call('on_tick', this.timeMs, dt);
