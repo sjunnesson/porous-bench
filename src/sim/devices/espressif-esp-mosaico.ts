@@ -1,0 +1,86 @@
+import type { DeviceProfile } from './types';
+
+// Pins from Espressif's ESP-Mosaico V1.2 user guide (its GPIO table) and BSP (esp-mosaico-bsp,
+// bsp/esp_mosaico.h and onboard/display.c); the glass from the panel's datasheet (H0216F002AMT004-1);
+// the outline and where the keys and ports sit measured off the drawing in the factory guide, so
+// approximate. Not measured on a board.
+export default {
+  id: 'espressif-esp-mosaico',
+  name: 'Espressif ESP-Mosaico',
+  tech: 'amoled',
+  touch: { controller: 'CST9220', i2cAddress: 0x5a },
+  width: 480,
+  height: 480,
+  controller: 'CO5300',
+  bus: { kind: 'qspi', hz: 40_000_000 },
+  ram: { width: 480, height: 480, offsetX: 0, offsetY: 0 },
+  boards: ['espressif-esp-mosaico'],
+  builtins: ['imu'], // BMI270
+  wiring: {
+    'QSPI CS': 50,
+    'QSPI CLK': 42,
+    'QSPI D0': 36,
+    'QSPI D1': 51,
+    'QSPI D2': 35,
+    'QSPI D3': 9,
+    RST: 44,
+    TE: 43,
+    'Display + slot power': 60,
+    'I2C SDA': 56,
+    'I2C SCL': 3,
+    'Touch INT': 6,
+    'Sensor INT': 2,
+    'AI key': 7,
+    BOOT: 61,
+    Motor: 8,
+    'Power off': 57,
+    'I2S MCLK': 54,
+    'I2S BCK': 37,
+    'I2S WS': 49,
+    'I2S to codec': 40,
+    'I2S from codec': 52,
+    'Speaker PA': 45,
+    'NAND CLK': 20,
+    'NAND D': 21,
+    'NAND Q': 22,
+    'NAND CS': 23,
+    'NAND HOLD': 24,
+    'NAND WP': 25,
+  },
+  porting: [
+    'CO5300 AMOLED over QSPI (four data lines) at 40 MHz, as Espressif\'s BSP runs it (esp_lcd_co5300), 480×480 with no RAM offset. Init: sleep out (0x11, wait 600 ms), 0xFE 20, 0x19 10, 0x1C A0, 0xFE 00, 0xC4 80, 0x3A 55, 0x35 00 (TE on), 0x53 20, 0x51 FF, 0x63 FF, CASET/RASET 0..479, display on (0x29, wait 600 ms).',
+    'Espressif\'s BSP widens every window to start on a column that is a multiple of 4 and end just before the next one; do the same (the CO5300 needs at least an even start and an odd end). Pushing the whole frame never hits this. TE (tearing sync) is on GPIO43.',
+    'No backlight: brightness is command 0x51 (0..255). Black pixels are off. Pixels are RGB565 (COLMOD 0x55), sent big-endian.',
+    'Square glass with rounded corners, ~5.5 mm radius (about 70 px) by the panel drawing: keep content clear of the corners. The datasheet says the panel can\'t scan in reverse, so turn the picture in software rather than with MADCTL\'s mirror bits.',
+    'GPIO60 (VCC_PW, active low) switches the display\'s supply and the slots\' 3V and 5V: drive it low before talking to the panel. The BSP ramps it over 50 ms with PWM as a soft start.',
+    'Touch: CST9220 at I2C 0x5A, INT on GPIO6, no reset pin, on the internal bus (SDA 56, SCL 3) with the ES8311 (0x19), the BMI270 (0x69), two BMM150 magnetometers (0x11, 0x12) and the BQ27220 fuel gauge (0x55). It reports in panel pixels. Expose it as Bench\'s `touchscreen` module and `touch_*` events.',
+    'Board v1.0 differs: its internal bus is on 0/1 (shared with the slots), LCD RST and SCL swap (42 and 44), the codec\'s power is GPIO56 and a status LED sits on 3. The BSP reads the version from eFuse USER_DATA; the silkscreen says it too. These pins are v1.2\'s (v1.1 is wired as v1.2).',
+    'Keys: the AI key on GPIO7 (active low) is button A, BOOT on GPIO61 (active low; a strap: low at reset enters download mode) is button B. ON/OFF goes to the SAM8108 power controller, not a GPIO; GPIO57 pulled low asks it to switch off.',
+    'BMI270 IMU at I2C 0x69 (interrupt on GPIO2, shared with the magnetometers): Bench\'s `imu` module. Vibration motor on GPIO8, active high (the BSP drives it with PWM).',
+    'Audio: ES8311 codec (I2S MCLK 54, BCK 37, WS 49, data to codec 40, from codec 52), NS4150B speaker amp enabled on GPIO45, a microphone. The same pins reach the right slot.',
+    'ESP32-S31NRV16: dual-core RISC-V at 320 MHz, 16 MB PSRAM in the package, 16 MB SPI flash, plus a 128 MB SPI NAND on SPI3 (20–25). A full RGB565 frame is 480 × 480 × 2 = 450 KB: keep it in PSRAM. The USB-C is the chip\'s high-speed USB OTG; its USB serial/JTAG goes only to the left slot (33, 34). A 65 mAh battery.',
+    'The ESP32-S31 is new: Espressif\'s BSP needs ESP-IDF 6.2 (`idf.py --preview set-target esp32s31`), and no stable Arduino core has it yet (Arduino-ESP32 4.0.0-RC1, a pre-release on ESP-IDF 6.1, is the first with S31 code).',
+  ],
+  url: 'https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp-mosaico/index.html',
+  enclosure: {
+    // A ~45 × 45 × 11 mm white cube with the 43.3 mm cover glass over almost all of its face. The AI
+    // key and the speaker are on the top edge; BOOT, the USB-C and ON/OFF on the bottom, with the mic
+    // and the charge LED beside them; a 2×10 socket slot on each side, towards the back. All measured
+    // off Espressif's drawing, so approximate.
+    style: 'case',
+    body: { w: 45, h: 45, d: 11, r: 2.5 },
+    screen: { x: 0, y: 0 },
+    parts: [
+      { kind: 'button', face: 'top', u: 12.9, v: 0, w: 5.9, h: 5.8, input: 0, label: 'AI key', color: '#f08a3c' },
+      { kind: 'port', face: 'top', u: -2.5, v: 0, w: 16, h: 2.2, label: 'Speaker' },
+      { kind: 'button', face: 'bottom', u: -10.2, v: -1.8, w: 8.5, h: 2.7, input: 1, label: 'BOOT', color: '#c9ced8' },
+      { kind: 'port', face: 'bottom', u: 0, v: -1.8, w: 9, h: 3.3, label: 'USB-C' },
+      { kind: 'button', face: 'bottom', u: 10.2, v: -1.8, w: 8.5, h: 2.7, label: 'ON/OFF', color: '#c9ced8' },
+      { kind: 'hole', face: 'bottom', u: -7, v: 1.5, r: 0.4 },
+      { kind: 'led', face: 'bottom', u: 0, v: 1.5, r: 0.5, color: '#ff8a3c', label: 'Charge' },
+      { kind: 'port', face: 'left', u: -2, v: 0, w: 5, h: 25.4, label: 'Left slot (2×10)' },
+      { kind: 'port', face: 'right', u: -2, v: 0, w: 5, h: 25.4, label: 'Right slot (2×10)' },
+    ],
+  },
+  look: { activeWidthMm: 38.39, activeHeightMm: 38.39, cornerRadiusPx: 70 },
+} satisfies DeviceProfile;

@@ -99,6 +99,13 @@ export const BOARDS: Board[] = [
     note: '8 MB octal PSRAM: Lua and LVGL live there, next to the 450 KB frame the panel is scanned from.',
   },
   {
+    id: 'espressif-esp-mosaico',
+    name: 'ESP32-S31NRV16 (on the board)',
+    libraries: ['screen', 'lgfx', 'lvgl'],
+    appRamKb: 16384,
+    note: '16 MB PSRAM in the package: Lua and LVGL live there.',
+  },
+  {
     id: 'waveshare-esp32-c6-lcd-1.47',
     name: 'ESP32-C6 (on the board)',
     libraries: ['screen', 'lgfx'],

@@ -174,6 +174,11 @@ function planSection(p: DeviceProfile, board?: Board): string[] {
       '- It has native USB: add `-DARDUINO_USB_MODE=1 -DARDUINO_USB_CDC_ON_BOOT=1` or serial stays silent. If the port doesn\'t show up, I hold BOOT while plugging it in.',
     );
   }
+  if (/esp32-s31|mosaico/i.test(p.id)) {
+    lines.push(
+      '- **ESP32-S31:** a new chip, and the PlatformIO setup above may not build for it yet. Espressif\'s own BSP needs ESP-IDF 6.2 (`idf.py --preview set-target esp32s31`), and Arduino-ESP32\'s first S31 code is in 4.0.0-RC1, a pre-release. Before stage 1, find out what builds a blink for `esp32s31` today (pioarduino, Arduino as an ESP-IDF component, or plain ESP-IDF with Resident as a component), tell me, and agree the route with me.',
+    );
+  }
   if (board?.id === 'seeed-xiao-esp32s3') {
     lines.push(
       '- **XIAO ESP32S3:** PlatformIO board `seeed_xiao_esp32s3` (8 MB flash, 8 MB octal PSRAM). Its pins are printed D0–D10, not GPIO numbers: the wiring above gives both.',

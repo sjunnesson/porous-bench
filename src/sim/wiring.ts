@@ -396,6 +396,45 @@ export const PINOUTS: Record<string, Pinout> = {
     ],
     source: 'ESPHome device config for the Guition-ESP32-S3-4848S040 and its photo of the board\'s connectors',
   },
+  'espressif-esp-mosaico': {
+    // The two 2×10 module slots on the sides, left (H2) then right (H1), by pin number. Both carry the
+    // external I2C bus (0, 1). Left out: USB serial/JTAG on 33 and 34 (left slot), and the right
+    // slot's 49, 52, 54, 37 (a strap too) and 40, the audio codec's I2S. 14 and 39 pick a module
+    // EEPROM's address and 58/59 are UART0, so they go last. ADC1 is 42–49, touch T0–T13 is 6–19.
+    pins: pins([
+      55,
+      53,
+      { gpio: 19, touch: 13 },
+      { gpio: 48, adc: 6 },
+      { gpio: 18, touch: 12 },
+      { gpio: 13, touch: 7 },
+      { gpio: 17, touch: 11 },
+      { gpio: 12, touch: 6 },
+      { gpio: 16, touch: 10 },
+      { gpio: 14, touch: 8, last: true },
+      { gpio: 15, touch: 9 },
+      4,
+      1,
+      0,
+      { gpio: 46, adc: 4 },
+      { gpio: 47, adc: 5 },
+      { gpio: 11, touch: 5 },
+      { gpio: 10, touch: 4 },
+      { gpio: 39, last: true },
+      38,
+      5,
+      { gpio: 59, last: true },
+      { gpio: 58, last: true },
+    ]),
+    i2c: { sda: 0, scl: 1 },
+    fiveVolt: '5V',
+    notes: [
+      'Parts go on the two 2×10 slots at the sides, where Espressif\'s modules (camera, joystick, LED matrix…) plug in. The I2C bus (SDA 0, SCL 1) reaches both; a module\'s EEPROM sits on it at 0x50 or 0x51.',
+      'The slots\' 3V and 5V stay off until the firmware drives GPIO60 low: it also powers the display.',
+      'The right slot\'s 49, 52, 54, 37 and 40 are the audio codec\'s: Bench leaves them to it. Its 58 and 59 are UART0, and 14 and 39 set a module EEPROM\'s address, so Bench uses those last.',
+    ],
+    source: 'Espressif ESP-Mosaico V1.2 user guide (GPIO allocation and module headers) and the ESP32-S31 pinout',
+  },
   'waveshare-esp32-s3-touch-amoled-1.32': {
     // The SH1.0 12-pin connector: GP1, GP2 and the board's own I2C bus (touch, codec). GP0 is BOOT.
     pins: pins([{ gpio: 1, adc: 0, touch: 1 }, { gpio: 2, adc: 1, touch: 2 }, 47, 48]),

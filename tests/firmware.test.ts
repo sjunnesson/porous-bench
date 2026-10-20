@@ -30,6 +30,14 @@ describe('firmware prompt', () => {
     expect(p).toContain('Real device');
   });
 
+  it('has the ESP-Mosaico settle its ESP32-S31 toolchain before bring-up', () => {
+    const d = findDevice('espressif-esp-mosaico')!;
+    const p = firmwarePrompt(d, boardsFor(d)[0]);
+    expect(p).toContain('docs/start-building.md');
+    expect(p).toContain('`esp32s31`');
+    expect(p).toContain('ESP-IDF 6.2');
+  });
+
   it('builds Bench\'s own firmware for the C6 on its board', () => {
     const d = findDevice('waveshare-esp32-c6-lcd-1.47')!;
     const p = firmwarePrompt(d, boardsFor(d)[0]);
