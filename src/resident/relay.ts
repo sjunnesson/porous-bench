@@ -43,6 +43,9 @@ export function newDeviceId(): string {
 const RATE = 5; // events/s sustained
 const BURST = 10;
 const QUEUE = 16;
+/** The relay Bench's own origin proxies at /relay (vercel.json, vite.config.ts). */
+const PROXIED = 'resident.inanimate.tech';
+const CHECK_MS = 60_000;
 
 export class ResidentRelay {
   status: RelayStatus = 'off';
@@ -57,6 +60,10 @@ export class ResidentRelay {
   private lastRefill = Date.now();
   private queue: { frame: Record<string, unknown>; keep: boolean }[] = [];
   private drainTimer: ReturnType<typeof setInterval> | null = null;
+  private checkTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly wake = () => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') void this.check();
+  };
 
   constructor(
     public deviceId: string,
@@ -68,6 +75,13 @@ export class ResidentRelay {
     this.wanted = true;
     this.open();
     this.drainTimer ??= setInterval(() => this.drain(), 100);
+    if (!this.checkTimer) {
+      this.checkTimer = setInterval(() => void this.check(), CHECK_MS);
+      if (typeof window !== 'undefined') {
+        window.addEventListener('online', this.wake);
+        document.addEventListener('visibilitychange', this.wake);
+      }
+    }
   }
 
   disconnect(): void {
@@ -75,6 +89,12 @@ export class ResidentRelay {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.drainTimer) clearInterval(this.drainTimer);
     this.drainTimer = null;
+    if (this.checkTimer) clearInterval(this.checkTimer);
+    this.checkTimer = null;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.wake);
+      document.removeEventListener('visibilitychange', this.wake);
+    }
     this.ws?.close();
     this.ws = null;
     this.setStatus('off');
@@ -115,6 +135,35 @@ export class ResidentRelay {
   sendSystem(type: string, data: Record<string, unknown>): void {
     if (this.status !== 'online') return;
     this.ws?.send(JSON.stringify({ channel: 'system', type, data }));
+  }
+
+  /**
+   * Ask the relay, the way a push does, whether it still has this Bench, and reconnect if not. A
+   * socket can die without a close (the Mac slept, the network changed, the relay restarted) and a
+   * page can't ping it the way the firmware does, so Bench would show online while every push got
+   * 503 "Device not connected". Only through Bench's own proxy: the relay refuses browser calls.
+   */
+  async check(): Promise<void> {
+    const ws = this.ws;
+    if (this.status !== 'online' || !ws || this.host !== PROXIED) return;
+    let status: number;
+    try {
+      const res = await fetch(`/relay/devices/${encodeURIComponent(this.deviceId)}/send`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ channel: 'system', type: 'ping' }),
+      });
+      status = res.status;
+    } catch {
+      return; // offline: the socket's own close or the next check will tell
+    }
+    if (status !== 503 || this.ws !== ws) return;
+    this.h.onLog("relay: the relay had lost this Bench's connection; reconnecting");
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    ws.close();
+    this.ws = null;
+    this.retryMs = 1000;
+    this.open();
   }
 
   private open() {
@@ -224,6 +273,8 @@ export class ResidentRelay {
         break;
       case 'status':
         break; // relay presence info for monitors
+      case 'ping':
+        break; // check() reaching us: the relay still has this connection
       default:
         this.h.onLog(`relay: unhandled system message '${type}'`);
     }
