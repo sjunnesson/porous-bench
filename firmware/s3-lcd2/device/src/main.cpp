@@ -16,7 +16,6 @@
 #include "ButtonsDriver.h"
 #include "TouchDriver.h"
 #include "ImuDriver.h"
-#include "LvglTimerReaper.h"
 #include "AppStore.h"
 #include "HomeAssistant.h"
 
@@ -32,7 +31,6 @@ CanvasLgfxTarget lgfxMain;
 Resident::LgfxModule lgfxModule;
 Resident::LvglModule lvglModule;
 AppStore appStore;  // the last app for the next boot, on LittleFS (NVS is too small)
-LvglTimerReaper lvglTimerReaper;  // stops the last app's lvgl.Timers on each app load
 
 static void printMemory(const char* when) {
   Serial.printf("[mem] %s: internal free %u (largest %u, lowest %u), PSRAM free %u (largest %u)\n", when,
@@ -57,8 +55,7 @@ static Resident::SandboxConfig makeConfig() {
   lv.bufferBytes = 240 * 80 * 2;
   lv.buffer = heap_caps_malloc(lv.bufferBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   lvglModule.addDisplay("main", lv);
-  cfg.extensions = {&screenDriver, &buttonDriver, &touchDriver, &imuDriver, &lgfxModule, &lvglModule,
-                    &lvglTimerReaper};
+  cfg.extensions = {&screenDriver, &buttonDriver, &touchDriver, &imuDriver, &lgfxModule, &lvglModule};
   cfg.systemDisplay = &screenDriver;
   cfg.systemButton = &buttonDriver;  // tap = load the saved app now, hold = forget it
   cfg.persistentStore = &appStore;

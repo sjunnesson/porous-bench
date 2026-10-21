@@ -366,7 +366,10 @@ LVGL 9 through luavgl, per Resident's `prompts/lvgl.md`. `lvgl.bind("main")` ret
 handle and claims the panel (`lgfx` flips are then dropped: one library per panel). Fonts: the
 `montserrat` family at 8, 14, 16, 20, 24, 28, 32, 36, 40 and 48 px (`lvgl.Font("montserrat", 20)`;
 other sizes snap to the nearest). Put continuous motion in `lvgl.Anim`: LVGL's timer pump runs every
-33 ms, `on_tick` only every 100. Bench draws `Object`, `Label`, `Button`, `Arc`, `Line`, `Led` and
+33 ms, `on_tick` only every 100. An anim needs an `exec_cb` (starting one without fails with "anim has
+no exec_cb"), and its `done_cb` runs only when it plays to its end, not on `stop()` or a restart. A
+`lvgl.Timer` whose `repeat_count` runs out pauses: `set { repeat_count = n }` and `resume()` run it
+again. Bench draws `Object`, `Label`, `Button`, `Arc`, `Line`, `Led` and
 `Checkbox` faithfully. `Roller` is simplified, and `Image`, `Dropdown`, `Textarea`, `Scale`, `List`,
 `Keyboard` and `Calendar` are placeholder boxes, so prefer the first set. No widget receives input
 events.

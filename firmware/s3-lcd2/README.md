@@ -2,7 +2,7 @@
 
 Firmware that puts the Waveshare ESP32-S3-Touch-LCD-2 on Resident's relay, so porous.systems Bench
 can mirror apps onto it. One PlatformIO project per stage of Resident's start-building guide, each
-buildable on its own; Resident is pinned by commit (0.10.2, `ecabf22`), so nothing needs cloning.
+buildable on its own; Resident is pinned by commit (0.12.0, `5ca238c`), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, touch crosshair
@@ -56,13 +56,17 @@ Brought up and tested on hardware 2026-10-12: device type `s3-lcd2`, firmware `s
   °/s at rest (-4 on one axis): the driver averages half a second at boot and subtracts it, so keep
   the board still while it starts. Lying on a desk it reads ~0.06 g of tilt, so a tilt-ball app's
   ball drifts slowly to an edge where Bench's would sit still.
-- **LVGL timers outlive their app.** Resident keeps one Lua state for as long as the board runs and
-  luavgl keeps each `lvgl.Timer` in its registry; an app reset deletes the old app's objects but not
-  its timers. Mirroring the flame a second time left the first one's 30 fps timer calling into
-  deleted objects ("expect lua lvgl object, got null", which luavgl draws as a box on the screen, not
-  on serial) and holding its memory. `LvglTimerReaper.h` stops them on every app reset with
-  luavgl's own `delete`. Bench runs each app in a fresh Lua state, so the browser never shows it.
-  Not fixed in Resident 0.10.2 or its main branch.
+- **LVGL timers outlived their app.** Resident keeps one Lua state for as long as the board runs, and
+  on 0.10.2 an app reset deleted the old app's objects but not its `lvgl.Timer`s. Mirroring the
+  flame a second time left the first one's 30 fps timer calling into deleted objects ("expect lua
+  lvgl object, got null", which luavgl draws as a box on the screen, not on serial) and holding its
+  memory. We reported it (inanimate-tech/resident#61) and ran our own timer reaper until Resident
+  0.12.0 fixed it: app reset now calls `luavgl_app_reset` from Inanimate's luavgl fork, which frees
+  the old app's timers, anims, top-layer objects and styles. 0.12.0 needs that fork at `b982422` or
+  later, or the board won't link. Checked here on 2026-10-21 with the issue's probes: a timer stops
+  when the next app loads, even one from an app that failed to load; the top layer comes back
+  empty; an anim with no `exec_cb` fails its load ("anim has no exec_cb") where the old luavgl
+  aborted the board. Bench runs each app in a fresh Lua state, so the browser never showed it.
 - **Saved apps outgrew NVS.** Resident keeps the last app that loaded cleanly, for the next boot, as
   an NVS blob by default. NVS here is 20 KB and also holds Wi-Fi and the `store` module, so a 17.6 KB
   app failed to save (`persist_too_big`, nothing on screen) and a reboot brought back an older,

@@ -148,7 +148,7 @@ end
 
 -- ── objects ────────────────────────────────────────────────────────────────
 
-local anims = {} -- running animations, in start order
+local anims = {} -- running animations, newest first: lv_anim_start puts each at the head of its list
 local objects = {} -- id → Lua object (weak would let a running Anim lose its target; keep strong)
 local OBJ = {}
 OBJ.__index = function(o, k)
@@ -361,43 +361,54 @@ local function anim_value(a, st)
   return (PATHS[a.cfg.path] or PATHS.linear)(st, t)
 end
 
-function ANIM:set(para)
-  if self.deleted then error("anim already deleted", 2) end
-  if self.running then self:stop() end
-  local c = self.cfg
+-- luavgl refuses to start an anim without exec_cb (before Inanimate's fix, such an anim aborted the
+-- board from the pump). `level` is the caller's error level, so the error points at the app.
+local function start(a, level)
+  local c = a.cfg
+  if not c.exec_cb then error("anim has no exec_cb", level + 1) end
+  if a.running then anim_remove(a) end
+  a.st = {
+    start_value = floor(c.start_value or 0), end_value = floor(c.end_value or 0),
+    act = -(c.delay or 0), dur = c.duration or 500, playback = false,
+    repeats = c.repeat_count or 1, current = nil,
+  }
+  a.running = true
+  table.insert(anims, 1, a)
+  -- early_apply (on by default): the start value lands now, not after the first period.
+  if c.early_apply ~= false then
+    a.st.current = a.st.start_value
+    if not a.target.__dead then call(c.exec_cb, a.target, a.st.start_value) end
+  end
+end
+
+local function configure(a, para)
+  if a.running then anim_remove(a) end
+  local c = a.cfg
   for k, v in pairs(para) do
     if not ANIM_KEYS[k] then P.log("warn", "lvgl.Anim: unknown parameter '" .. tostring(k) .. "'") end
     local key = k == "time" and "duration" or k
     if key == "early_apply" then v = v and v ~= 0 end
     if key ~= "run" then c[key] = v end
   end
-  if para.run then self:start() end
+end
+
+function ANIM:set(para)
+  if self.deleted then error("anim already deleted", 2) end
+  configure(self, para)
+  if para.run then start(self, 2) end
   return self
 end
 
 function ANIM:start()
   if self.deleted then error("anim already deleted", 2) end
-  if self.running then self:stop() end
-  local c = self.cfg
-  self.st = {
-    start_value = floor(c.start_value or 0), end_value = floor(c.end_value or 0),
-    act = -(c.delay or 0), dur = c.duration or 500, playback = false,
-    repeats = c.repeat_count or 1, current = nil,
-  }
-  self.running = true
-  anims[#anims + 1] = self
-  -- early_apply (on by default): the start value lands now, not after the first period.
-  if c.early_apply ~= false then
-    self.st.current = self.st.start_value
-    if c.exec_cb and not self.target.__dead then call(c.exec_cb, self.target, self.st.start_value) end
-  end
+  start(self, 2)
   return self
 end
 
+-- On LVGL 9 luavgl runs done_cb only when an anim plays to its end (completed_cb). Stopping it, or
+-- setting or restarting it while it runs, ends it without done_cb (deleted_cb alone).
 function ANIM:stop()
-  if not self.running then return end
-  anim_remove(self)
-  if self.cfg.done_cb then call(self.cfg.done_cb, self, self.target) end
+  if self.running then anim_remove(self) end
 end
 
 function ANIM:delete()
@@ -439,7 +450,8 @@ local function anim_timer(elapsed)
               if st.repeats > 0 then
                 st.act = -(c.repeat_delay or 0)
               else
-                a:stop()
+                anim_remove(a)
+                if c.done_cb then call(c.done_cb, a, a.target) end
               end
             end
           end
@@ -453,7 +465,8 @@ local function new_anim(target, para)
   if target == nil then error("anim var must not be nil or none", 3) end
   if type(para) ~= "table" then error("expect anim para table", 3) end
   local a = setmetatable({ target = target, cfg = {}, running = false, deleted = false }, ANIM)
-  a:set(para)
+  configure(a, para)
+  if para.run then start(a, 2) end -- M.Anim and OBJ:Anim tail-call new_anim: its caller is the app
   return a
 end
 M.Anim = function(var, para) return new_anim(var, para) end
@@ -489,11 +502,13 @@ local function timer_run(now)
     if not t.deleted and not t.paused and (t.due or now - t.last >= (t.period or 500)) then
       t.due = false
       t.last = now
-      if t.cb then call(t.cb, t) end
-      if t.repeat_count and t.repeat_count > 0 then
-        t.repeat_count = t.repeat_count - 1
-        if t.repeat_count == 0 then t:delete() end
-      end
+      -- As lv_timer_exec: the count drops before cb runs, and a spent timer runs no cb. luavgl
+      -- pauses a timer whose count runs out rather than freeing it, so its handle stays good:
+      -- set a new repeat_count and resume it to run it again.
+      local count = t.repeat_count
+      if count and count > 0 then t.repeat_count = count - 1 end
+      if t.cb and count ~= 0 then call(t.cb, t) end
+      if t.repeat_count == 0 then t.paused = true end
     end
   end
 end

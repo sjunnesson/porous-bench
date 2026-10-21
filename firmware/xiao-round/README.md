@@ -3,7 +3,7 @@
 Firmware that puts the Seeed Studio Round Display for XIAO, driven by a XIAO ESP32S3 plugged into
 its back, on Resident's relay, so porous.systems Bench can mirror apps onto it. One PlatformIO
 project per stage of Resident's start-building guide, each buildable on its own; Resident is pinned
-by commit (0.10.2, `ecabf22`), so nothing needs cloning.
+by commit (0.12.0, `5ca238c`), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, RTC, touch crosshair

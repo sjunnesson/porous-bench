@@ -15,7 +15,7 @@ core3.py                  build fixes for Resident's libraries on Arduino core 3
 ```
 
 The projects pull Resident from GitHub, pinned to the commit they were built and tested against
-(0.10.2, `ecabf22`), so nothing needs cloning.
+(0.12.0, `5ca238c`), so nothing needs cloning.
 
 ```bash
 cd firmware/c6-lcd147/device && pio run -t upload && pio device monitor

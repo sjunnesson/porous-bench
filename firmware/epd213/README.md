@@ -14,7 +14,7 @@ device-s3/                the same drivers + lvgl on an ESP32-S3 with PSRAM (see
 ```
 
 Each project pulls Resident from GitHub, pinned to the commit it was built and tested against
-(0.10.2, `ecabf22`), so nothing needs cloning. `device-lvgl/` and `device-s3/` share `device/`'s
+(0.12.0, `5ca238c`), so nothing needs cloning. `device-lvgl/` and `device-s3/` share `device/`'s
 drivers.
 
 ```bash

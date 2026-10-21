@@ -161,6 +161,54 @@ describe('lvgl module', () => {
     expect(t.logs).toEqual(['timer\t1', 'timer\t2', 'timer\t3']);
   });
 
+  it('pauses a spent repeat_count timer, as luavgl does, so its handle can run it again', async () => {
+    const t = await boot(`local h = lvgl.bind("main")
+      local n = 0
+      local tm = lvgl.Timer { period = 50, repeat_count = 2, cb = function() n = n + 1 log.info("timer", n) end }
+      function on_tick(ctx)
+        if ctx.time_ms > 300 and not resumed then
+          resumed = true
+          tm:resume()                                  -- spent: runs no cb
+        elseif ctx.time_ms > 600 and not again then
+          again = true
+          tm:set { repeat_count = 1 } tm:resume()      -- a new count: one more
+        end
+      end`);
+    expect(t.error).toBeUndefined();
+    await run(t, 1000);
+    expect(t.logs).toEqual(['timer\t1', 'timer\t2', 'timer\t3']);
+  });
+
+  it('runs done_cb only when an anim plays to its end, not when it is stopped or restarted', async () => {
+    const t = await boot(`local h = lvgl.bind("main")
+      local box = h.Object(nil, {})
+      local function anim(name)
+        return box:Anim { start_value = 0, end_value = 10, duration = 100, exec_cb = function() end,
+          done_cb = function() log.info("done", name) end }
+      end
+      local stopped, restarted, reset, finished = anim("stopped"), anim("restarted"), anim("set"), anim("finished")
+      stopped:start() stopped:stop()
+      restarted:start() restarted:start()
+      reset:start() reset:set { end_value = 20 }
+      finished:start()
+      function on_tick() end`);
+    expect(t.error).toBeUndefined();
+    await run(t, 400);
+    // Both end on the same frame; LVGL runs the newest anim first (measured on the S3-Touch-LCD-2).
+    expect(t.logs).toEqual(['done\tfinished', 'done\trestarted']);
+  });
+
+  it('refuses to start an anim with no exec_cb, as luavgl does', async () => {
+    const t = await boot(`local h = lvgl.bind("main")
+      local box = h.Object(nil, {})
+      local a = box:Anim { start_value = 0, end_value = 10 }
+      log.info(pcall(a.start, a))
+      box:Anim { start_value = 0, end_value = 10, run = true }
+      function on_tick() end`);
+    expect(t.logs[0]).toMatch(/^false\t.*anim has no exec_cb$/);
+    expect(t.error).toMatch(/:5: anim has no exec_cb$/); // the load fails, at the app's line
+  });
+
   it('drops an anim whose target was deleted, and logs callback errors without stopping the pump', async () => {
     const t = await boot(`local h = lvgl.bind("main")
       local box = h.Object(nil, {})
