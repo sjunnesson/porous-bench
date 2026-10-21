@@ -3,7 +3,7 @@
 // a pointer to whichever app is running right now.
 
 import type { ResidentHost } from './host';
-import { type IncomingApp, newDeviceId, type RelayStatus, ResidentRelay } from './relay';
+import { DEFAULT_RELAY, type IncomingApp, newDeviceId, type RelayStatus, ResidentRelay } from './relay';
 import { Zone } from './zone';
 
 export interface LiveApp extends IncomingApp {
@@ -52,7 +52,7 @@ class ResidentSession {
   constructor() {
     const id = load<string>('deviceId') ?? newDeviceId();
     save('deviceId', id);
-    this.relay = new ResidentRelay(id, load<string>('relayHost') ?? 'resident.inanimate.tech', {
+    this.relay = new ResidentRelay(id, load<string>('relayHost') ?? DEFAULT_RELAY, {
       onApp: (app) => {
         this.log('info', `relay: app received${app.description ? ` — ${app.description}` : ''}`);
         this.setLive({ ...app, name: app.description ?? 'Pushed app', source: 'relay' });
@@ -104,6 +104,16 @@ class ResidentSession {
     this.relay.deviceId = newDeviceId();
     save('deviceId', this.relay.deviceId);
     if (was) this.relay.connect();
+    this.notify();
+  }
+
+  /** Forget a relay host set by hand (localStorage `bench:resident:relayHost`) and use the public one. */
+  useDefaultRelay(): void {
+    save('relayHost', null);
+    const was = this.relay.status !== 'off';
+    this.relay.disconnect();
+    this.relay.host = DEFAULT_RELAY;
+    if (was || load<boolean>('connected')) this.relay.connect();
     this.notify();
   }
 

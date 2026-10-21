@@ -5,7 +5,8 @@
 
 import type { SendResult } from './host';
 
-export type RelayStatus = 'off' | 'connecting' | 'online' | 'retrying';
+/** blocked: the page's security policy doesn't allow this relay (hosted Bench allows only the default). */
+export type RelayStatus = 'off' | 'connecting' | 'online' | 'retrying' | 'blocked';
 
 export interface IncomingApp {
   code: string;
@@ -43,8 +44,8 @@ export function newDeviceId(): string {
 const RATE = 5; // events/s sustained
 const BURST = 10;
 const QUEUE = 16;
-/** The relay Bench's own origin proxies at /relay (vercel.json, vite.config.ts). */
-const PROXIED = 'resident.inanimate.tech';
+/** The public relay, and the one Bench's own origin proxies at /relay (vercel.json, vite.config.ts). */
+export const DEFAULT_RELAY = 'resident.inanimate.tech';
 const CHECK_MS = 60_000;
 
 export class ResidentRelay {
@@ -145,7 +146,7 @@ export class ResidentRelay {
    */
   async check(): Promise<void> {
     const ws = this.ws;
-    if (this.status !== 'online' || !ws || this.host !== PROXIED) return;
+    if (this.status !== 'online' || !ws || this.host !== DEFAULT_RELAY) return;
     let status: number;
     try {
       const res = await fetch(`/relay/devices/${encodeURIComponent(this.deviceId)}/send`, {
@@ -169,6 +170,17 @@ export class ResidentRelay {
   private open() {
     if (this.ws) return;
     this.setStatus(this.retryMs > 1000 ? 'retrying' : 'connecting');
+    // A socket the page's security policy blocks only reports a connection error, and retrying
+    // can't get through: stop and say so.
+    const blocked = (e: SecurityPolicyViolationEvent) => {
+      if (!e.blockedURI.startsWith(`wss://${this.host}/`)) return;
+      this.disconnect();
+      this.setStatus('blocked');
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('securitypolicyviolation', blocked);
+      setTimeout(() => document.removeEventListener('securitypolicyviolation', blocked), 5000);
+    }
     let ws: WebSocket;
     try {
       ws = new WebSocket(`wss://${this.host}/devices/${this.deviceId}?type=simulator`);

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { DEFAULT_RELAY } from '../resident/relay';
 import { session } from '../resident/session';
 import { Copy } from './Copy';
 import { Panel } from './Panel';
@@ -9,6 +10,7 @@ const STATUS = {
   connecting: { label: 'connecting…', cls: 'pending' },
   retrying: { label: 'reconnecting…', cls: 'pending' },
   online: { label: 'online', cls: 'on' },
+  blocked: { label: 'not allowed', cls: '' },
 } as const;
 
 /**
@@ -19,7 +21,8 @@ export function ResidentPanel() {
   useSyncExternalStore(session.subscribe, session.getVersion);
   const st = STATUS[session.status];
   const id = session.deviceId;
-  const pushApp = `/resident:push-app --device-id ${id} `;
+  const host = session.relay.host;
+  const pushApp = `/resident:push-app --device-id ${id} ${host === DEFAULT_RELAY ? '' : `--base-url https://${host} `}`;
 
   return (
     <Panel
@@ -37,7 +40,7 @@ export function ResidentPanel() {
         <code className="device-id" title="This Bench's device ID: apps pushed to it over Resident's relay run here">
           {id}
         </code>
-        {session.status === 'off' ? (
+        {session.status === 'off' || session.status === 'blocked' ? (
           <button onClick={() => session.connect()}>Connect</button>
         ) : (
           <button onClick={() => session.disconnect()}>Disconnect</button>
@@ -61,6 +64,23 @@ export function ResidentPanel() {
           New ID
         </button>
       </div>
+      {host !== DEFAULT_RELAY && (
+        <p className="hint">
+          {session.status === 'blocked' ? (
+            <>
+              This page can't reach the relay at <code>{host}</code>, set in this browser: hosted Bench allows only{' '}
+              {DEFAULT_RELAY}. Run Bench locally for another relay.{' '}
+            </>
+          ) : (
+            <>
+              On the relay at <code>{host}</code>, set in this browser.{' '}
+            </>
+          )}
+          <button className="link" onClick={() => session.useDefaultRelay()} title={`Connect to ${DEFAULT_RELAY} instead`}>
+            Use the default
+          </button>
+        </p>
+      )}
 
       <h3>Folder</h3>
       <WatchFolder />

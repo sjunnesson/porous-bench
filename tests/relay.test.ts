@@ -65,6 +65,20 @@ describe('relay connection check', () => {
     r.disconnect();
   });
 
+  it("stops and says so when the page isn't allowed to reach the relay", async () => {
+    let violation: ((e: { blockedURI: string }) => void) | undefined;
+    vi.stubGlobal('document', {
+      addEventListener: (type: string, fn: typeof violation) => type === 'securitypolicyviolation' && (violation = fn),
+      removeEventListener: () => {},
+    });
+    const { r } = relay(503, 'relay.example.com');
+    r.connect();
+    violation!({ blockedURI: 'wss://relay.example.com/devices/sim-1a2b3c4d?type=simulator' });
+    expect(r.status).toBe('blocked');
+    await new Promise((ok) => setTimeout(ok, 1100));
+    expect(FakeSocket.made).toHaveLength(1); // no retries
+  });
+
   it("doesn't check a relay Bench has no proxy for", async () => {
     const { r, posted } = relay(503, 'relay.example.com');
     r.connect();
