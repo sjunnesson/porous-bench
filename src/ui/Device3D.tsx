@@ -229,7 +229,9 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
       const w = host.clientWidth;
       const h = host.clientHeight;
       if (!w || !h) return;
-      renderer.setSize(w, h);
+      // Only the drawing buffer: CSS sizes the canvas to its host, so a rounded-up clientWidth
+      // can't make it overflow the stage.
+      renderer.setSize(w, h, false);
       camera.aspect = w / h;
       // Fit the desk's width and height (with room for the default tilt), not a bounding sphere,
       // so a wide row of parts still fills the stage.

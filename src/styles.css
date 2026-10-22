@@ -312,8 +312,11 @@ details.raw p.hex {
   padding: 8px;
   background: var(--ground);
 }
+/* The 3D view never scrolls. Letting it would loop in Firefox: a canvas rounded 1px past the
+   stage brings in scrollbars, which shrink the stage and the canvas, which takes them away again. */
 .stage.stage-3d {
   padding: 0;
+  overflow: hidden;
 }
 .device-canvas {
   display: block;
@@ -324,6 +327,8 @@ details.raw p.hex {
 }
 .device-3d canvas {
   display: block;
+  width: 100%;
+  height: 100%;
   touch-action: none;
   cursor: grab;
 }
