@@ -58,6 +58,12 @@ function boardLines(board: Board | undefined): string[] {
 const NEEDS_LINE =
   "- If the app animates, only makes sense in colour, needs the touch panel, or has a fixed layout, say so on the line after `@output`: `-- @needs motion color touch 240x135` (any of them; WxH is the smallest screen it fits). Bench then lists it only for outputs that can run it.";
 
+/** How often the display's firmware runs on_tick, in words: "10 Hz" (Resident's default) or "~30 Hz". */
+function tickHz(p: DeviceProfile): string {
+  const ms = p.tickMs ?? 100;
+  return ms === 100 ? '10 Hz' : `~${Math.round(1000 / ms)} Hz`;
+}
+
 function outputSection(p: DeviceProfile, board?: Board): string[] {
   const leds = p.look.leds;
   if (leds) {
@@ -73,7 +79,7 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
         ? `The output is ${shape}, not a screen: there is no \`screen\` or \`lvgl\`, but the matrix is also an \`lgfx\` display, ${p.width}×${p.height} pixels, one per LED: text and shapes work with \`lgfx.bind("main")\` and \`g:flip()\` (the built-in 5×7 font fits 8 rows).`
         : `The output is ${shape}, not a screen: there is no lgfx, screen or lvgl drawing.`,
       '- Use the `leds` module: `leds.set(i, rgb)`, `leds.set_rgb(i, r, g, b)`, `leds.fill`, `leds.hsv(h, s, v)`, `leds.brightness(0..255)`, then `leds.show()`.',
-      '- Animate in `leds.on_frame(function(ctx, dt_ms) … end[, fps])`, the LED driver\'s own frame timer (50 fps by default), not in the 10 Hz `on_tick`.',
+      `- Animate in \`leds.on_frame(function(ctx, dt_ms) … end[, fps])\`, the LED driver's own frame timer (50 fps by default), not in the ${tickHz(p)} \`on_tick\`.`,
       `- At full white each LED draws about 60 mA (${((n * 60) / 1000).toFixed(1)} A for all of them): keep brightness moderate.`,
       `- Put \`-- @output ${leds.layout === 'grid' ? 'matrix' : 'strip'}\` on the app's second line.`,
       ...boardLines(board),
@@ -87,7 +93,7 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
     '- Read the screen\'s facts from `screens.get("main")` rather than hard-coding them, so the app adapts.',
     board && !board.libraries.includes('lvgl')
       ? '- Draw with `lgfx` (or the `screen` verbs). There is no `lvgl` on this board.'
-      : '- Draw with `lgfx`, or with the optional `lvgl` module. For motion, use `lvgl.Anim`: LVGL runs it on its own timer pump, smoother than the 10 Hz `on_tick`.',
+      : `- Draw with \`lgfx\`, or with the optional \`lvgl\` module. For motion, use \`lvgl.Anim\`: LVGL runs it on its own timer pump, smoother than the ${tickHz(p)} \`on_tick\`.`,
     ...boardLines(board),
   ];
   if (p.shape === 'round') {
@@ -182,10 +188,10 @@ export function appPrompt(input: PromptInput): string {
     ...appSection(input.app),
     '',
     '## Rules',
-    '- One Lua file in the Resident sandbox: `init(ctx)`, `on_tick(ctx, dt_ms)` at 10 Hz, `on_event(ctx, e)`.',
+    `- One Lua file in the Resident sandbox: \`init(ctx)\`, \`on_tick(ctx, dt_ms)\` at ${tickHz(input.device)} on this display (Resident's default is 10 Hz; boards differ, so move things by \`dt_ms\`, never a fixed step a tick), \`on_event(ctx, e)\`.`,
     '- First line: `-- Name: one-sentence description` (Bench shows it in the App menu).',
     "- Keep each callback well under a second. A board stops init, a tick or an event still running after 1000 ms (`execution deadline exceeded (1000 ms)`). Nothing stops an LVGL callback, a coroutine that never yields, or code that catches that error with pcall and carries on: those hang a board, and Bench halts the app.",
-    "- Bench runs Lua far faster than a board. For an animation to keep 10 fps on the glass, each tick (with its `flip()`) has to finish in under 100 ms: follow the device skill's *Speed on a real board* section, which says how (an ESP32-C6 has no FPU).",
+    `- Bench runs Lua far faster than a board. For an animation to keep ${tickHz(input.device).replace(' Hz', '')} fps on the glass, each tick (with its \`flip()\`) has to finish in under ${input.device.tickMs ?? 100} ms: follow the device skill's *Speed on a real board* section, which says how (an ESP32-C6 has no FPU).`,
     '',
     '## Deliver',
     ...deliverSection(input),

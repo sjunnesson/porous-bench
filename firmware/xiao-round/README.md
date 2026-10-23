@@ -3,7 +3,7 @@
 Firmware that puts the Seeed Studio Round Display for XIAO, driven by a XIAO ESP32S3 plugged into
 its back, on Resident's relay, so porous.systems Bench can mirror apps onto it. One PlatformIO
 project per stage of Resident's start-building guide, each buildable on its own; Resident is pinned
-by commit (0.12.0, `5ca238c`), so nothing needs cloning.
+by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `5e450b4`, which adds the tick interval), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, RTC, touch crosshair
@@ -49,6 +49,10 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
   one compressed built-in font, `MONTSERRAT_28_COMPRESSED`, is off with it (plain `MONTSERRAT_28`
   stays). Flash 2,501,589 → 2,474,741 bytes. Measured on the S3-Touch-LCD-2, which shares this
   `lv_conf.h` (small redraws 28.6 → 65.6 fps); not yet on this board: an LVGL app's `[perf]` line.
+- **`on_tick` every 33 ms, not 100** (since 2026-10-23): `SandboxConfig::tickIntervalMs = 33`, a
+  field on Bench's Resident fork (`sjunnesson/resident`, 0.12.0 plus the field) until
+  inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
+  fps); not yet on this board. Bench's profile for the display ticks at 33 too (`tickMs`).
 - **Backlight:** D6 (GPIO43) through a transistor, PWM at 10 kHz, 10-bit, with the KE switch's 2 on;
   with it off a pull-up keeps it at full. D6 is also UART0 TX, so the backlight flickers with the
   ROM's boot log at reset.

@@ -43,6 +43,7 @@ static Resident::SandboxConfig makeConfig() {
   Resident::SandboxConfig cfg;
   cfg.deviceType = "c6-lcd147";
   cfg.firmwareVersion = "c6-lcd147-0.1";
+  cfg.tickIntervalMs = 33;  // on_tick at ~30 FPS, not Resident's 10: the panel keeps up (README)
   lgfxModule.addDisplay("main", &lgfxMain);
   cfg.extensions = {&luaArena, &screenDriver, &buttonDriver, &lgfxModule};
   cfg.systemDisplay = &screenDriver;

@@ -1,7 +1,7 @@
 // Runs one Resident Lua app: a fresh Lua 5.4 VM (wasmoon), the sandbox prelude, and the JS half of
 // every module (lgfx, screen, imu, buzzer, button, screens, events, store, time, datetime), plus
 // Bench's own drivers for the hardware on the desk (dial, trigger, ld2410).
-// Mirrors the device's dispatch: init once, on_tick every 100 ms, on_event from an 8-slot ring.
+// Mirrors the device's dispatch: init once, on_tick every 100 ms (or the profile's tickMs), on_event from an 8-slot ring.
 
 import qrcode from 'qrcode-generator';
 import type { LuaEngine, LuaFactory } from 'wasmoon';
@@ -93,7 +93,7 @@ interface Api {
 }
 
 const RING = 8;
-/** Resident's default on_tick interval; a device profile's tickMs overrides it (the Guition ticks at 33). */
+/** Resident's default on_tick interval; a device profile's tickMs overrides it, as its firmware does (Bench's colour boards tick at 33). */
 const TICK_MS = 100;
 /** LV_DEF_REFR_PERIOD on the reference board: LVGL's anim timer and display refresh run this often. */
 const LV_PERIOD_MS = 33;
@@ -198,7 +198,7 @@ export class ResidentHost {
     return err;
   }
 
-  /** One pass of the sandbox loop: button gestures, queued events, and the 10 FPS tick. */
+  /** One pass of the sandbox loop: button gestures, queued events, and the tick (10 FPS unless the profile says). */
   step(): void {
     if (this.closed) return;
     this.pollButtons();

@@ -45,6 +45,7 @@ static Resident::SandboxConfig makeConfig() {
   Resident::SandboxConfig cfg;
   cfg.deviceType = "s3-lcd2";
   cfg.firmwareVersion = "s3-lcd2-0.1";
+  cfg.tickIntervalMs = 33;  // on_tick at ~30 FPS, not Resident's 10: the panel keeps up (README)
   lgfxModule.addDisplay("main", &lgfxMain);
   // LVGL's display is only created when an app first calls lvgl.bind("main");
   // it flushes into the same frame as screen/lgfx. Its draw buffer is ours, in

@@ -2,7 +2,7 @@
 
 Firmware that puts the Waveshare ESP32-S3-Touch-LCD-2 on Resident's relay, so porous.systems Bench
 can mirror apps onto it. One PlatformIO project per stage of Resident's start-building guide, each
-buildable on its own; Resident is pinned by commit (0.12.0, `5ca238c`), so nothing needs cloning.
+buildable on its own; Resident is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `5e450b4`, which adds the tick interval), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, touch crosshair
@@ -122,6 +122,10 @@ What it taught:
   timer moves something every millisecond: a 48 px box crossing the screen went from 28.6 to 65.6
   fps (0.8 ms a push), and the whole screen changing colour each frame from 27.8 to 31.1 fps, where
   the 20 ms push of 320 rows is now the limit. `lvgl-check.lua` loads and runs as before.
+- **`on_tick` every 33 ms, not 100** (since 2026-10-23): `SandboxConfig::tickIntervalMs = 33`, a
+  field on Bench's Resident fork (`sjunnesson/resident`, 0.12.0 plus the field) until
+  inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
+  fps); not yet on this board. Bench's profile for the display ticks at 33 too (`tickMs`).
 - **Doubles are software on the S3** (its FPU is single precision), as on the C6: blend colours in
   integers, build tables once, precompute per-object constants.
 

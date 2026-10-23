@@ -15,7 +15,7 @@ core3.py                  build fixes for Resident's libraries on Arduino core 3
 ```
 
 The projects pull Resident from GitHub, pinned to the commit they were built and tested against
-(0.12.0, `5ca238c`), so nothing needs cloning.
+(0.12.0, `5ca238c`; stage 3 on Bench's fork at `5e450b4`, which adds the tick interval), so nothing needs cloning.
 
 ```bash
 cd firmware/c6-lcd147/device && pio run -t upload && pio device monitor
@@ -78,6 +78,12 @@ enter your network. The screen then shows the 8-character device ID.
   the Lua arena still has 83,856 bytes free for apps and the shared heap ~49 KB, as before. The
   flame, which redraws every row each tick, went from 66-70 to 62-66 ms a tick (a full push 32 →
   30.6 ms, its Lua and drawing ~36 → ~34.5): a few per cent, not the S3's 15%.
+- **`on_tick` every 33 ms, not 100** (since 2026-10-23). Resident ticked every app at a fixed 10
+  fps; the firmware now sets `SandboxConfig::tickIntervalMs = 33`, a field on Bench's Resident fork
+  (`sjunnesson/resident`, 0.12.0 plus the field) until inanimate-tech/resident takes it. Measured:
+  the flame, whose tick takes ~65 ms, went from 10 to 15.2 fps, a tick every 66 ms rather than
+  every 100; an app whose tick is short gets ~30. Apps get the real gap as `dt_ms`, so one that
+  moves by it runs at the same speed. Bench's profile for the display ticks at 33 too (`tickMs`).
 - **Lua is slow: the C6 has no FPU.** Floats, `math.sin`, `math.sqrt` and `^` are emulated. A
   full-screen `lgfx` flame doing ~137,000 Lua instructions and 985 draw calls a tick took ~285 ms
   (3.5 fps, `dt_ms` averaged over 30 ticks); with lookup tables, integer colour blends and fewer

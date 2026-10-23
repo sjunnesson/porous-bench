@@ -12,6 +12,8 @@ export default {
   controller: 'ST7789T3',
   bus: { kind: 'spi', hz: 80_000_000 },
   ram: { width: 240, height: 320, offsetX: 0, offsetY: 0 },
+  // Bench's firmware ticks on_tick every 33 ms (SandboxConfig::tickIntervalMs), not Resident's 100.
+  tickMs: 33,
   boards: ['waveshare-esp32-s3-touch-lcd-2'],
   builtins: ['imu'], // QMI8658
   wiring: {

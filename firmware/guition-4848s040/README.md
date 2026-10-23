@@ -3,7 +3,7 @@
 Firmware that puts the Guition ESP32-S3-4848S040 (a 4" 480×480 touch panel for an 86 mm wall box,
 with its own ESP32-S3) on Resident's relay, so porous.systems Bench can mirror apps onto it. One
 PlatformIO project per stage of Resident's start-building guide, each buildable on its own; Resident
-is pinned by commit (0.12.0, `5ca238c`), so nothing needs cloning.
+is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `5e450b4`, which adds the tick interval), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, the panel's scan rate, a test card, I2C scan, touch crosshair, a flash-write test
@@ -76,6 +76,10 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   one compressed built-in font, `MONTSERRAT_28_COMPRESSED`, is off with it (plain `MONTSERRAT_28`
   stays). Flash 2,523,021 → 2,496,157 bytes. LVGL's frames still go out whole, and the panel
   scans at ~42 Hz, so ~66 is a ceiling it won't show; check the `[perf]` line with `lvgl-check.lua`.
+- **`on_tick` every 33 ms, not 100** (since 2026-10-23): `SandboxConfig::tickIntervalMs = 33`, a
+  field on Bench's Resident fork (`sjunnesson/resident`, 0.12.0 plus the field) until
+  inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
+  fps); not yet on this board. Bench's profile for the display ticks at 33 too (`tickMs`).
 
 ## What bring-up should check
 

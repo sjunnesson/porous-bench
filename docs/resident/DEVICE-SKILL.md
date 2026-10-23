@@ -92,8 +92,11 @@ with `pcall` and carries on. On a board those hang it, so Bench halts the app.
 ## Speed on a real board
 
 Bench runs Lua 50 to 100 times faster than a board, so an animation that is smooth on Bench can
-crawl on the glass. `on_tick` comes every 100 ms; a tick that takes longer (its Lua plus the
-`flip()` that pushes the frame) delays the next one, and the frame rate drops with it.
+crawl on the glass. `on_tick` comes every 100 ms by default; Bench's firmware for the
+S3-Touch-LCD-2, the XIAO Round Display, the C6-LCD-1.47 and the Guition 4848S040 ticks every 33 ms
+(~30 fps, `SandboxConfig::tickIntervalMs`). Move things by `dt_ms`, not a fixed step a tick, so an
+app runs at the same speed on either. A tick that takes longer than the interval (its Lua plus
+the `flip()` that pushes the frame) delays the next one, and the frame rate drops with it.
 
 - **ESP32-C6: no FPU.** Every float operation is emulated, and `math.sin`, `math.sqrt` and `^` cost
   the most. Measured on the C6-LCD-1.47 with a full-screen `lgfx` flame: about 137,000 Lua
@@ -112,10 +115,11 @@ crawl on the glass. `on_tick` comes every 100 ms; a tick that takes longer (its 
   three translucent glow ovals ran at 3.4 fps (12 once the glow was opaque and still). The same
   flame drawn row by row with `lgfx`, redrawing only where it moved, runs at 28. For many moving
   shapes use `lgfx`; for LVGL, few objects, opaque ones, and leave big ones still.
-- **Faster than `on_tick` with `lgfx`:** `lvgl.Timer` runs at ~30 fps on boards with `lvgl`. Bind
+- **Faster than a 10 Hz `on_tick` with `lgfx`:** `lvgl.Timer` runs at ~30 fps on boards with `lvgl`. Bind
   LVGL first and `lgfx` last (the last bind owns the screen; the timer keeps running), and fall
   back to `on_tick` where `lvgl` is nil.
-- **Stiff springs at 10 Hz:** a spring that's stable at 30 fps can blow up at a 100 ms tick. Step
+- **Stiff springs at 10 Hz:** a spring that's stable at 30 fps can blow up at a 100 ms tick (and
+  `dt_ms` can be that long on any board when a tick overruns). Step
   it in 10 ms slices inside `on_tick`.
 - **Measure on the board:** log the average `dt_ms` over 30 ticks (`log.info`) and read the
   board's serial output. ~100 means the board keeps up; more means it's falling behind.
