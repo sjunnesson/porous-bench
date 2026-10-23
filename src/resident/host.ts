@@ -184,7 +184,8 @@ export class ResidentHost {
   /** Queue an event; the ring drops the oldest beyond 8. Oversize data drops the event. */
   queue(e: Omit<ResidentEvent, 'ts_ms'> & { ts_ms?: number }): boolean {
     if (!this.api.has('on_event')) return false;
-    if (JSON.stringify(e.data ?? {}).length > EVENT_JSON_MAX) return false;
+    // Bytes, as the device counts them, not UTF-16 units.
+    if (new TextEncoder().encode(JSON.stringify(e.data ?? {})).length > EVENT_JSON_MAX) return false;
     this.ring.push({ ts_ms: Math.floor(this.board.now()), ...e, data: e.data ?? {} });
     if (this.ring.length > RING) this.ring.shift();
     return true;
@@ -507,7 +508,7 @@ export class ResidentHost {
       lg_fillTriangle: (x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, c: number) =>
         d.fillTriangle(x0, y0, x1, y1, x2, y2, c24(c)),
       lg_setTextColor: (fg: number, bg?: number | null) => d.setTextColor(c24(fg), bg == null ? undefined : c24(bg)),
-      lg_setTextSize: (s: number) => d.setTextSize(Math.max(1, Math.round(s))),
+      lg_setTextSize: (s: number) => d.setTextSize(Math.min(16, Math.max(1, Math.round(s)))), // as the boards clamp it
       lg_setTextDatum: (v: number) => (this.datum = v),
       lg_setCursor: (x: number, y: number) => d.setCursor(x, y),
       lg_print: (s: string) => d.print(s),

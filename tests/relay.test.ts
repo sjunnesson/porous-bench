@@ -41,7 +41,10 @@ function relay(answer: number, host = 'resident.inanimate.tech') {
 }
 
 describe('relay connection check', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   it('reconnects when the relay no longer has a connection Bench thinks is open', async () => {
     const { r, posted, logs } = relay(503);
@@ -53,6 +56,23 @@ describe('relay connection check', () => {
     expect(FakeSocket.made).toHaveLength(2);
     expect(FakeSocket.made[0].closed).toBe(true);
     expect(logs.some((l) => l.includes('reconnecting'))).toBe(true);
+    r.disconnect();
+  });
+
+  it("keeps one connection through disconnect-then-connect, even when the old socket's close comes late", async () => {
+    vi.useFakeTimers();
+    const { r } = relay(200);
+    r.connect();
+    await Promise.resolve();
+    // New ID / a quick Disconnect and Connect: the old socket reports its close only afterwards.
+    r.disconnect();
+    r.connect();
+    await Promise.resolve();
+    FakeSocket.made[0].onclose?.();
+    vi.advanceTimersByTime(5000);
+    expect(r.status).toBe('online');
+    expect(FakeSocket.made).toHaveLength(2);
+    expect(r.publish('ping', '{}', false)).toBe('sent');
     r.disconnect();
   });
 

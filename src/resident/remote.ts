@@ -129,6 +129,7 @@ const SAVED_KEY = 'bench:remote-devices';
 const PERIOD_MS = 100; // up to 10 updates a second, and only when something changed
 const HEARTBEAT_MS = 2000; // …or this often anyway, so a device that just connected catches up
 const MAX_BYTES = 1000; // Resident drops events over 1024 bytes
+const bytes = (s: string) => new TextEncoder().encode(s).length;
 
 /** Sends to a real device through the relay, from this page's origin. */
 async function send(deviceId: string, body: unknown): Promise<number> {
@@ -170,6 +171,8 @@ export class RemoteMirror {
   private last = '';
   private lastAt = 0;
   private inFlight = false;
+  /** Bumped by start and stop: an await that comes back to an older run leaves the status alone. */
+  private run = 0;
   private listeners = new Set<() => void>();
   private version = 0;
 
@@ -230,16 +233,19 @@ export class RemoteMirror {
    */
   async start(app: { name: string; code: string }, source: NonNullable<RemoteMirror['source']>, opts: { display?: { id: string; name: string }; tz?: string } = {}): Promise<void> {
     if (!this.deviceId) return;
+    const run = ++this.run;
     this.source = source;
     this.reader = new SnapshotReader();
     this.last = '';
     this.set('pushing', `Sending ${app.name}…`);
     try {
       if (opts.tz) await send(this.deviceId, { channel: 'bench', type: 'timezone', data: { tz: opts.tz } }).catch(() => 0);
+      if (run !== this.run) return;
       const status = await send(this.deviceId, { channel: 'system', type: 'app', code: remoteApp(app.code), description: `${app.name} (from Bench)` });
-      if (!this.result(status)) return;
+      if (run !== this.run || !this.result(status)) return;
       this.remember(opts.display);
     } catch (e) {
+      if (run !== this.run) return;
       this.set('error', `Couldn't reach the relay: ${e instanceof Error ? e.message : e}`);
       return;
     }
@@ -248,6 +254,7 @@ export class RemoteMirror {
   }
 
   stop(): void {
+    this.run++;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.source = null;
@@ -263,16 +270,30 @@ export class RemoteMirror {
     const { controls, bench, buttons, gestures, touches } = this.source();
     const snap = this.reader.read(controls, bench, buttons, gestures, touches);
     let json = JSON.stringify(snap);
-    if (json.length > MAX_BYTES) {
-      // The biggest part; dials and triggers matter most. The device keeps the last reading it had.
-      delete snap.s.radar;
+    // Too big and the device drops the whole update. Shed what matters least first: the radar (the
+    // biggest sensor), then older touch events, then all sensors; the device keeps the last reading
+    // it had of each. Dials, triggers and A/B gestures always go.
+    const shed = [
+      () => delete snap.s.radar,
+      () => snap.te && (snap.te = snap.te.slice(-4)),
+      () => (snap.s = {}),
+    ];
+    for (const step of shed) {
+      if (bytes(json) <= MAX_BYTES) break;
+      step();
       json = JSON.stringify(snap);
+    }
+    if (bytes(json) > MAX_BYTES) {
+      if (this.status !== 'error') this.set('error', 'This app has too many controls to mirror: an update is over the 1 KB the device takes.');
+      return;
     }
     const now = Date.now();
     if (json === this.last && now - this.lastAt < HEARTBEAT_MS) return;
     this.inFlight = true;
+    const run = this.run;
     try {
       const status = await send(this.deviceId, { channel: 'app', type: 'bench', data: snap });
+      if (run !== this.run) return;
       if (this.result(status)) {
         this.last = json;
         this.lastAt = now;
@@ -281,7 +302,7 @@ export class RemoteMirror {
         else this.notify();
       }
     } catch {
-      this.set('error', "Couldn't reach the relay. Still trying…");
+      if (run === this.run) this.set('error', "Couldn't reach the relay. Still trying…");
     } finally {
       this.inFlight = false;
     }

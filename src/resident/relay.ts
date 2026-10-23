@@ -96,8 +96,7 @@ export class ResidentRelay {
       window.removeEventListener('online', this.wake);
       document.removeEventListener('visibilitychange', this.wake);
     }
-    this.ws?.close();
-    this.ws = null;
+    this.closeSocket();
     this.setStatus('off');
   }
 
@@ -119,8 +118,8 @@ export class ResidentRelay {
       nonce: `${this.bootId}-${seq}`,
       ts_ms: Math.floor(performance.now()),
     };
-    if (this.status === 'online' && !this.queue.length && this.take()) {
-      this.ws!.send(JSON.stringify(frame));
+    if (this.status === 'online' && this.ws && !this.queue.length && this.take()) {
+      this.ws.send(JSON.stringify(frame));
       return 'sent';
     }
     if (this.queue.length >= QUEUE) {
@@ -160,9 +159,7 @@ export class ResidentRelay {
     }
     if (status !== 503 || this.ws !== ws) return;
     this.h.onLog("relay: the relay had lost this Bench's connection; reconnecting");
-    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
-    ws.close();
-    this.ws = null;
+    this.closeSocket();
     this.retryMs = 1000;
     this.open();
   }
@@ -210,7 +207,18 @@ export class ResidentRelay {
     ws.onerror = () => this.h.onLog('relay: connection error');
   }
 
+  /** Close the socket without its handlers: its late onclose would otherwise null the socket a
+   * reconnect has just opened and schedule a second one under the same device ID. */
+  private closeSocket() {
+    const ws = this.ws;
+    if (!ws) return;
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    ws.close();
+    this.ws = null;
+  }
+
   private scheduleRetry() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     this.setStatus('retrying');
     this.retryTimer = setTimeout(() => this.open(), this.retryMs);
     this.retryMs = Math.min(30_000, this.retryMs * 2);
@@ -240,7 +248,8 @@ export class ResidentRelay {
       }
       this.h.onEvent({
         name: type,
-        data: (msg.data as Record<string, unknown>) ?? {},
+        // Apps read e.data.field: anything but an object would raise inside the app.
+        data: typeof msg.data === 'object' && msg.data !== null && !Array.isArray(msg.data) ? (msg.data as Record<string, unknown>) : {},
         from: typeof msg.from === 'string' ? msg.from : '',
         src: typeof msg.src === 'string' ? msg.src : undefined,
         seq: typeof msg.seq === 'number' ? msg.seq : undefined,
@@ -302,8 +311,8 @@ export class ResidentRelay {
   }
 
   private drain() {
-    while (this.queue.length && this.status === 'online' && this.take()) {
-      this.ws!.send(JSON.stringify(this.queue.shift()!.frame));
+    while (this.queue.length && this.status === 'online' && this.ws && this.take()) {
+      this.ws.send(JSON.stringify(this.queue.shift()!.frame));
     }
   }
 
