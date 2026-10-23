@@ -15,7 +15,7 @@ core3.py                  build fixes for Resident's libraries on Arduino core 3
 ```
 
 The projects pull Resident from GitHub, pinned to the commit they were built and tested against
-(0.12.0, `5ca238c`; stage 3 on Bench's fork at `5e450b4`, which adds the tick interval), so nothing needs cloning.
+(0.12.0, `5ca238c`; stage 3 on Bench's fork at `4220083`, which adds the tick interval and the event drain), so nothing needs cloning.
 
 ```bash
 cd firmware/c6-lcd147/device && pio run -t upload && pio device monitor
@@ -84,6 +84,11 @@ enter your network. The screen then shows the 8-character device ID.
   the flame, whose tick takes ~65 ms, went from 10 to 15.2 fps, a tick every 66 ms rather than
   every 100; an app whose tick is short gets ~30. Apps get the real gap as `dt_ms`, so one that
   moves by it runs at the same speed. Bench's profile for the display ticks at 33 too (`tickMs`).
+  With ticks back to back, Resident delivered one event per loop pass, a tick apart: a steady
+  stream of 180 relay events at ~24/s to an app with 65 ms ticks lost 30% (125-129 arrived),
+  against 1-6% at 100 ms. The fork also delivers every queued event each pass: 169-178 arrived.
+  A burst bigger than Courier's and Resident's queues (8 and 7) within one tick still loses the
+  rest at any tick rate: 10-19 of 40 sent at once.
 - **Lua is slow: the C6 has no FPU.** Floats, `math.sin`, `math.sqrt` and `^` are emulated. A
   full-screen `lgfx` flame doing ~137,000 Lua instructions and 985 draw calls a tick took ~285 ms
   (3.5 fps, `dt_ms` averaged over 30 ticks); with lookup tables, integer colour blends and fewer

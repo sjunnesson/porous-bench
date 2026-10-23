@@ -2,7 +2,7 @@
 
 Firmware that puts the Waveshare ESP32-S3-Touch-LCD-2 on Resident's relay, so porous.systems Bench
 can mirror apps onto it. One PlatformIO project per stage of Resident's start-building guide, each
-buildable on its own; Resident is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `5e450b4`, which adds the tick interval), so nothing needs cloning.
+buildable on its own; Resident is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `4220083`, which adds the tick interval and the event drain), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, touch crosshair

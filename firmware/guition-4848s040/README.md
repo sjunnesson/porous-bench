@@ -3,7 +3,7 @@
 Firmware that puts the Guition ESP32-S3-4848S040 (a 4" 480×480 touch panel for an 86 mm wall box,
 with its own ESP32-S3) on Resident's relay, so porous.systems Bench can mirror apps onto it. One
 PlatformIO project per stage of Resident's start-building guide, each buildable on its own; Resident
-is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `5e450b4`, which adds the tick interval), so nothing needs cloning.
+is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `4220083`, which adds the tick interval and the event drain), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, the panel's scan rate, a test card, I2C scan, touch crosshair, a flash-write test
