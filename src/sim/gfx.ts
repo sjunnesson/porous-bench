@@ -8,6 +8,13 @@ import type { Sprite } from './sprite';
 
 export type TextAlign = 'left' | 'center' | 'right';
 
+/**
+ * A coordinate as Adafruit_GFX takes it, an int16_t: a bigger one wraps on the board, and here too.
+ * It also bounds the shapes that are drawn step by step (lines, circles, triangles, rounded rects),
+ * so one call from an app can't run for minutes where the instruction deadline can't stop it.
+ */
+const s16 = (v: number) => (Math.abs(v) <= 32767 ? v : (Math.trunc(v) << 16) >> 16);
+
 export class Gfx {
   private rot = 0;
   private w: number;
@@ -89,7 +96,7 @@ export class Gfx {
     let y0 = Math.max(0, y);
     let x1 = Math.min(this.w - 1, x + w - 1);
     let y1 = Math.min(this.h - 1, y + h - 1);
-    if (x1 < x0 || y1 < y0) return;
+    if (!(x1 >= x0 && y1 >= y0)) return; // also NaN
     const [ax, ay] = this.toNative(x0, y0);
     const [bx, by] = this.toNative(x1, y1);
     x0 = Math.min(ax, bx);
@@ -114,10 +121,10 @@ export class Gfx {
   }
 
   drawLine(x0: number, y0: number, x1: number, y1: number, c: Color): void {
-    x0 = Math.round(x0);
-    y0 = Math.round(y0);
-    x1 = Math.round(x1);
-    y1 = Math.round(y1);
+    x0 = s16(Math.round(x0));
+    y0 = s16(Math.round(y0));
+    x1 = s16(Math.round(x1));
+    y1 = s16(Math.round(y1));
     if (x0 === x1) return this.fillRect(x0, Math.min(y0, y1), 1, Math.abs(y1 - y0) + 1, c);
     if (y0 === y1) return this.fillRect(Math.min(x0, x1), y0, Math.abs(x1 - x0) + 1, 1, c);
     const dx = Math.abs(x1 - x0);
@@ -141,9 +148,9 @@ export class Gfx {
   }
 
   drawCircle(x0: number, y0: number, r: number, c: Color): void {
-    x0 = Math.round(x0);
-    y0 = Math.round(y0);
-    r = Math.round(r);
+    x0 = s16(Math.round(x0));
+    y0 = s16(Math.round(y0));
+    r = s16(Math.round(r));
     this.drawPixel(x0, y0 + r, c);
     this.drawPixel(x0, y0 - r, c);
     this.drawPixel(x0 + r, y0, c);
@@ -152,16 +159,18 @@ export class Gfx {
   }
 
   fillCircle(x0: number, y0: number, r: number, c: Color): void {
-    x0 = Math.round(x0);
-    y0 = Math.round(y0);
-    r = Math.round(r);
-    for (let dy = -r; dy <= r; dy++) {
+    x0 = s16(Math.round(x0));
+    y0 = s16(Math.round(y0));
+    r = s16(Math.round(r));
+    // Only the rows on the screen: the others draw nothing.
+    for (let dy = Math.max(-r, -y0), last = Math.min(r, this.h - 1 - y0); dy <= last; dy++) {
       const dx = Math.round(Math.sqrt(r * r - dy * dy));
       this.fillRect(x0 - dx, y0 + dy, 2 * dx + 1, 1, c);
     }
   }
 
   drawRoundRect(x: number, y: number, w: number, h: number, r: number, c: Color): void {
+    [x, y, w, h, r] = [s16(x), s16(y), s16(w), s16(h), s16(r)];
     r = Math.min(Math.round(r), Math.floor(Math.min(w, h) / 2));
     this.drawFastHLine(x + r, y, w - 2 * r, c);
     this.drawFastHLine(x + r, y + h - 1, w - 2 * r, c);
@@ -174,8 +183,9 @@ export class Gfx {
   }
 
   fillRoundRect(x: number, y: number, w: number, h: number, r: number, c: Color): void {
+    [x, y, w, h, r] = [s16(x), s16(y), s16(w), s16(h), s16(r)];
     r = Math.min(Math.round(r), Math.floor(Math.min(w, h) / 2));
-    for (let row = 0; row < h; row++) {
+    for (let row = Math.max(0, Math.ceil(-y)), last = Math.min(h, this.h - y); row < last; row++) {
       let inset = 0;
       const d = row < r ? r - row : row >= h - r ? row - (h - r - 1) : 0;
       if (d > 0) inset = r - Math.round(Math.sqrt(r * r - d * d));
@@ -191,14 +201,14 @@ export class Gfx {
 
   fillTriangle(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, c: Color): void {
     const pts = [
-      [x0, y0],
-      [x1, y1],
-      [x2, y2],
+      [s16(x0), s16(y0)],
+      [s16(x1), s16(y1)],
+      [s16(x2), s16(y2)],
     ].sort((a, b) => a[1] - b[1]);
     const [[ax, ay], [bx, by], [cx, cy]] = pts;
     const edge = (xa: number, ya: number, xb: number, yb: number, y: number) =>
       yb === ya ? xa : xa + ((xb - xa) * (y - ya)) / (yb - ya);
-    for (let y = Math.ceil(ay); y <= Math.floor(cy); y++) {
+    for (let y = Math.max(0, Math.ceil(ay)); y <= Math.min(this.h - 1, Math.floor(cy)); y++) {
       const xl = edge(ax, ay, cx, cy, y);
       const xr = y < by ? edge(ax, ay, bx, by, y) : edge(bx, by, cx, cy, y);
       const l = Math.round(Math.min(xl, xr));
