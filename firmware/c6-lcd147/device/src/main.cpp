@@ -114,7 +114,26 @@ void setup() {
 }
 
 void loop() {
+  static uint32_t loops = 0, loopUs = 0, loopMax = 0, lastStats = 0;
+  uint32_t t0 = micros();
   sandbox.loop();
+  uint32_t us = micros() - t0;
+  loops++;
+  loopUs += us;
+  loopMax = max(loopMax, us);
+
+  // Every 30 s: how frames are spent (Resident's loop runs Lua and the pushes).
+  if (millis() - lastStats >= 30000) {
+    float secs = (millis() - lastStats) / 1000.0f;
+    lastStats = millis();
+    uint32_t frames, rows, pushUs;
+    Lcd::takeStats(frames, rows, pushUs);
+    Serial.printf("[perf] %.1f pushes/s, %lu rows each, %.1f ms a push; loop %.1f ms avg, %.1f ms max\n",
+                  frames / secs, (unsigned long)(frames ? rows / frames : 0),
+                  frames ? pushUs / 1000.0f / frames : 0.0f, loops ? loopUs / 1000.0f / loops : 0.0f,
+                  loopMax / 1000.0f);
+    loops = loopUs = loopMax = 0;
+  }
 
   static uint32_t lastBeat = 0;
   if (millis() - lastBeat >= 30000) {

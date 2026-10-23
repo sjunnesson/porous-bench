@@ -113,6 +113,12 @@ What it taught:
   what changed mattered more: with the flame's ~160 rows a frame, the blocking Adafruit push keeps
   28 fps too. The esp_lcd attempt is not in the tree; its likely gap is the panel init (esp_lcd's
   ST7789 sequence, not Adafruit's), worth a test at 40 MHz before trying again.
+- **LVGL refreshes every 16 ms, and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
+  `LV_DEF_REFR_PERIOD` was 33, which held LVGL to 30 frames a second however fast it drew; at 16
+  it can reach ~60. `LV_USE_FONT_COMPRESSED` is off, so no glyph is decompressed as it's drawn; the
+  one compressed built-in font, `MONTSERRAT_28_COMPRESSED`, is off with it (plain `MONTSERRAT_28`
+  stays). Flash 2,564,069 → 2,537,625 bytes. Not measured on the board yet: the flame's fps and
+  the `[perf]` line, against the table above.
 - **Doubles are software on the S3** (its FPU is single precision), as on the C6: blend colours in
   integers, build tables once, precompute per-object constants.
 

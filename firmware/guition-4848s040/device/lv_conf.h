@@ -63,7 +63,7 @@
  *====================*/
 
 /*Default display refresh, input device read and animation step period.*/
-#define LV_DEF_REFR_PERIOD  33      /*[ms]*/
+#define LV_DEF_REFR_PERIOD  16      /*[ms]*/  /* Bench: up to ~60 fps; 33 capped LVGL at 30 */
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  *(Not so important, you can adjust it to modify default sizes and spaces)*/
@@ -402,7 +402,7 @@
 #define LV_FONT_MONTSERRAT_48 1
 
 /*Demonstrate special features*/
-#define LV_FONT_MONTSERRAT_28_COMPRESSED 1  /*bpp = 3*/
+#define LV_FONT_MONTSERRAT_28_COMPRESSED 0  /*bpp = 3*/  /* Bench: off, it needs LV_USE_FONT_COMPRESSED */
 #define LV_FONT_DEJAVU_16_PERSIAN_HEBREW 1  /*Hebrew, Arabic, Persian letters and all their forms*/
 #define LV_FONT_SIMSUN_16_CJK            1  /*1000 most common CJK radicals*/
 
@@ -424,7 +424,7 @@
 #define LV_FONT_FMT_TXT_LARGE 1
 
 /*Enables/disables support for compressed fonts.*/
-#define LV_USE_FONT_COMPRESSED 1
+#define LV_USE_FONT_COMPRESSED 0  /* Bench: a compressed font decodes each glyph as it draws */
 
 /*Enable drawing placeholders when glyph dsc is not found*/
 #define LV_USE_FONT_PLACEHOLDER 1

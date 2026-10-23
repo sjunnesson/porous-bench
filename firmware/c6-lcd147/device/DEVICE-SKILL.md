@@ -56,7 +56,7 @@ screen.triangle(x0, y0, x1, y1, x2, y2, r, g, b)
 screen.fill_triangle(x0, y0, x1, y1, x2, y2, r, g, b)
 screen.qr(x, y, text[, scale = 4[, r, g, b]])   -- QR v3..v10, ECC low, black modules by default:
                                                 -- clear a white square behind it; v3 is 29 modules
-screen.flip()                                   -- pushes the whole frame (~32 ms)
+screen.flip()                                   -- pushes the rows drawn (whole frame ~32 ms)
 screen.set_brightness(0..255)                   -- the backlight
 screen.width()   screen.height()                -- 172, 320
 ```
@@ -182,8 +182,9 @@ end
 - **172×320, 16-bit colour, dark scheme.** Keep content ~20 px from the corners (rounded glass).
 - **Text**: the built-in 6x8 font in whole multiples. Size 1 fits 28 characters across, size 2
   fits 14, size 3 fits 9.
-- **Frame rate**: `flip()` pushes the whole frame in ~32 ms. `on_tick` runs every 100 ms, so a
-  flip per tick is easy; there's no faster timer.
+- **Frame rate**: `flip()` pushes only the rows drawn since the last flip (a whole frame ~32 ms),
+  so redraw only what moves. `on_tick` runs every 100 ms, so a flip per tick is easy; there's no
+  faster timer.
 - **Memory: small apps only.** Apps run in a Lua heap of their own, ~84 KB of it free when an app
   arrives. Loading takes ~6x the app's size (the message, then compiling), so keep an app under
   ~8 KB of Lua. An app that doesn't fit stops with "not enough memory"; the board stays online and

@@ -98,7 +98,8 @@ crawl on the glass. `on_tick` comes every 100 ms; a tick that takes longer (its 
 - **ESP32-C6: no FPU.** Every float operation is emulated, and `math.sin`, `math.sqrt` and `^` cost
   the most. Measured on the C6-LCD-1.47 with a full-screen `lgfx` flame: about 137,000 Lua
   instructions and 985 draw calls a tick took ~285 ms (3.5 fps); about 50,000 instructions and 609
-  calls took ~104 ms (10 fps). Pushing the 172×320 frame is ~32 ms of that.
+  calls took ~104 ms (10 fps). Pushing the whole 172×320 frame is ~32 ms of that; `flip()` pushes
+  only the rows drawn since the last one, so an app that redraws only what moves pushes less.
 - **For 10 fps on the C6**, keep a full redraw to roughly 50,000 instructions and 600 draw calls:
   - Build lookup tables in `init` (shapes, colour ramps) instead of calling `sin` or `^` for
     every row; work out what varies per frame at a dozen points and blend between them.

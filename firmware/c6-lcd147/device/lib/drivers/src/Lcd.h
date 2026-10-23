@@ -3,9 +3,10 @@
 // (110 KB, allocated before Wi-Fi so it gets one contiguous block; the C6 has
 // no PSRAM).
 //
-// present() pushes the whole canvas to the ST7789V3 in one transfer: ~32 ms
-// at 80 MHz, inside the caller's Lua dispatch, well under the sandbox's 1 s
-// deadline. There's no second buffer to push from in the background: that
+// Pushes go to the ST7789V3 at 80 MHz, inside the caller's Lua dispatch (well
+// under the sandbox's 1 s deadline): present() the whole canvas (~32 ms),
+// presentDirty() only the rows drawn since the last push (what lgfx and screen
+// flips use). There's no second buffer to push from in the background: that
 // would cost another 110 KB, which the C6 doesn't have next to Wi-Fi, TLS
 // and Lua.
 #pragma once
@@ -16,6 +17,28 @@
 namespace Lcd {
 
 constexpr int WIDTH = 172, HEIGHT = 320;
+
+// The canvas remembers which rows were drawn since the last push: everything
+// Adafruit GFX draws (text and shapes included) goes through these four.
+class Canvas : public GFXcanvas16 {
+public:
+  Canvas(uint16_t w, uint16_t h) : GFXcanvas16(w, h) {}
+  void drawPixel(int16_t x, int16_t y, uint16_t c) override { mark(y, y); GFXcanvas16::drawPixel(x, y, c); }
+  void fillScreen(uint16_t c) override { mark(0, HEIGHT - 1); GFXcanvas16::fillScreen(c); }
+  void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t c) override {
+    mark(y, y + h - 1);
+    GFXcanvas16::drawFastVLine(x, y, h, c);
+  }
+  void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t c) override {
+    mark(y, y);
+    GFXcanvas16::drawFastHLine(x, y, w, c);
+  }
+  void mark(int a, int b) {
+    if (a < y0) y0 = a;
+    if (b > y1) y1 = b;
+  }
+  int y0 = HEIGHT, y1 = -1;  // rows drawn since the last push
+};
 
 extern GFXcanvas16* canvas;
 
@@ -28,18 +51,23 @@ inline uint16_t rgb565(uint32_t rgb888) {
 
 bool begin();                  // panel, backlight, canvas; false if the canvas didn't fit
 void present();                // push the canvas to the glass
+void presentDirty();           // push only the rows drawn since the last push (lgfx and screen flips)
+void presentRows(int y0, int y1);  // push rows y0..y1 (inclusive) only
 void setBrightness(float v);   // backlight, 0..1 (PWM duty)
 float brightness();
 uint32_t lastPushUs();
+// Since the last call: frames pushed, rows pushed and push time in total (for the heartbeat).
+void takeStats(uint32_t& frames, uint32_t& rows, uint32_t& pushUs);
 
 // The panel as Resident's screens registry sees it ("main"). blit() takes
-// RGB565 big-endian rectangles into the canvas; frameDone() presents.
+// RGB565 big-endian rectangles into the canvas; frameDone() pushes the rows
+// they covered.
 class Panel : public Resident::PanelTarget {
 public:
   int32_t width() const override { return WIDTH; }
   int32_t height() const override { return HEIGHT; }
   void blit(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px) override;
-  void frameDone() override { present(); }
+  void frameDone() override { presentDirty(); }
 };
 
 extern Panel panel;

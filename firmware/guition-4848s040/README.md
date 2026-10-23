@@ -69,6 +69,12 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   CH340 (no `ARDUINO_USB_CDC_ON_BOOT`). The 16 MB holds one 4 MB app slot and ~12 MB of LittleFS.
 - **Saved apps** go to `/app.lua` on LittleFS (`AppStore.h`, as on the S3-Touch-LCD-2: NVS is too
   small for big apps).
+- **LVGL refreshes every 16 ms, and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
+  `LV_DEF_REFR_PERIOD` was 33, which held LVGL to 30 frames a second however fast it drew; at 16
+  it can reach ~60. `LV_USE_FONT_COMPRESSED` is off, so no glyph is decompressed as it's drawn; the
+  one compressed built-in font, `MONTSERRAT_28_COMPRESSED`, is off with it (plain `MONTSERRAT_28`
+  stays). Flash 2,523,021 → 2,496,157 bytes. LVGL's frames still go out whole, and the panel
+  scans at ~42 Hz, so 60 is a ceiling it won't show; check the `[perf]` line with `lvgl-check.lua`.
 
 ## What bring-up should check
 
