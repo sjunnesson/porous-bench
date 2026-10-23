@@ -67,6 +67,14 @@ describe('short share links', () => {
     expect(store.kept.size).toBe(0);
   });
 
+  it("answer 503, not 'nothing stored', when the store is down: the link may be fine", async () => {
+    const down: ShareStore = { get: () => Promise.reject(new Error('down')), add: () => Promise.reject(new Error('down')) };
+    const read = await readShare(get('AAAAAAAAAAAA'), down);
+    expect(read.status).toBe(503);
+    expect(read.headers.get('cache-control')).toBe('no-store');
+    expect((await createShare(post(await encodeSetup(setup)), down)).status).toBe(503);
+  });
+
   it('turn away a sender who has stored too many lately', async () => {
     const store = memoryStore();
     const asked: string[] = [];

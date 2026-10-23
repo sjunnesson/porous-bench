@@ -38,7 +38,11 @@ export async function createShare(request, store, allow = async () => true) {
   if (data.length > MAX_DATA) return text('That setup is too big to store.', 413);
   if (!(await decodeSetup(data))) return text("That isn't a setup Bench can open.", 400);
   const id = await shareId(data);
-  await store.add(id, data);
+  try {
+    await store.add(id, data);
+  } catch {
+    return text("Bench's share store can't be reached right now.", 503);
+  }
   return Response.json({ id }, { status: 201 });
 }
 
@@ -51,7 +55,13 @@ export async function createShare(request, store, allow = async () => true) {
 export async function readShare(request, store) {
   if (request.method !== 'GET') return text('Read a setup with GET.', 405, { allow: 'GET' });
   const id = new URL(request.url).pathname.split('/').pop() ?? '';
-  const data = ID.test(id) ? await store.get(id) : null;
+  let data;
+  try {
+    data = ID.test(id) ? await store.get(id) : null;
+  } catch {
+    // Not a 404: the link may be fine, and the client says to try again.
+    return text("Bench's share store can't be reached right now.", 503);
+  }
   if (data === null) return text('Nothing is stored under that link.', 404);
   return new Response(data, {
     headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=31536000, immutable', 'cdn-cache-control': 'max-age=31536000' },

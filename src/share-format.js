@@ -17,6 +17,14 @@
 const VERSION = '1';
 /** Decompressed, a setup Bench made is far smaller than this; a bigger one isn't read. */
 const MAX_BYTES = 1 << 20;
+/**
+ * Caps on what a link may ask Bench to build. Each part becomes a 3D model and a widget, and the
+ * parts are saved, so a link with thousands would hang the page again on every reload.
+ */
+const MAX_PARTS = 64;
+const MAX_CONNECTIONS = 128;
+const MAX_NAME = 80;
+const MAX_DESCRIPTION = 2000;
 
 /**
  * A setup as link data (`1.<base64url>`).
@@ -51,16 +59,27 @@ export async function decodeSetup(data) {
 function asSetup(s) {
   const app = s?.app;
   const ok =
-    typeof s?.output?.kind === 'string' &&
-    typeof s.board === 'string' &&
+    short(s?.output?.kind) &&
+    short(s.board) &&
     Array.isArray(s.parts) &&
-    s.parts.every((/** @type {any} */ p) => typeof p?.id === 'string' && typeof p.kind === 'string' && typeof p.label === 'string') &&
+    s.parts.length <= MAX_PARTS &&
+    s.parts.every((/** @type {any} */ p) => short(p?.id) && short(p.kind) && short(p.label)) &&
     typeof s.connections === 'object' &&
     s.connections !== null &&
-    Object.values(s.connections).every((c) => typeof c === 'string') &&
-    (typeof app?.bundled === 'string' ||
-      (typeof app?.name === 'string' && typeof app.code === 'string' && (app.description === undefined || typeof app.description === 'string')));
+    !Array.isArray(s.connections) &&
+    Object.keys(s.connections).length <= MAX_CONNECTIONS &&
+    Object.entries(s.connections).every(([k, c]) => short(k) && typeof c === 'string' && c.length <= 2 * MAX_NAME) &&
+    (short(app?.bundled) ||
+      (short(app?.name) && typeof app.code === 'string' && (app.description === undefined || (typeof app.description === 'string' && app.description.length <= MAX_DESCRIPTION))));
   return ok ? s : null;
+}
+
+/**
+ * A name, id or label no longer than Bench would make one.
+ * @param {unknown} v
+ */
+function short(v) {
+  return typeof v === 'string' && v.length <= MAX_NAME;
 }
 
 /**

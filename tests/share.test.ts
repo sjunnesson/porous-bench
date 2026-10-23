@@ -57,6 +57,17 @@ describe('share links', () => {
     expect(await readLink(notSetup)).toBeNull();
   });
 
+  it("won't build more than a bench could hold: a link with thousands of parts would hang every reload", async () => {
+    const read = async (s: Setup) => readLink((await longLink(s, BASE)).slice(BASE.length));
+    const parts = Array.from({ length: 5000 }, (_, i) => ({ id: `button-${i}`, kind: 'button' as const, label: `Button ${i}` }));
+    expect(await read({ ...ownApp, parts })).toBeNull();
+    expect(await read({ ...ownApp, parts: [{ id: 'button-1', kind: 'button', label: 'x'.repeat(100_000) }] })).toBeNull();
+    expect(await read({ ...ownApp, app: { name: 'x'.repeat(100_000), code } })).toBeNull();
+    // A full bench of real parts still opens.
+    const full = Array.from({ length: 64 }, (_, i) => ({ id: `knob-${i}`, kind: 'knob' as const, label: `Encoder ${i}` }));
+    expect(await read({ ...ownApp, parts: full })).toEqual({ ...ownApp, parts: full });
+  });
+
   it('write the output, board, parts, connections and your own app where Bench reads them', () => {
     const store = new MemoryStorage();
     store.setItem('bench:binding:resident:live:old', 'pot-1:position');

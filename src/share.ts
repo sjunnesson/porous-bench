@@ -140,6 +140,7 @@ export async function openShared(): Promise<Opened | string | null> {
       const r = await fetch(`/api/share/${short[1]}`);
       if (r.ok) setup = await decodeSetup(await r.text());
       else if (r.status === 404) why = "That share link didn't open: nothing is stored under it. Check that the whole link was copied. Your bench is as it was.";
+      else throw new Error(`HTTP ${r.status}`); // the server or its store is down: the link may be fine
     } catch {
       // The link stays in the address bar, so a reload tries again.
       return "That share link didn't open: Bench's server couldn't be reached. Reload to try again.";
@@ -147,14 +148,21 @@ export async function openShared(): Promise<Opened | string | null> {
   } else setup = await readLink(location.hash);
   history.replaceState(null, '', (short ? '/' : location.pathname) + location.search);
   if (!setup) return why;
+  let before: Pending['before'] | null = null;
   try {
     // Opened link after link without choosing, "Back to my bench" still goes back to yours.
-    const before = pending?.before ?? snapshot(localStorage);
+    before = pending?.before ?? snapshot(localStorage);
     const { live, opened } = applySetup(setup, localStorage);
     localStorage.setItem(PENDING, JSON.stringify({ before, opened } satisfies Pending));
     if (live) session.setLive(live);
     return opened;
   } catch {
+    // Storage filled up partway: put back what was written, or the bench is half the link's.
+    try {
+      if (before) restore(localStorage, before);
+    } catch {
+      /* storage is blocked outright: nothing was written */
+    }
     return "That share link didn't open: this browser won't let Bench save a setup (storage is blocked or full).";
   }
 }
