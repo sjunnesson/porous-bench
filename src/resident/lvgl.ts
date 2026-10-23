@@ -421,13 +421,17 @@ export class LvglScreen {
 
   private font(n: Node): { css: string; size: number; line: number } {
     const f = this.prop(n, 'text_font') as { size?: number; weight?: number } | undefined;
-    const size = f?.size ?? 14;
-    const weight = f?.weight ?? 500;
+    // An app can hand any table here: keep the font one a board could have.
+    const size = typeof f?.size === 'number' && f.size >= 8 && f.size <= 48 ? Math.round(f.size) : 14;
+    const weight = typeof f?.weight === 'number' && f.weight >= 100 && f.weight <= 900 ? Math.round(f.weight) : 500;
     const css = `${weight} ${size}px Montserrat, sans-serif`;
     if (!this.fontsWanted.has(css) && typeof document !== 'undefined' && document.fonts) {
       this.fontsWanted.add(css);
       // Redraw once the face is in: until then the browser's fallback is what we measured.
-      void document.fonts.load(css).then(() => this.invalidateAll());
+      document.fonts.load(css).then(
+        () => this.invalidateAll(),
+        () => {},
+      );
     }
     return { css, size, line: Math.ceil(size * 1.17) };
   }

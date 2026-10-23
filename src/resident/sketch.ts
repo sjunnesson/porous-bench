@@ -38,7 +38,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
       b: trigger({ label: 'Button B', key: 'KeyB', builtin: 1 }),
     },
 
-    async setup({ display, device, inputs, millis, declare, bench, libraries, log, warn, error }) {
+    async setup({ display, device, inputs, millis, declare, bench, libraries, log, warn, error, stopped }) {
       // A sensor the app asks for: the one on the bench, or a new one put there for it.
       const sensor = <T extends SimInput>(kind: PartKind, setup?: (part: T) => void): T => {
         const { part, added } = bench.ensure<T>(kind);
@@ -80,6 +80,11 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         },
       };
       const { host, error: bootError } = await ResidentHost.boot(await luaFactory(), board, app);
+      // Stopped while it booted (another app came in): the next app's host is the session's now.
+      if (stopped()) {
+        host.close();
+        return;
+      }
       if (bootError) {
         host.close();
         throw new Error(bootError);

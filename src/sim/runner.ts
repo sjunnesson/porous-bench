@@ -55,6 +55,7 @@ export class SketchRun {
       device,
       millis: () => Math.floor(this.clock.now() - this.startMs),
       delay: (ms) => this.clock.sleep(ms, this.abort.signal),
+      stopped: () => this.stopped,
       declare: (name, spec) => this.addInput(name, spec),
       bench: this.bench,
       libraries,
@@ -82,6 +83,8 @@ export class SketchRun {
     this.controls.push(input);
     const saved = this.cb.bindingFor?.(name);
     if (saved) input.bind(saved);
+    // Declared by a setup that outlived its run: stop() has already let go of the others.
+    if (this.stopped) input.detach();
     return input;
   }
 
@@ -138,16 +141,19 @@ export class SketchRun {
     const free = () => !this.clock.paused || this.clock.now() !== this.loopAt;
     if (free()) return Promise.resolve();
     return new Promise((resolve, reject) => {
+      const signal = this.abort.signal;
+      const onAbort = () => {
+        off();
+        reject(new SketchStopped());
+      };
       const off = this.clock.onChange(() => {
         if (free()) {
           off();
+          signal.removeEventListener('abort', onAbort);
           resolve();
         }
       });
-      this.abort.signal.addEventListener('abort', () => {
-        off();
-        reject(new SketchStopped());
-      });
+      signal.addEventListener('abort', onAbort, { once: true });
     });
   }
 

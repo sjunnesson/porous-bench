@@ -202,8 +202,11 @@ class FolderWatch {
     this.busy = true;
     try {
       let newest: { name: string; file: File } | null = null;
+      let count = 0;
       for await (const entry of h.values()) {
         if (entry.kind !== 'file' || !entry.name.endsWith('.lua')) continue;
+        // The same files the baseline read: past them, every file would look newly saved.
+        if (++count > MAX_FILES) break;
         const file = await entry.getFile();
         if (this.seen.get(entry.name) === file.lastModified) continue;
         this.seen.set(entry.name, file.lastModified);

@@ -15,6 +15,8 @@ export interface SketchContext<I = Record<string, SimInput>> {
   millis(): number;
   /** Arduino delay(): `await delay(16)`. */
   delay(ms: number): Promise<void>;
+  /** True once the run is stopped: a setup still awaiting something should give up. */
+  stopped(): boolean;
   /**
    * Add hardware while running (a Lua app declaring a dial, say). Returns the existing input when
    * `name` is already declared with the same kind.
