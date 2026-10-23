@@ -42,12 +42,13 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
 - **The frame:** `screen`, `lgfx`, LVGL and the status text share one 240×240 RGB565 canvas
   (112.5 KB, in PSRAM). Flips push only the rows drawn, LVGL's flushes only their rectangles, as in
   Bench's S3-Touch-LCD-2 firmware (`firmware/s3-lcd2`, whose drivers this is built from).
-- **LVGL refreshes every 16 ms, and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
-  `LV_DEF_REFR_PERIOD` was 33, which held LVGL to 30 frames a second however fast it drew; at 16
-  it can reach ~60. `LV_USE_FONT_COMPRESSED` is off, so no glyph is decompressed as it's drawn; the
+- **LVGL refreshes every 15 ms, and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
+  `LV_DEF_REFR_PERIOD` was 33, which held LVGL to 30 frames a second however fast it drew. Resident
+  runs LVGL's timers at most every 5 ms (`lv_timer_handler_run_in_period(5)`), so the period should
+  be a multiple of 5: 16 only came due at 20 ms (50 fps), 15 gives up to ~66. `LV_USE_FONT_COMPRESSED` is off, so no glyph is decompressed as it's drawn; the
   one compressed built-in font, `MONTSERRAT_28_COMPRESSED`, is off with it (plain `MONTSERRAT_28`
-  stays). Flash 2,501,589 → 2,474,741 bytes. Not measured on the board yet: an LVGL app's frame
-  rate (`lvgl-check.lua`) before and after.
+  stays). Flash 2,501,589 → 2,474,741 bytes. Measured on the S3-Touch-LCD-2, which shares this
+  `lv_conf.h` (small redraws 28.6 → 65.6 fps); not yet on this board: an LVGL app's `[perf]` line.
 - **Backlight:** D6 (GPIO43) through a transistor, PWM at 10 kHz, 10-bit, with the KE switch's 2 on;
   with it off a pull-up keeps it at full. D6 is also UART0 TX, so the backlight flickers with the
   ROM's boot log at reset.

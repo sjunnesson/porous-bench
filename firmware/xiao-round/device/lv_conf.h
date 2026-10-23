@@ -63,7 +63,7 @@
  *====================*/
 
 /*Default display refresh, input device read and animation step period.*/
-#define LV_DEF_REFR_PERIOD  16      /*[ms]*/  /* Bench: up to ~60 fps; 33 capped LVGL at 30 */
+#define LV_DEF_REFR_PERIOD  15      /*[ms]*/  /* Bench: Resident runs LVGL every 5 ms, so 15 gives ~66 fps (16 waits for 20: 50); 33 capped it at 30 */
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  *(Not so important, you can adjust it to modify default sizes and spaces)*/
