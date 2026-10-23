@@ -68,13 +68,16 @@ enter your network. The screen then shows the 8-character device ID.
   no room for a second buffer to push from in the background, so since 2026-10-23 a `flip()` pushes
   only the band of rows drawn since the last one, as the S3-Touch-LCD-2's firmware does (the canvas
   records them; the status screen still goes out whole). An app that redraws only what moves pushes
-  less. Not measured on the board yet: the `[perf]` line every 30 s (pushes a second, rows a push,
-  ms a push, loop time) is there to measure it.
+  less: measured with a 40 px box erased and redrawn each tick, a tick went from 32.1 to 4.0 ms
+  (40 rows pushed, 3.9 ms). The `[perf]` line every 30 s gives pushes a second, rows a push, ms a
+  push and loop time.
 - **Built with `-O2`, not `-Os`** (since 2026-10-23), as the S3-Touch-LCD-2 is, for Lua and the
   drivers: flash went from 1,733,642 to 1,854,720 bytes (of the 4 MB app slot); static RAM 63,860 →
   63,884 bytes. ESP-IDF's own optimisation (`CONFIG_COMPILER_OPTIMIZATION_PERF`) stays off: it
-  would grow the IDF code in IRAM, which on the C6 is heap (see "Memory"). Unmeasured on the board:
-  check the free heap and the Lua arena lines at boot against the table below.
+  would grow the IDF code in IRAM, which on the C6 is heap (see "Memory"). Measured on the board:
+  the Lua arena still has 83,856 bytes free for apps and the shared heap ~49 KB, as before. The
+  flame, which redraws every row each tick, went from 66-70 to 62-66 ms a tick (a full push 32 →
+  30.6 ms, its Lua and drawing ~36 → ~34.5): a few per cent, not the S3's 15%.
 - **Lua is slow: the C6 has no FPU.** Floats, `math.sin`, `math.sqrt` and `^` are emulated. A
   full-screen `lgfx` flame doing ~137,000 Lua instructions and 985 draw calls a tick took ~285 ms
   (3.5 fps, `dt_ms` averaged over 30 ticks); with lookup tables, integer colour blends and fewer
