@@ -40,8 +40,16 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
 - **SPI at 80 MHz** pushes a full frame in ~18 ms and looks identical on the glass to 40 MHz (31 ms).
   Seeed's setup asks for 50 MHz, which the S3 can't make and turns into 40.
 - **The frame:** `screen`, `lgfx`, LVGL and the status text share one 240×240 RGB565 canvas
-  (112.5 KB, in PSRAM). Flips push only the rows drawn, LVGL's flushes only their rectangles, as in
-  Bench's S3-Touch-LCD-2 firmware (`firmware/s3-lcd2`, whose drivers this is built from).
+  (112.5 KB, in PSRAM). Flips push only the 16×16 tiles drawn on, LVGL's flushes only their
+  rectangles, as in Bench's S3-Touch-LCD-2 firmware (`firmware/s3-lcd2`, whose drivers this is
+  built from); lines and pixels go straight into the canvas.
+- **Tiles, not rows; lines straight in** (since 2026-10-26, from the Guition's firmware). Each run of
+  drawn tiles along a band of 16 rows goes to the panel through its own address window, in one SPI
+  transaction, where the band of rows from the topmost drawn to the bottommost used to go out
+  whole; lines no longer go through Adafruit GFX's two virtual calls a pixel. Measured here: Koi
+  Pond's flips from 11.6 ms (158 rows, 66% of the frame) to 5.5 ms (29%), on the 33 ms tick
+  either way; a 40 px diagonal from 24 us to 12, a 30 px circle from 60 to 30; a full-screen flip
+  unchanged at ~17.5 ms. The `[perf]` line gives the share of the frame a push instead of rows.
 - **LVGL refreshes every 15 ms, and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
   `LV_DEF_REFR_PERIOD` was 33, which held LVGL to 30 frames a second however fast it drew. Resident
   runs LVGL's timers at most every 5 ms (`lv_timer_handler_run_in_period(5)`), so the period should

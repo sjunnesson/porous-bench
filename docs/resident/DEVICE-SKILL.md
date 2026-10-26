@@ -98,7 +98,7 @@ S3-Touch-LCD-2, the XIAO Round Display, the C6-LCD-1.47 and the Guition 4848S040
 app runs at the same speed on either. A tick that takes longer than the interval (its Lua plus
 the `flip()` that pushes the frame) delays the next one, and the frame rate drops with it. On
 those four a `flip()` sends only what was drawn on since the last one: the rows from the topmost
-to the bottommost (C6-LCD-1.47, Round Display), or the 16×16 squares (S3-Touch-LCD-2, Guition);
+to the bottommost (C6-LCD-1.47), or the 16×16 squares (S3-Touch-LCD-2, Round Display, Guition);
 Bench times a flip the same way, so drawing less is faster on both.
 
 - **ESP32-C6: no FPU.** Every float operation is emulated, and `math.sin`, `math.sqrt` and `^` cost

@@ -133,10 +133,10 @@ void loop() {
   if (millis() - lastStats >= 30000) {
     float secs = (millis() - lastStats) / 1000.0f;
     lastStats = millis();
-    uint32_t frames, rows, pushUs;
-    Lcd::takeStats(frames, rows, pushUs);
-    Serial.printf("[perf] %.1f pushes/s, %lu rows each, %.1f ms a push; loop %.1f ms avg, %.1f ms max\n",
-                  frames / secs, (unsigned long)(frames ? rows / frames : 0),
+    uint32_t frames, pixels, pushUs;
+    Lcd::takeStats(frames, pixels, pushUs);
+    Serial.printf("[perf] %.1f pushes/s, %.0f%% of the frame each, %.1f ms a push; loop %.1f ms avg, %.1f ms max\n",
+                  frames / secs, frames ? 100.0f * pixels / frames / (Lcd::WIDTH * Lcd::HEIGHT) : 0.0f,
                   frames ? pushUs / 1000.0f / frames : 0.0f, loops ? loopUs / 1000.0f / loops : 0.0f,
                   loopMax / 1000.0f);
     loops = loopUs = loopMax = 0;
