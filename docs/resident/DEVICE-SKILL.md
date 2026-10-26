@@ -96,7 +96,10 @@ crawl on the glass. `on_tick` comes every 100 ms by default; Bench's firmware fo
 S3-Touch-LCD-2, the XIAO Round Display, the C6-LCD-1.47 and the Guition 4848S040 ticks every 33 ms
 (~30 fps, `SandboxConfig::tickIntervalMs`). Move things by `dt_ms`, not a fixed step a tick, so an
 app runs at the same speed on either. A tick that takes longer than the interval (its Lua plus
-the `flip()` that pushes the frame) delays the next one, and the frame rate drops with it.
+the `flip()` that pushes the frame) delays the next one, and the frame rate drops with it. On
+those four a `flip()` sends only what was drawn on since the last one: the rows from the topmost
+to the bottommost (C6-LCD-1.47, S3-Touch-LCD-2, Round Display), or the 16×16 squares (Guition);
+Bench times a flip the same way, so drawing less is faster on both.
 
 - **ESP32-C6: no FPU.** Every float operation is emulated, and `math.sin`, `math.sqrt` and `^` cost
   the most. Measured on the C6-LCD-1.47 with a full-screen `lgfx` flame: about 137,000 Lua

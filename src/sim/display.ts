@@ -45,7 +45,7 @@ export class Display extends Gfx {
     private clock: SimClock,
     private signal?: AbortSignal,
   ) {
-    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led' ? 'rgb565' : 'mono', profile.flipTile));
+    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led' ? 'rgb565' : 'mono', typeof profile.flip === 'object' ? profile.flip.tile : 0));
     this.panel = createPanel(profile);
     this.touch = profile.touch ? new TouchScreen(profile.width, profile.height, () => clock.now()) : null;
   }
@@ -67,6 +67,11 @@ export class Display extends Gfx {
   invalidate(): void {
     this.fb.markAllDirty();
   }
+  /** Widen what changed to whole rows, so the next show() sends every row from the topmost changed
+   *  to the bottommost, full width. */
+  widenToRows(): void {
+    this.fb.widenToRows();
+  }
 
   /** 0..100. LCD backlight PWM / OLED contrast. */
   setBrightness(percent: number): void {
@@ -84,7 +89,7 @@ export class Display extends Gfx {
     if (this.profile.tech === 'epaper') return this.showEpaper(mode);
     const { width, height, tech } = this.profile;
     const dirty = this.fb.takeDirty();
-    // A firmware that flips only the tiles drawn on (profile.flipTile) sends those, not the whole box.
+    // A firmware that flips only the tiles drawn on (profile.flip) sends those, not the whole box.
     const tilePixels = this.fb.takeTilePixels();
     if (!dirty) return;
 

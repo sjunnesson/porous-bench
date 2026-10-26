@@ -113,6 +113,18 @@ describe('Resident sandbox', () => {
     expect(t.display.stats.bytes - before).toBe(2 * 16 * 16 * 2 + 11); // not the 480×480 box round them
   });
 
+  it('charges a flip the rows drawn on, full width, on a display whose firmware sends those', async () => {
+    const t = await boot(`local g = lgfx.bind("main")
+      function init(ctx) g:fillScreen(0) g:flip() end
+      function on_event(ctx, e) g:fillRect(10, 100, 8, 8, 0xFFFFFF) g:flip() end`, 'waveshare-esp32-c6-lcd-1.47');
+    expect(t.error).toBeUndefined();
+    await run(t, 50);
+    const before = t.display.stats.bytes;
+    t.host.queue({ name: 'go', channel: 'app', data: {} });
+    await run(t, 50);
+    expect(t.display.stats.bytes - before).toBe(8 * 172 * 2 + 11); // rows 100-107, all 172 pixels of each
+  });
+
   it('pushes a block of RGB565 pixels from a string, NUL and high bytes included', async () => {
     // Two rows of two at 60,60: red, green / black (all zero bytes), white.
     const t = await boot(`local g = lgfx.bind("main")

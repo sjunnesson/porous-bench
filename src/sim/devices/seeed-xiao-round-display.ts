@@ -17,6 +17,8 @@ export default {
   ram: { width: 240, height: 240, offsetX: 0, offsetY: 0 },
   // Bench's firmware ticks on_tick every 33 ms (SandboxConfig::tickIntervalMs), not Resident's 100.
   tickMs: 33,
+  // Bench's firmware flips only the rows drawn on, topmost to bottommost (Lcd::presentDirty).
+  flip: 'rows',
   boards: ['seeed-xiao-esp32s3-round-display'],
   // The XIAO ESP32S3's GPIOs; the board prints them D0–D10.
   wiring: {

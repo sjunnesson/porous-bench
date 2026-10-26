@@ -20,7 +20,7 @@ export default {
   // Bench's firmware turns the picture 270° (SCREEN_ROTATION), so up is away from a USB-C facing down.
   firmwareRotation: 3,
   // and copies only the 16×16 tiles drawn on since the last flip into the frame the panel scans.
-  flipTile: 16,
+  flip: { tile: 16 },
   boards: ['guition-esp32-s3-4848s040'],
   wiring: {
     'SPI SCK (init)': 48,

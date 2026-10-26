@@ -11,6 +11,8 @@ export default {
   ram: { width: 240, height: 320, offsetX: 34, offsetY: 0 },
   // Bench's firmware ticks on_tick every 33 ms (SandboxConfig::tickIntervalMs), not Resident's 100.
   tickMs: 33,
+  // Bench's firmware flips only the rows drawn on, topmost to bottommost (Lcd::presentDirty).
+  flip: 'rows',
   boards: ['waveshare-esp32-c6-lcd-1.47'],
   wiring: { MOSI: 6, SCLK: 7, CS: 14, DC: 15, RST: 21, BL: 22, 'SD MISO': 5, 'SD CS': 4, 'RGB LED': 8, BOOT: 9 },
   porting: [
