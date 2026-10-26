@@ -77,8 +77,16 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   | turned 270° through a strip, canvas aligned | 36 |
   | turned 270° straight into the frame (shipped) | 34 |
 
-  In the apps, turned: `driver-check`, which repaints the whole screen every tick, runs at 16.7
-  frames a second (16.6 not turned); `lvgl-check` at 28, pushing ~41-row bands in 4.1 ms.
+  In the apps, the same build turned and not (2026-10-26, two 30 s windows each):
+
+  | | not turned | turned 270° |
+  |---|---|---|
+  | `driver-check`, the whole screen every tick | 19.1 fps (26.8 ms push, 52.3 ms a frame) | 16.8 fps (34.0 ms push, 59.5 ms a frame) |
+  | `lvgl-check`, a sliding box (41-row bands) | 26.5 fps (2.4 ms a push) | 28.0 fps (4.1 ms a push) |
+
+  The app's own drawing takes the same 25.5 ms either way: turning costs a full-screen app 7.2 ms a
+  frame, 12%. An app that redraws a band stays under the 33 ms tick either way, and the tick sets
+  its rate.
 - **Not by DMA.** GDMA (`esp_async_memcpy`, which IDF 4.4 lets write PSRAM) writes the frame past the
   cache, about twice as fast: 8.2 ms for a frame from internal RAM, 15.3 from the canvas, 19-21 ms
   turned with the CPU turning the next strip while the DMA writes the last. But it takes so much of
