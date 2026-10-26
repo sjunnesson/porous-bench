@@ -11,7 +11,8 @@ device-minimal-resident/  stage 2: Wi-Fi (WiFiManager portal) + relay WebSocket 
 device/                   stage 3: drivers: screen, lgfx, button, screens (+ DEVICE-SKILL.md),
                           on a rebuilt Arduino core with more RAM for apps (84 KB)
 device-prebuilt-core/     the same firmware on the prebuilt core: quick to build, 59 KB for apps
-core3.py                  build fixes for Resident's libraries on Arduino core 3.x (stages 2-3)
+core3.py                  build fixes for Resident's libraries on Arduino core 3.x (stages 2-3),
+                          and device/'s -O2
 ```
 
 The projects pull Resident from GitHub, pinned to the commit they were built and tested against
@@ -25,6 +26,16 @@ cd firmware/c6-lcd147/device && pio run -t upload && pio device monitor
 "Memory"). It rebuilds the libraries inside the shared `~/.platformio` framework package, so building
 a project on the prebuilt core afterwards (stages 1-2, `device-prebuilt-core/`) reinstalls those,
 and the next `device/` build compiles its own again.
+
+The rebuild ends by running `pio run` again from pioarduino's own Python environment
+(`~/.platformio/penv`), which installs pioarduino's PlatformIO Core as 6.2.0.post1. Its platform
+(55.03.312) asks for Core >=6.2.0, and semver reads `.post1` as a pre-release of 6.2.0: that second
+run stops with `IncompatiblePlatform` and uninstalls the platform. Pin the penv to 6.2.0 once and
+the rebuild runs through (2026-10-26):
+
+```bash
+~/.platformio/penv/bin/uv pip install pioarduino==6.2.0 --python ~/.platformio/penv/bin/python
+```
 
 On first boot without saved Wi-Fi the board opens a `Resident C6-lcd147 …` hotspot; join it and
 enter your network. The screen then shows the 8-character device ID.
@@ -53,7 +64,7 @@ enter your network. The screen then shows the 8-character device ID.
     which it needs, are in the core.
   - Esp32Lua's C++ wrapper (unused by Resident, compiled anyway) names `std::string` without
     including `<string>`; core 2.x headers pulled it in by accident. `core3.py` force-includes it
-    for Esp32Lua's C++ files only (globally, it breaks OpenThread when `device-lean` compiles
+    for Esp32Lua's C++ files only (globally, it breaks OpenThread when `device/` compiles
     ESP-IDF).
   - Esp32Lua also carries Lua's standalone `lua.c` and `luac.c`, each with a `main()`. Core 2.x
     linked libraries as archives, so nothing pulled them in; pioarduino links library objects
@@ -82,7 +93,12 @@ enter your network. The screen then shows the 8-character device ID.
   would grow the IDF code in IRAM, which on the C6 is heap (see "Memory"). Measured on the board:
   the Lua arena still has 83,856 bytes free for apps and the shared heap ~49 KB, as before. The
   flame, which redraws every row each tick, went from 66-70 to 62-66 ms a tick (a full push 32 →
-  30.6 ms, its Lua and drawing ~36 → ~34.5): a few per cent, not the S3's 15%.
+  30.6 ms, its Lua and drawing ~36 → ~34.5): a few per cent, not the S3's 15%. `core3.py` puts the
+  `-O2` (`custom_optimize` in `device/platformio.ini`) on each file of the firmware, its libraries
+  and the Arduino core, after the core's `-Os`. In `build_flags` it broke the next core rebuild
+  (2026-10-26): ESP-IDF's newlib compiles `memcpy.c` and its kin with an `-O2` of their own and
+  stops on `-Os` (`#error ... DIG-694`), and pioarduino adds a file's flag only if the environment
+  doesn't have it yet, so with the project's `-O2` there those files kept the core's `-Os` after it.
 - **`on_tick` every 33 ms, not 100** (since 2026-10-23). Resident ticked every app at a fixed 10
   fps; the firmware now sets `SandboxConfig::tickIntervalMs = 33`, a field on Bench's Resident fork
   (`sjunnesson/resident`, 0.12.0 plus the field) until inanimate-tech/resident takes it. Measured:

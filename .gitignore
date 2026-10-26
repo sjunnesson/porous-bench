@@ -19,6 +19,7 @@ dist
 .pio/
 # …and what pioarduino writes next to platformio.ini when it rebuilds the core (custom_sdkconfig)
 firmware/**/managed_components/
+firmware/**/CMakeLists.txt
 firmware/**/.dummy/
 firmware/**/sdkconfig.*
 firmware/**/sdkconfig.defaults
