@@ -20,8 +20,10 @@ static constexpr int PIN_BL = 38;
 // uses 8/10/20 and 8/10/10 with its own). Line: 480 + 10 + 8 + 50 clocks;
 // frame: 480 + 10 + 8 + 20 lines; at 12 MHz, 42.3 frames a second.
 static constexpr uint32_t PCLK_HZ = 12000000;
-// The backlight's PWM: ESPHome runs it at 150 Hz, others at 100 Hz.
-static constexpr int BL_CHANNEL = 0, BL_HZ = 150, BL_BITS = 10;
+// The backlight's PWM: 20 kHz, above hearing. ESPHome runs it at 150 Hz,
+// others at 100 Hz; at 150 Hz it whines faintly when dim, and at 20 kHz it
+// fades as smoothly (2026-10-26, on the board).
+static constexpr int BL_CHANNEL = 0, BL_HZ = 20000, BL_BITS = 10;
 
 // A turned picture goes out STRIP frame rows at a time, read along image rows
 // 16 pixels (32 bytes, one cache line) at a time.

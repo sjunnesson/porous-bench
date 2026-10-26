@@ -57,7 +57,6 @@ bool begin();                  // panel, backlight, canvas; false if either didn
 void present();                // push the canvas to the glass
 void presentDirty();           // push only the rows drawn since the last push (lgfx and screen flips)
 void presentRows(int y0, int y1);  // push rows y0..y1 (inclusive) only
-void resync();                 // restart the panel's scan and push the canvas again (after flash writes)
 void setBrightness(float v);   // backlight, 0..1 (PWM duty)
 float brightness();
 uint32_t lastPushUs();

@@ -2,10 +2,9 @@
 // LittleFS partition instead of an NVS blob.
 //
 // A flash write stops the cache, and with it the PSRAM the panel is scanned
-// from: the picture flickers or scrolls, and on IDF 4.4's RGB driver it can
-// stay shifted.
-// So after each write the scan starts again and the frame goes out whole
-// (Lcd::resync(); a blink of black).
+// from: the picture glitches while it writes. On this board it comes back by
+// itself, in place, so nothing needs doing after a save (stage 1's FLASH test,
+// 2026-10-26: seven 256 KB writes of up to 2.5 s, the border intact after each).
 //
 // Resident saves an app that loaded cleanly so a reboot brings it back, by
 // default into NVS. The NVS partition is 20 KB and also holds Wi-Fi and the
@@ -19,7 +18,6 @@
 #pragma once
 #include <LittleFS.h>
 #include <ResidentNvsStore.h>
-#include "Lcd.h"
 
 class AppStore : public Resident::NvsPersistentStore {
 public:
@@ -37,7 +35,6 @@ public:
     bool ok = f.write((const uint8_t*)source, len) == len;
     f.close();
     if (ok) NvsPersistentStore::clear();  // an older copy in NVS would only confuse a fallback
-    Lcd::resync();
     Serial.printf("[store] app saved: %u bytes\n", (unsigned)len);
     return ok;
   }
@@ -56,7 +53,6 @@ public:
   void clear() override {
     if (_fs) LittleFS.remove(PATH);
     NvsPersistentStore::clear();
-    Lcd::resync();
   }
 
 private:

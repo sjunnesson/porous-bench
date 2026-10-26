@@ -37,8 +37,9 @@ int rotation();
 void toImage(int& x, int& y);
 
 // Tear the scan down and start it again, on a new (black) frame buffer: the
-// caller pushes its frame again after. For when a long flash write starved the
-// scan of PSRAM and the picture slipped (see the README).
+// caller pushes its frame again after. Stage 1's RESTART: for a picture that
+// slipped and stayed slipped, which a flash write hasn't done on this board
+// (see the README).
 bool restart();
 
 // Whether turned pushes write the frame straight, or through draw_bitmap

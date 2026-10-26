@@ -87,19 +87,20 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   the log; only on the glass.
 - **Flash writes and the scan.** Writing flash stops the cache, and the PSRAM the scan reads from
   with it. On these RGB boards that is known to make the picture flicker or scroll (users of Tasmota
-  and ESPHome report it during OTA and saves), and on IDF 4.4 a scan that loses its place can stay
-  shifted. IDF 4.4 has no
-  bounce buffers and no way to resynchronise the scan, so after every app save (and forget) the
-  firmware tears the scan down and starts it again, then copies the canvas back: `Lcd::resync()`,
-  a blink of black. On the first board the picture stayed put after every save; whether it would
-  without the resync is untested (stage 1's FLASH test).
+  and ESPHome report it during OTA and saves), and IDF 4.4 has no bounce buffers to carry the scan
+  through it. On this board the picture glitches while flash is written and comes back by itself,
+  in place: stage 1's FLASH wrote 256 KB seven times (0.8 to 2.5 s each) and the border was intact
+  after every one. So an app save does nothing to the scan. Until 2026-10-26 stage 3 tore the scan
+  down and started it again after each save, for a slip that never stays: a blink of black for
+  nothing.
 - **Touch: GT911 at 0x5D** on SDA 19, SCL 45 (a strapping pin), 400 kHz, pull-ups on the board. INT
   and RST aren't wired, so the address is whatever the board's straps make it and the chip is
   polled every 10 ms: status at 0x814E (bit 7: report ready, bits 0-3: fingers), the first finger
   at 0x8150, and 0 written back to hand the buffer over. A touch with no report for 200 ms counts as
   released.
-- **Backlight:** PWM on GPIO38 at 150 Hz, 10-bit, as ESPHome runs it (others use 100 Hz). It stays
-  off until the panel has started, so the power-on noise never shows.
+- **Backlight:** PWM on GPIO38 at 20 kHz, 10-bit. ESPHome runs it at 150 Hz (others at 100 Hz),
+  where it whines faintly when dim; at 20 kHz it's silent and fades as smoothly. It stays off until
+  the panel has started, so the power-on noise never shows.
 - **Chip:** ESP32-S3, 16 MB quad flash, 8 MB octal PSRAM (`qio_opi`). PlatformIO's
   `esp32-s3-devkitc-1` with the flash size and memory type overridden; Serial is UART0 through the
   CH340 (no `ARDUINO_USB_CDC_ON_BOOT`). The 16 MB holds one 4 MB app slot and ~12 MB of LittleFS.
@@ -120,21 +121,22 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
 
 ## What bring-up found
 
-The first board (2026-10-26) ran stage 3 with both check apps, not turned and then turned 270°.
-Stage 1's card would answer what's still open.
+The first board (2026-10-26) ran stage 3 with both check apps, not turned and then turned 270°,
+and stage 1's card.
 
 1. **The picture** fills the glass with Arduino_GFX's porches: `driver-check`'s border shows on all
    four edges. (Otherwise try ESPHome's H 8/10/20, V 8/10/10 in `RgbPanel.cpp`.)
 2. **Orientation:** at 0, up has the USB-C on the right, as the sources say.
-3. **Colours:** red, green and blue in order, not inverted. Still open: stage 1's ramps, which would
-   show red and blue banding if 0xCD didn't take.
+3. **Colours:** red, green and blue in order, not inverted, and stage 1's red and blue ramps as
+   smooth as green's: no 4-bit banding, so 0xCD took.
 4. **Touch:** the GT911 answers at 0x5D (product "911"), and the crosshair sits under the finger,
    not turned and turned.
 5. **The scan** runs at 42.2 Hz (42.3 expected). A whole frame costs 26.2 ms to copy (more above).
-6. **Flash writes:** the picture stayed put after every app save, with `Lcd::resync()`. Still open:
-   whether it slips without the resync (stage 1's FLASH and RESTART), and so whether the resync can
-   go.
-7. **Backlight:** dimming to 0.3 and back is smooth. Still open: the start, and whine at low duty.
+6. **Flash writes** glitch the picture while they write, and it comes back by itself (above): no
+   RESTART needed, so stage 3 no longer restarts the scan after a save.
+7. **Backlight:** stage 1's fade from off to full is smooth, and so is dimming to 0.3 and back. At
+   150 Hz, ESPHome's PWM, it whined faintly when dim; at 20 kHz it's silent and fades as smoothly,
+   so the firmware runs it at 20 kHz.
 
 Also from that board:
 

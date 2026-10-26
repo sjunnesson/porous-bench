@@ -55,11 +55,6 @@ void presentRows(int y0, int y1) {
   _pushUs += _lastPushUs;
 }
 
-void resync() {
-  if (!RgbPanel::restart()) Serial.println("[lcd] restarting the scan FAILED");
-  present();
-}
-
 void setBrightness(float v) { RgbPanel::setBacklight(v); }
 
 float brightness() { return RgbPanel::backlight(); }

@@ -55,7 +55,7 @@ export default {
     'Before RGB, the ST7701S takes an init sequence over 3-wire SPI (SCK 48, MOSI 47, CS 39; mode 3, 2 MHz). Arduino_GFX\'s st7701_type9_init_operations is written for this board; ESPHome\'s st7701s needs the extra command 0xCD 0x00, or red and blue keep only 4 bits. No INVON, colour order RGB. There is no reset pin.',
     'Pixel clock 12 MHz, H pulse/front/back porch 8/10/20, V 8/10/10 (ESPHome): a frame\'s pixels take 19 ms, 22 ms with the porches, so ~46 frames a second at most (Bench counts the pixels only). Faster clocks flicker unless the frame goes out through a bounce buffer in internal RAM; flash writes (OTA, saving) starve the scan of PSRAM bandwidth and the picture jumps.',
     'Rotation 0 has the USB-C on the right edge; ESPHome turns it 270° for a USB-C facing down, and so does Bench\'s firmware (SCREEN_ROTATION in platformio.ini, touch turned with it).',
-    'Backlight: PWM on GPIO38 (ESPHome runs it at 150 Hz, others at 100 Hz).',
+    'Backlight: PWM on GPIO38. ESPHome runs it at 150 Hz, others at 100 Hz; at 150 Hz it whines faintly when dim, at 20 kHz (Bench\'s firmware) it is silent and dims as smoothly.',
     'Touch: GT911 at I2C 0x5D (SDA 19, SCL 45, a strapping pin; 400 kHz, pull-ups on the board). INT and RST aren\'t wired, so poll it. It reports in panel pixels. Expose it as Bench\'s `touchscreen` module and `touch_*` events.',
     'No user key: BOOT and RST sit inside the case, and BOOT\'s GPIO0 is a red data line once the panel runs. The side key next to the USB-C is the battery charger\'s, not a GPIO.',
     'USB-C goes through a CH340 USB-serial chip (UART0, 43/44), not native USB. It needs a strong 5 V supply: Wi-Fi\'s current spikes brown it out on a laptop port.',
