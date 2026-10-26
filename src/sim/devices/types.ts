@@ -59,10 +59,10 @@ export interface DeviceProfile {
   touch?: { controller: string; i2cAddress?: number };
   /** How often the board's firmware calls a Resident app's on_tick, in ms (Resident's default is 100: 10 FPS). */
   tickMs?: number;
-  /** What Bench's firmware for this display sends on an lgfx/screen flip, so a flip costs that:
-   *  'rows', every row from the topmost drawn on to the bottommost, full width; or the squares
-   *  `tile` native pixels across drawn on. Unset: the whole frame, as a sprite pushed whole. */
-  flip?: 'rows' | { tile: number };
+  /** What Bench's firmware for this display sends on an lgfx/screen flip, so a flip costs that: the
+   *  squares `tile` native pixels across drawn on since the last. Unset: the whole frame, as a
+   *  sprite pushed whole. */
+  flip?: { tile: number };
   /** The boards (ids in src/sim/boards.ts) that can drive it, the default first. Unset: any generic board. */
   boards?: string[];
   /** Hardware built into the board besides its buttons (those come from the enclosure). */

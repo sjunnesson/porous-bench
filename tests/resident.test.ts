@@ -113,16 +113,17 @@ describe('Resident sandbox', () => {
     expect(t.display.stats.bytes - before).toBe(2 * 16 * 16 * 2 + 11); // not the 480×480 box round them
   });
 
-  it('charges a flip the rows drawn on, full width, on a display whose firmware sends those', async () => {
+  it('charges the narrower last column of tiles for what it holds, on a screen not a multiple of 16 wide', async () => {
+    // The C6-LCD-1.47 is 172 px wide: its last column of tiles (160-171) is 12 px.
     const t = await boot(`local g = lgfx.bind("main")
       function init(ctx) g:fillScreen(0) g:flip() end
-      function on_event(ctx, e) g:fillRect(10, 100, 8, 8, 0xFFFFFF) g:flip() end`, 'waveshare-esp32-c6-lcd-1.47');
+      function on_event(ctx, e) g:fillRect(162, 100, 8, 8, 0xFFFFFF) g:flip() end`, 'waveshare-esp32-c6-lcd-1.47');
     expect(t.error).toBeUndefined();
     await run(t, 50);
     const before = t.display.stats.bytes;
     t.host.queue({ name: 'go', channel: 'app', data: {} });
     await run(t, 50);
-    expect(t.display.stats.bytes - before).toBe(8 * 172 * 2 + 11); // rows 100-107, all 172 pixels of each
+    expect(t.display.stats.bytes - before).toBe(12 * 16 * 2 + 11); // one tile, 12 × 16 pixels
   });
 
   it('pushes a block of RGB565 pixels from a string, NUL and high bytes included', async () => {

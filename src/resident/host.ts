@@ -429,9 +429,8 @@ export class ResidentHost {
   private present() {
     if (this.owner === 'lvgl') return; // LVGL owns the panel: an lgfx flip stands down silently
     const d = this.board.display;
-    // A flip sends what the board's firmware sends: the whole frame, the rows drawn on, or the tiles.
+    // A flip sends what the board's firmware sends: the whole frame, or the tiles drawn on.
     if (!d.profile.flip) d.invalidate();
-    else if (d.profile.flip === 'rows') d.widenToRows();
     this.track(d.show());
   }
 

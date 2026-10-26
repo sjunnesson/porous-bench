@@ -16,7 +16,7 @@ Panel panel;
 
 static float _brightness = 1.0f;
 static uint32_t _lastPushUs = 0;
-static uint32_t _frames = 0, _rows = 0, _pushUs = 0;
+static uint32_t _frames = 0, _pixels = 0, _pushUs = 0;
 
 bool begin() {
   // The TF card shares the bus (unused): keep it deselected.
@@ -37,20 +37,60 @@ bool begin() {
   return canvas && canvas->getBuffer();
 }
 
-void present() {
-  Canvas* c = static_cast<Canvas*>(canvas);
-  c->y0 = HEIGHT;
-  c->y1 = -1;
-  presentRows(0, HEIGHT - 1);
+// Bresenham straight into the buffer, the tiles under the line noted once.
+void Canvas::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c) {
+  if (x0 == x1) return drawFastVLine(x0, min(y0, y1), abs(y1 - y0) + 1, c);
+  if (y0 == y1) return drawFastHLine(min(x0, x1), y0, abs(x1 - x0) + 1, c);
+  markRect(x0, y0, x1, y1);
+  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  int err = dx + dy, x = x0, y = y0;
+  bool inside = (unsigned)x0 < (unsigned)W && (unsigned)x1 < (unsigned)W && (unsigned)y0 < (unsigned)H &&
+                (unsigned)y1 < (unsigned)H;
+  uint16_t* buf = buffer;
+  for (;;) {
+    if (inside || ((unsigned)x < (unsigned)W && (unsigned)y < (unsigned)H)) buf[y * W + x] = c;
+    if (x == x1 && y == y1) break;
+    int e2 = 2 * err;
+    if (e2 >= dy) err += dy, x += sx;
+    if (e2 <= dx) err += dx, y += sy;
+  }
 }
 
-// An app that redraws only what moves pushes only those rows, not all 110 KB.
+void present() {
+  static_cast<Canvas*>(canvas)->markRect(0, 0, WIDTH - 1, HEIGHT - 1);
+  presentDirty();
+}
+
+// An app that redraws only what moves pushes only those tiles, not all 110 KB.
+// Each run of tiles along a band of 16 rows goes to the panel through its own
+// address window (the driver adds the panel's 34-column offset), all in one SPI
+// transaction; a run as wide as the screen is one stretch of the canvas.
 void presentDirty() {
   Canvas* c = static_cast<Canvas*>(canvas);
-  int y0 = c->y0, y1 = c->y1;
-  c->y0 = HEIGHT;
-  c->y1 = -1;
-  presentRows(y0, y1);
+  uint16_t* buf = c->getBuffer();
+  uint32_t t0 = micros(), pixels = 0;
+  for (int band = 0; band < Canvas::TILES_Y; band++) {
+    uint32_t m = c->dirty[band];
+    c->dirty[band] = 0;
+    while (m) {
+      int a = __builtin_ctz(m), b = a;
+      while (b + 1 < Canvas::TILES_X && (m >> (b + 1) & 1)) b++;
+      m &= ~((2u << b) - (1u << a));
+      int x0 = a * Canvas::TILE, y0 = band * Canvas::TILE;
+      int w = min((b + 1) * Canvas::TILE, WIDTH) - x0, h = min(Canvas::TILE, HEIGHT - y0);
+      if (!pixels) tft.startWrite();
+      tft.setAddrWindow(x0, y0, w, h);
+      if (w == WIDTH) tft.writePixels(buf + y0 * WIDTH, w * h, true, false);
+      else for (int y = y0; y < y0 + h; y++) tft.writePixels(buf + y * WIDTH + x0, w, true, false);
+      pixels += w * h;
+    }
+  }
+  if (!pixels) return;
+  tft.endWrite();
+  _lastPushUs = micros() - t0;
+  _frames++;
+  _pixels += pixels;
+  _pushUs += _lastPushUs;
 }
 
 void setBrightness(float v) {
@@ -62,30 +102,16 @@ float brightness() { return _brightness; }
 
 uint32_t lastPushUs() { return _lastPushUs; }
 
-void takeStats(uint32_t& frames, uint32_t& rows, uint32_t& pushUs) {
+void takeStats(uint32_t& frames, uint32_t& pixels, uint32_t& pushUs) {
   frames = _frames;
-  rows = _rows;
+  pixels = _pixels;
   pushUs = _pushUs;
-  _frames = _rows = _pushUs = 0;
-}
-
-void presentRows(int y0, int y1) {
-  y0 = max(y0, 0);
-  y1 = min(y1, HEIGHT - 1);
-  if (y1 < y0) return;
-  uint32_t t0 = micros();
-  // Whole rows are contiguous in the canvas, so a band goes out as one bitmap.
-  // The driver's setAddrWindow adds the panel's 34-column offset, as for a full push.
-  tft.drawRGBBitmap(0, y0, canvas->getBuffer() + y0 * WIDTH, WIDTH, y1 - y0 + 1);
-  _lastPushUs = micros() - t0;
-  _frames++;
-  _rows += y1 - y0 + 1;
-  _pushUs += _lastPushUs;
+  _frames = _pixels = _pushUs = 0;
 }
 
 void Panel::blit(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px) {
   uint16_t* buf = canvas->getBuffer();
-  static_cast<Canvas*>(canvas)->mark(y, y + h - 1);  // written past drawPixel: mark the rows here
+  static_cast<Canvas*>(canvas)->markRect(x, y, x + w - 1, y + h - 1);  // written past drawPixel: mark here
   for (int32_t row = 0; row < h; row++) {
     int32_t cy = y + row;
     if (cy < 0 || cy >= HEIGHT) continue;

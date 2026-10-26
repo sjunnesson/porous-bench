@@ -70,13 +70,6 @@ export class Framebuffer {
     this.tiles?.fill(1);
   }
 
-  /** Widen what changed to whole rows. */
-  widenToRows(): void {
-    if (!this.isDirty()) return;
-    this.dx0 = 0;
-    this.dx1 = this.width - 1;
-  }
-
   isDirty(): boolean {
     return this.dx1 >= this.dx0;
   }

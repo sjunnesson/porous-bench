@@ -62,15 +62,20 @@ enter your network. The screen then shows the 8-character device ID.
 - **Panel:** Adafruit's ST7789 driver at `init(172, 320)` puts the columns at offset 34 and sends
   INVON. Its rotation 2 is the panel's native scan (MADCTL 0x00, as Waveshare's demo): top away from
   the USB-C port. Rotation 0 mirrors both axes.
-- **One frame; a flip pushes the rows drawn.** `screen`, `lgfx` and the status text share one
+- **One frame; a flip pushes the tiles drawn on.** `screen`, `lgfx` and the status text share one
   172×320 RGB565 canvas (110 KB), allocated before Wi-Fi so it gets one contiguous block. A full
   push at 80 MHz takes ~31-33 ms, inside the Lua dispatch (well under the 1 s deadline). There's
   no room for a second buffer to push from in the background, so since 2026-10-23 a `flip()` pushes
-  only the band of rows drawn since the last one, as the S3-Touch-LCD-2's firmware does (the canvas
-  records them; the status screen still goes out whole). An app that redraws only what moves pushes
-  less: measured with a 40 px box erased and redrawn each tick, a tick went from 32.1 to 4.0 ms
-  (40 rows pushed, 3.9 ms). The `[perf]` line every 30 s gives pushes a second, rows a push, ms a
-  push and loop time.
+  only what was drawn since the last one: then the band of rows from the topmost drawn to the
+  bottommost (a 40 px box erased and redrawn each tick: a tick from 32.1 to 4.0 ms, 40 rows in 3.9
+  ms), since 2026-10-26 the 16×16 tiles drawn on (the last column is 12 px), each run of them along
+  a band of 16 rows through its own address window in one SPI transaction, as the Guition's and
+  S3-Touch-LCD-2's firmware do. Lines and pixels go straight into the canvas too, not through Adafruit
+  GFX's two virtual calls a pixel. Measured against the rows: five boxes bouncing round the screen
+  (each wiped with `fillRect` and redrawn) went from 19-23 ms pushes (197-239 rows) to 4.5 ms (13% of
+  the frame); a 40 px diagonal from 28 us to 12, a 30 px circle from 60 to 40; `flame-c6`, which
+  draws whole rows, unchanged at ~30.5 ms. The `[perf]` line every 30 s gives pushes a second, the
+  share of the frame a push, ms a push and loop time.
 - **Built with `-O2`, not `-Os`** (since 2026-10-23), as the S3-Touch-LCD-2 is, for Lua and the
   drivers: flash went from 1,733,642 to 1,854,720 bytes (of the 4 MB app slot); static RAM 63,860 →
   63,884 bytes. ESP-IDF's own optimisation (`CONFIG_COMPILER_OPTIMIZATION_PERF`) stays off: it
