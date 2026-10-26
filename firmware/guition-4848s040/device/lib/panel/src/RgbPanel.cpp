@@ -231,45 +231,71 @@ bool begin() {
   return true;
 }
 
-// `rows` is image row y0 of the whole image (the canvas).
-void drawRows(const uint16_t* rows, int y0, int y1) {
+// Inside beginBatch()..endBatch() the frame rows written are noted and written
+// back from the cache once, at the end, instead of after each rectangle.
+static int s_batch = 0;
+static int s_backLo = HEIGHT, s_backHi = -1;
+
+static void written(int fy0, int fy1) { // frame rows fy0..fy1 changed in the cache
+  if (s_batch) {
+    s_backLo = min(s_backLo, fy0);
+    s_backHi = max(s_backHi, fy1);
+    return;
+  }
+  Cache_WriteBack_Addr((uint32_t)(s_fb + fy0 * WIDTH), (fy1 - fy0 + 1) * WIDTH * 2);
+}
+
+void beginBatch() { s_batch++; }
+
+void endBatch() {
+  if (s_batch == 0 || --s_batch > 0) return;
+  if (s_fb && s_backHi >= 0) {
+    Cache_WriteBack_Addr((uint32_t)(s_fb + s_backLo * WIDTH), (s_backHi - s_backLo + 1) * WIDTH * 2);
+  }
+  s_backLo = HEIGHT;
+  s_backHi = -1;
+}
+
+void drawRect(const uint16_t* img, int x0, int y0, int x1, int y1) {
   if (!s_panel) return;
-  y0 = max(y0, 0);
-  y1 = min(y1, HEIGHT - 1);
-  if (y1 < y0) return;
+  x0 = max(x0, 0), y0 = max(y0, 0), x1 = min(x1, WIDTH - 1), y1 = min(y1, HEIGHT - 1);
+  if (x1 < x0 || y1 < y0) return;
+  int w = x1 - x0 + 1;
   if (s_rotation == 0) {
-    esp_lcd_panel_draw_bitmap(s_panel, 0, y0, WIDTH, y1 + 1, rows);  // as fast as memcpy: PSRAM is the limit
+    if (s_fb) {
+      for (int y = y0; y <= y1; y++) memcpy(s_fb + y * WIDTH + x0, img + y * WIDTH + x0, w * 2);
+      written(y0, y1);
+    } else if (w == WIDTH) {
+      esp_lcd_panel_draw_bitmap(s_panel, 0, y0, WIDTH, y1 + 1, img + y0 * WIDTH);
+    } else {
+      for (int y = y0; y <= y1; y++) esp_lcd_panel_draw_bitmap(s_panel, x0, y, x1 + 1, y + 1, img + y * WIDTH + x0);
+    }
     return;
   }
 
-  // Turned: a window of the frame, STRIP rows of it at a time.
-  const uint16_t* img = rows - y0 * WIDTH;
-  int fx0, w, fyA, fyB;
-  if (s_rotation == 180) {
-    // Image rows y1..y0 are frame rows H-1-y1..H-1-y0, each reversed.
-    fx0 = 0;
-    w = WIDTH;
-    fyA = HEIGHT - 1 - y1;
-    fyB = HEIGHT - y0;
-  } else {
-    // Image rows y0..y1 are a band of frame columns, all frame rows tall.
-    fx0 = s_rotation == 90 ? HEIGHT - 1 - y1 : y0;
-    w = y1 - y0 + 1;
-    fyA = 0;
-    fyB = HEIGHT;
+  // Turned: the rectangle's window in the frame, STRIP rows of it at a time.
+  int fx0, fw, fyA, fyB;
+  if (s_rotation == 180) { // image (x, y) -> frame (W-1-x, H-1-y)
+    fx0 = WIDTH - 1 - x1, fw = w, fyA = HEIGHT - 1 - y1, fyB = HEIGHT - y0;
+  } else if (s_rotation == 90) { // (x, y) -> (H-1-y, x)
+    fx0 = HEIGHT - 1 - y1, fw = y1 - y0 + 1, fyA = x0, fyB = x1 + 1;
+  } else { // 270: (x, y) -> (y, W-1-x)
+    fx0 = y0, fw = y1 - y0 + 1, fyA = WIDTH - 1 - x1, fyB = WIDTH - x0;
   }
   for (int fy = fyA; fy < fyB; fy += STRIP) {
     int n = min(STRIP, fyB - fy);
     if (s_fb) {
-      // The strip's frame rows (15 KB) stay in the cache while they fill, then go out together.
-      turn(img, s_fb + fy * WIDTH + fx0, WIDTH, fx0, w, fy, n);
-      Cache_WriteBack_Addr((uint32_t)(s_fb + fy * WIDTH), n * WIDTH * 2);
+      turn(img, s_fb + fy * WIDTH + fx0, WIDTH, fx0, fw, fy, n);
     } else {
-      turn(img, s_strip, w, fx0, w, fy, n);
-      esp_lcd_panel_draw_bitmap(s_panel, fx0, fy, fx0 + w, fy + n, s_strip);
+      turn(img, s_strip, fw, fx0, fw, fy, n);
+      esp_lcd_panel_draw_bitmap(s_panel, fx0, fy, fx0 + fw, fy + n, s_strip);
     }
   }
+  if (s_fb) written(fyA, fyB - 1);
 }
+
+// `rows` is image row y0 of the whole image (the canvas).
+void drawRows(const uint16_t* rows, int y0, int y1) { drawRect(rows - y0 * WIDTH, 0, y0, WIDTH - 1, y1); }
 
 bool setRotation(int degrees) {
   degrees = ((degrees % 360) + 360) % 360;

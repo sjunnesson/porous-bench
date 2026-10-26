@@ -224,11 +224,13 @@ end
   Read from a step back, size 3 or more (lgfx) or 24 px or more (LVGL) reads best.
 - **Frame rate**: the panel is scanned from PSRAM ~42 times a second, so no app shows more frames
   than that. `on_tick` runs every 33 ms (~30 fps): move things by `dt_ms`, and a tick that takes
-  longer delays the next. `flip()` copies only the rows drawn since the last flip into the scanned
-  frame, and a whole 480×480 frame is 450 KB: flipping all of it takes ~34 ms and clearing it
-  (`fillScreen`) ~17 ms, so an app that repaints the whole screen every tick runs at ~17 fps.
-  Redraw only what moves, and rather than clearing, draw last frame's shapes again in the
-  background colour.
+  longer delays the next. `flip()` copies only the 16×16 tiles drawn on since the last flip into
+  the scanned frame, and a whole 480×480 frame is 450 KB: flipping all of it takes ~30 ms and
+  clearing it (`fillScreen`) ~17 ms, so an app that repaints the whole screen every tick runs at
+  ~17 fps, while five fish of lines spread over the screen flip ~20% of it in ~6.5 ms. Redraw only
+  what moves, and rather than clearing, wipe last frame's shapes: a `fillRect` over where each was
+  (~0.05 us a pixel), or the same lines again in the background colour (a call is ~3 us, a line
+  ~0.2 us a pixel more).
 - **LVGL cost**: each `obj:set{}` costs ~0.3-0.6 ms, and LVGL repaints everything under whatever
   changed, translucent layers included; on 480×480 a full-screen repaint is four times the work of a
   240×240 one. Keep big moving areas few.

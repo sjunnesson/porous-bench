@@ -11,7 +11,7 @@ GFXcanvas16* canvas = nullptr;
 Panel panel;
 
 static uint32_t _lastPushUs = 0;
-static uint32_t _frames = 0, _rows = 0, _pushUs = 0;
+static uint32_t _frames = 0, _pixels = 0, _pushUs = 0;
 
 bool begin() {
   if (!RgbPanel::begin()) return false;  // ST7701S init, the scan, the backlight
@@ -25,33 +25,55 @@ bool begin() {
   return true;
 }
 
-void present() {
-  Canvas* c = static_cast<Canvas*>(canvas);
-  c->y0 = HEIGHT;
-  c->y1 = -1;
-  presentRows(0, HEIGHT - 1);
+// Bresenham straight into the buffer, the tiles under the line noted once.
+void Canvas::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c) {
+  if (x0 == x1) return drawFastVLine(x0, min(y0, y1), abs(y1 - y0) + 1, c);
+  if (y0 == y1) return drawFastHLine(min(x0, x1), y0, abs(x1 - x0) + 1, c);
+  markRect(x0, y0, x1, y1);
+  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  int err = dx + dy, x = x0, y = y0;
+  bool inside = (unsigned)x0 < (unsigned)W && (unsigned)x1 < (unsigned)W && (unsigned)y0 < (unsigned)H &&
+                (unsigned)y1 < (unsigned)H;
+  uint16_t* buf = buffer;
+  for (;;) {
+    if (inside || ((unsigned)x < (unsigned)W && (unsigned)y < (unsigned)H)) buf[y * W + x] = c;
+    if (x == x1 && y == y1) break;
+    int e2 = 2 * err;
+    if (e2 >= dy) err += dy, x += sx;
+    if (e2 <= dx) err += dx, y += sy;
+  }
 }
 
-// An app that redraws only what moves pushes only those rows: a clock's hands
-// are a band of the screen, not all 450 KB.
+void present() {
+  static_cast<Canvas*>(canvas)->markRect(0, 0, WIDTH - 1, HEIGHT - 1);
+  presentDirty();
+}
+
+// An app that redraws only what moves pushes only those tiles: five koi spread
+// over the pond are five patches of the screen, not every row between them.
+// Each run of tiles along a band of 16 rows goes out as one rectangle, and the
+// frame is written back from the cache once, after the last.
 void presentDirty() {
   Canvas* c = static_cast<Canvas*>(canvas);
-  int y0 = c->y0, y1 = c->y1;
-  c->y0 = HEIGHT;
-  c->y1 = -1;
-  presentRows(y0, y1);
-}
-
-void presentRows(int y0, int y1) {
-  y0 = max(y0, 0);
-  y1 = min(y1, HEIGHT - 1);
-  if (y1 < y0) return;
-  uint32_t t0 = micros();
-  // Whole rows are contiguous in the canvas, so a band goes out as one copy.
-  RgbPanel::drawRows(canvas->getBuffer() + y0 * WIDTH, y0, y1);
+  uint32_t t0 = micros(), pixels = 0;
+  RgbPanel::beginBatch();
+  for (int band = 0; band < Canvas::TILES_Y; band++) {
+    uint32_t m = c->dirty[band];
+    c->dirty[band] = 0;
+    while (m) {
+      int a = __builtin_ctz(m), b = a;
+      while (b + 1 < Canvas::TILES_X && (m >> (b + 1) & 1)) b++;
+      m &= ~((2u << b) - (1u << a));
+      int y0 = band * Canvas::TILE;
+      RgbPanel::drawRect(c->getBuffer(), a * Canvas::TILE, y0, (b + 1) * Canvas::TILE - 1, y0 + Canvas::TILE - 1);
+      pixels += (b - a + 1) * Canvas::TILE * Canvas::TILE;
+    }
+  }
+  RgbPanel::endBatch();
+  if (!pixels) return;
   _lastPushUs = micros() - t0;
   _frames++;
-  _rows += y1 - y0 + 1;
+  _pixels += pixels;
   _pushUs += _lastPushUs;
 }
 
@@ -61,11 +83,11 @@ float brightness() { return RgbPanel::backlight(); }
 
 uint32_t lastPushUs() { return _lastPushUs; }
 
-void takeStats(uint32_t& frames, uint32_t& rows, uint32_t& pushUs) {
+void takeStats(uint32_t& frames, uint32_t& pixels, uint32_t& pushUs) {
   frames = _frames;
-  rows = _rows;
+  pixels = _pixels;
   pushUs = _pushUs;
-  _frames = _rows = _pushUs = 0;
+  _frames = _pixels = _pushUs = 0;
 }
 
 void Panel::blit(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px) {
@@ -79,10 +101,10 @@ void Panel::blit(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px)
     uint16_t* dst = buf + cy * WIDTH + x0;
     for (int32_t n = x1 - x0; n > 0; n--) *dst++ = __builtin_bswap16(*src++);
   }
-  static_cast<Canvas*>(canvas)->mark(r0, r1 - 1);
+  static_cast<Canvas*>(canvas)->markRect(x0, r0, x1 - 1, r1 - 1);
 }
 
-// LVGL's frame is whole in the canvas: send its rows out together.
+// LVGL's frame is whole in the canvas: send its tiles out together.
 void Panel::frameDone() { presentDirty(); }
 
 }  // namespace Lcd

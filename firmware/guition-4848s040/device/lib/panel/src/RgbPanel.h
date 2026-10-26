@@ -18,12 +18,17 @@ constexpr int WIDTH = 480, HEIGHT = 480;
 // backlight on. False if the scan didn't start.
 bool begin();
 
-// Copy rows y0..y1 (inclusive) of a full-width 480x480 RGB565 image, in the
-// chip's own byte order, into the frame the panel is scanned from, turned as
-// setRotation() says. `rows` points at row y0 of the whole image, which a
-// turned copy reads around: start the image on 64 bytes, so each 32-byte read
-// is one cache line.
+// Copy the rectangle x0..x1, y0..y1 (inclusive) of a 480x480 RGB565 image, in
+// the chip's own byte order, into the frame the panel is scanned from, turned
+// as setRotation() says. `img` is the whole image: start it on 64 bytes, so a
+// turned copy's 32-byte reads are one cache line each.
+void drawRect(const uint16_t* img, int x0, int y0, int x1, int y1);
+// Rows y0..y1 of it, `rows` pointing at row y0.
 void drawRows(const uint16_t* rows, int y0, int y1);
+// Between these, the frame is written back from the cache once, at endBatch(),
+// instead of after every rectangle: for a push of many small ones.
+void beginBatch();
+void endBatch();
 
 // Turn the picture on the glass: 0, 90, 180 or 270 degrees clockwise, as
 // ESPHome counts them (at 0 the USB-C is on the right; 270 puts it at the

@@ -51,20 +51,28 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   with Arduino_GFX's porches for this init sequence (H 10/8/50, V 10/8/20): 548 × 518 clocks a
   frame, 42.3 frames a second. Pixels go out in RGB565 as the chip stores them; no byte swap.
 - **Apps draw into a canvas of their own.** `screen`, `lgfx` and the status text draw into a second
-  480×480 canvas; a flip copies the rows drawn since the last one into the scanned frame
-  (`esp_lcd_panel_draw_bitmap`, which also writes the cache back so the scan sees them). Drawing
+  480×480 canvas; a flip copies what was drawn since the last one into the scanned frame. Drawing
   straight into the scanned frame would show every half-drawn frame. LVGL's flushes land in the
   canvas and its frame goes out whole when LVGL says it's done.
-- **The picture is turned as it's copied.** With `SCREEN_ROTATION` set, `RgbPanel::drawRows` turns
-  the rows drawn since the last flip into the scanned frame, and `RgbPanel::toImage` turns the
-  GT911's points back, so no drawing path and no app needs to know. Turned 90° or 270°, a band of
-  canvas rows is a band of the frame's columns: the CPU reads it along the canvas rows, 16 pixels
-  (one 32-byte cache line) at a time, and writes it straight into the scanned frame, 16 frame rows
-  at a time, writing the cache back after each. IDF 4.4 has no call that returns the frame buffer
-  (IDF 5 adds one), so `findFrameBuffer()` looks for the pointer among the driver's private fields:
-  a PSRAM pointer under which two pixels drawn through `draw_bitmap` read back. If none does, turned
-  rows go through a 15 KB strip in internal RAM and `draw_bitmap`. The canvas starts on a 64-byte
-  boundary, so each 32-byte read is a single cache line.
+- **A flip copies 16×16 tiles, not rows** (since 2026-10-26, `Lcd::Canvas`). The canvas notes a bit
+  for each tile anything is drawn on, and a flip copies the runs of drawn tiles along each band of
+  16 rows as rectangles (`RgbPanel::drawRect`), then writes the cache back once. Copying every row
+  from the topmost thing drawn to the bottommost, as it did, pushed most of the frame for five koi
+  spread over the pond: 17-24 ms a flip; their tiles are ~20% of it, ~6.5 ms.
+- **Lines and pixels go straight into the canvas.** Adafruit GFX draws a line pixel by pixel through
+  two virtual calls and GFXcanvas16's checks, ~0.55 us a pixel on the board; `Canvas::drawLine` is
+  its own Bresenham (a 40 px diagonal: 26 us down to 12), and `drawPixel`/`writePixel` write the
+  buffer themselves, which circles and text go through (a 30 px circle: 65 us down to 40). A call
+  from Lua costs ~3 us before it draws anything; `fillRect` ~0.05 us a pixel.
+- **The picture is turned as it's copied.** With `SCREEN_ROTATION` set, `RgbPanel::drawRect` turns
+  each rectangle into the scanned frame, and `RgbPanel::toImage` turns the GT911's points back, so
+  no drawing path and no app needs to know. Turned 90° or 270°, a rectangle's canvas rows are frame
+  columns: the CPU reads it along the canvas rows, 16 pixels (one 32-byte cache line) at a time, and
+  writes it straight into the scanned frame, 16 frame rows at a time. IDF 4.4 has no call that
+  returns the frame buffer (IDF 5 adds one), so `findFrameBuffer()` looks for the pointer among the
+  driver's private fields: a PSRAM pointer under which two pixels drawn through `draw_bitmap` read
+  back. If none does, turned rectangles go through a 15 KB strip in internal RAM and `draw_bitmap`.
+  The canvas starts on a 64-byte boundary, so each 32-byte read is a single cache line.
 - **PSRAM bandwidth is what a push costs.** Measured on the board (2026-10-26), a whole 480×480
   frame:
 
@@ -87,6 +95,10 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   The app's own drawing takes the same 25.5 ms either way: turning costs a full-screen app 7.2 ms a
   frame, 12%. An app that redraws a band stays under the 33 ms tick either way, and the tick sets
   its rate.
+
+  With tiles and the faster lines (turned, 2026-10-26): `driver-check` 17.7 fps (every tile, 30.5
+  ms a flip); `lvgl-check`'s box 2% of the frame, 0.4 ms a flip; Koi Pond (five koi drawn as lines,
+  wiped by `fillRect`s) from ~22 fps to ~29, its flips 6.4-6.9 ms, so it keeps up with the tick.
 - **Not by DMA.** GDMA (`esp_async_memcpy`, which IDF 4.4 lets write PSRAM) writes the frame past the
   cache, about twice as fast: 8.2 ms for a frame from internal RAM, 15.3 from the canvas, 19-21 ms
   turned with the CPU turning the next strip while the DMA writes the last. But it takes so much of
