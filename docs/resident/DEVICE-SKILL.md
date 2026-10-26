@@ -25,7 +25,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 | Waveshare ESP32-S3-Touch-LCD-2 | 240×320 | 16 | dark | touch panel (`touchscreen`); IMU |
 | Waveshare ESP32-S3-Touch-AMOLED-1.32 | 466×466 | 16 | dark | round (`shape = "round"`): only the circle of radius 233 shows; AMOLED, black is off; touch panel (`touchscreen`) |
 | Seeed Studio Round Display for XIAO | 240×240 | 16 | dark | round (`shape = "round"`): only the circle of radius 120 shows; touch panel (`touchscreen`) |
-| Guition ESP32-S3-4848S040 | 480×480 | 16 | dark | 4" wall panel; touch panel (`touchscreen`); no buttons, so drive the app by touch |
+| Guition ESP32-S3-4848S040 | 480×480 | 16 | dark | 4" wall panel; touch panel (`touchscreen`); no buttons, so drive the app by touch; a `flip()` sends only the 16×16 squares drawn on since the last |
 | Espressif ESP-Mosaico | 480×480 | 16 | dark | AMOLED, black is off; rounded corners: keep ~70 px clear; touch panel (`touchscreen`); IMU |
 | Waveshare ESP32-S3-AMOLED-1.91 | 536×240 (landscape) | 16 | dark | AMOLED, black is off; IMU; the Touch version adds a touch panel (`touchscreen`) |
 | 1.3" ST7789 | 240×240 | 16 | dark | |

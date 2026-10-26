@@ -96,6 +96,23 @@ describe('Resident sandbox', () => {
     expect(glass(t.display, 60, 60)[0]).toBeGreaterThan(240);
   });
 
+  it('charges a flip only the tiles drawn on, on a display whose firmware sends only those', async () => {
+    // The Guition flips 16×16 tiles; these squares each sit in one, also once turned to native.
+    const t = await boot(`local g = lgfx.bind("main")
+      function init(ctx) g:fillScreen(0) g:flip() end
+      function on_event(ctx, e)
+        g:fillRect(16, 16, 8, 8, 0xFFFFFF)
+        g:fillRect(448, 448, 8, 8, 0xFFFFFF)
+        g:flip()
+      end`, 'guition-esp32-s3-4848s040');
+    expect(t.error).toBeUndefined();
+    await run(t, 50);
+    const before = t.display.stats.bytes;
+    t.host.queue({ name: 'go', channel: 'app', data: {} });
+    await run(t, 50);
+    expect(t.display.stats.bytes - before).toBe(2 * 16 * 16 * 2 + 11); // not the 480×480 box round them
+  });
+
   it('pushes a block of RGB565 pixels from a string, NUL and high bytes included', async () => {
     // Two rows of two at 60,60: red, green / black (all zero bytes), white.
     const t = await boot(`local g = lgfx.bind("main")

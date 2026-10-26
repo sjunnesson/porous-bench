@@ -429,7 +429,8 @@ export class ResidentHost {
   private present() {
     if (this.owner === 'lvgl') return; // LVGL owns the panel: an lgfx flip stands down silently
     const d = this.board.display;
-    d.invalidate(); // a flip blits the whole frame buffer
+    // A flip blits the whole frame buffer, unless the board's firmware sends only the tiles drawn on.
+    if (!d.profile.flipTile) d.invalidate();
     this.track(d.show());
   }
 

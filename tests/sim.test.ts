@@ -108,6 +108,24 @@ describe('Display.show timing', () => {
     expect(clock.now() - t1).toBeLessThan(0.1);
   });
 
+  it('costs only the tiles drawn on, on a display whose firmware flips tiles', async () => {
+    const clock = pausedClock();
+    const d = new Display(device('guition-esp32-s3-4848s040'), clock);
+    let t0 = clock.now();
+    await settle(clock, d.show(), 0.5);
+    // The whole 480×480 frame: a pixel a clock at 12 MHz ≈ 19.2 ms.
+    expect(clock.now() - t0).toBeGreaterThan(19);
+    expect(clock.now() - t0).toBeLessThan(20);
+    // Two squares in opposite corners: the box round them is the whole frame, but they're two tiles.
+    d.fillRect(0, 0, 10, 10, colors.RED);
+    d.fillRect(470, 470, 10, 10, colors.RED);
+    t0 = clock.now();
+    await settle(clock, d.show(), 0.01);
+    expect(clock.now() - t0).toBeLessThan(0.1); // 2 × 16 × 16 pixels ≈ 0.04 ms
+    expect(d.stats.bytes).toBe(480 * 480 * 2 + 11 + 2 * 16 * 16 * 2 + 11);
+    expect(pixel(d, 475, 475)[0]).toBeGreaterThan(100); // and both reached the panel
+  });
+
   it('caps a 400 kHz I2C OLED at ~40 fps', async () => {
     const clock = pausedClock();
     const d = new Display(device('ssd1306-128x64'), clock);

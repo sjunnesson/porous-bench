@@ -45,7 +45,7 @@ export class Display extends Gfx {
     private clock: SimClock,
     private signal?: AbortSignal,
   ) {
-    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led' ? 'rgb565' : 'mono'));
+    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led' ? 'rgb565' : 'mono', profile.flipTile));
     this.panel = createPanel(profile);
     this.touch = profile.touch ? new TouchScreen(profile.width, profile.height, () => clock.now()) : null;
   }
@@ -84,6 +84,8 @@ export class Display extends Gfx {
     if (this.profile.tech === 'epaper') return this.showEpaper(mode);
     const { width, height, tech } = this.profile;
     const dirty = this.fb.takeDirty();
+    // A firmware that flips only the tiles drawn on (profile.flipTile) sends those, not the whole box.
+    const tilePixels = this.fb.takeTilePixels();
     if (!dirty) return;
 
     let region: Rect = dirty;
@@ -96,9 +98,9 @@ export class Display extends Gfx {
       region = { x: region.x, y: y0, w: region.w, h: y1 - y0 };
     }
 
-    const bytes = this.transferBytes(region, false);
+    const bytes = this.transferBytes(region, false, tilePixels ?? region.w * region.h);
     const busMs = this.transferMs(bytes);
-    this.panel.write(this.fb, region);
+    this.panel.write(this.fb, region); // the whole box: what it adds is unchanged, so only the time differs
     this.stats.shows++;
     this.stats.bytes += bytes;
     this.stats.busMs += busMs;
@@ -161,11 +163,11 @@ export class Display extends Gfx {
     return !this.everRefreshed || (every > 0 && this.partialsSinceFull >= every);
   }
 
-  private transferBytes(r: Rect, fullEpaperRefresh: boolean): number {
+  private transferBytes(r: Rect, fullEpaperRefresh: boolean, pixels = r.w * r.h): number {
     switch (this.profile.tech) {
       case 'lcd':
       case 'amoled':
-        return r.w * r.h * 2 + 11; // CASET + RASET + RAMWR, then RGB565 pixels
+        return pixels * 2 + 11; // CASET + RASET + RAMWR, then RGB565 pixels
       case 'oled':
         return (r.w * r.h) / 8 + 6; // column/page address commands, then page bytes
       case 'epaper': {
