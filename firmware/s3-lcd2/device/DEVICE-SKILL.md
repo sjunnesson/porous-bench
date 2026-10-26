@@ -56,7 +56,7 @@ screen.triangle(x0, y0, x1, y1, x2, y2, r, g, b)
 screen.fill_triangle(x0, y0, x1, y1, x2, y2, r, g, b)
 screen.qr(x, y, text[, scale = 4[, r, g, b]])   -- QR v3..v10, ECC low, black modules by default:
                                                 -- clear a white square behind it; v3 is 29 modules
-screen.flip()                                   -- pushes the whole frame (~25 ms)
+screen.flip()                                   -- pushes what was drawn since the last flip
 screen.set_brightness(0..255)                   -- the backlight
 screen.width()   screen.height()                -- 240, 320
 ```
@@ -223,10 +223,9 @@ end
 - **240×320, 16-bit colour, dark scheme.**
 - **Text**: lgfx/screen use the built-in 6x8 font in whole multiples (size 1 fits 40 characters
   across, size 2 fits 20, size 3 fits 13); LVGL has Montserrat. Both are ASCII only.
-- **Frame rate**: `flip()` pushes only the rows drawn since the last flip (a full frame ~25 ms),
-  so redraw only what moves. `on_tick` runs every 100 ms; an `lvgl.Timer` runs
-  at ~30 fps, and an lgfx app can use one too: `lvgl.bind("main")` first, then `lgfx.bind("main")`
-  (the last bind owns the screen, the timer keeps running).
+- **Frame rate**: `flip()` pushes only the 16×16 tiles drawn on since the last flip (a full frame
+  ~23 ms), so redraw only what moves: Koi Pond's fish flip ~22% of the frame in ~5 ms. `on_tick`
+  runs every 33 ms (~30 fps): move things by `dt_ms`, and a tick that takes longer delays the next.
 - **LVGL cost**: each `obj:set{}` costs ~0.3-0.6 ms, and LVGL repaints everything under whatever
   changed, translucent layers included (expensive). Up to ~15 moving objects keep 30 fps; for more
   moving shapes (a flame, particles), draw rows with lgfx.

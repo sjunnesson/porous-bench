@@ -106,7 +106,15 @@ What it taught:
 - **Two LVGL draw threads (`LV_USE_OS` FreeRTOS, `LV_DRAW_SW_DRAW_UNIT_CNT 2`) gained nothing**, so
   they're off.
 - **For many moving shapes, lgfx rows beat LVGL objects**: no per-object cost, and with the canvas
-  remembering drawn rows, a flip pushes only those. An app gets LVGL's 30 fps timer by binding LVGL
+  remembering what was drawn, a flip pushes only that.
+- **A flip pushes the 16×16 tiles drawn on, not rows; lines go straight into the canvas** (since
+  2026-10-26, from the Guition's firmware). Each run of drawn tiles along a band of 16 rows goes to
+  the panel through its own address window, all in one SPI transaction, where the band of rows
+  from the topmost drawn to the bottommost used to go out whole. Lines and pixels no longer go
+  through Adafruit GFX's two virtual calls a pixel. Measured here: Koi Pond's flips from 14.1 ms
+  (192 rows, 60% of the frame) to 5.4 ms (22%), its frame from 34-35 ms to the 33 ms tick; a 40 px
+  diagonal from 24 us to 12, a 30 px circle from 60 to 30; a full-screen flip unchanged at 23.4
+  ms. The `[perf]` line gives the share of the frame a push instead of rows. An app gets LVGL's 30 fps timer by binding LVGL
   first and lgfx last (the last bind owns the screen; Resident and Bench keep running LVGL timers).
 - **A DMA push in the background (ESP-IDF esp_lcd) left the screen black** on this panel, though
   the transfers completed; it measured a full flip at ~15 ms against Adafruit's 25. Pushing only

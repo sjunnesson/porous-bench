@@ -14,8 +14,8 @@ export default {
   ram: { width: 240, height: 320, offsetX: 0, offsetY: 0 },
   // Bench's firmware ticks on_tick every 33 ms (SandboxConfig::tickIntervalMs), not Resident's 100.
   tickMs: 33,
-  // Bench's firmware flips only the rows drawn on, topmost to bottommost (Lcd::presentDirty).
-  flip: 'rows',
+  // Bench's firmware flips only the 16×16 tiles drawn on (Lcd::presentDirty).
+  flip: { tile: 16 },
   boards: ['waveshare-esp32-s3-touch-lcd-2'],
   builtins: ['imu'], // QMI8658
   wiring: {
