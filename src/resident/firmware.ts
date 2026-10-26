@@ -42,8 +42,8 @@ const BENCH_FIRMWARE: Record<string, { path: string; tested: boolean; note?: str
   },
   'guition-esp32-s3-4848s040|guition-esp32-s3-4848s040': {
     path: 'firmware/guition-4848s040/device',
-    tested: false,
-    note: 'It compiles but hasn\'t run on hardware yet. Its USB-C goes through a CH340, so the port is `/dev/cu.usbserial-…` or `/dev/cu.wchusbserial-…`; BOOT and RST sit inside the case. Check with me that the status screen fills the glass the right way up, then that the picture stays put after the first app is pushed (saving it writes flash). If anything looks wrong, flash stage 1 (`firmware/guition-4848s040/device-no-resident`) and go through its test card with me, as the README says.',
+    tested: true,
+    note: 'Its USB-C goes through a CH340, so the port is `/dev/cu.usbserial-…` or `/dev/cu.wchusbserial-…`, and auto-reset flashes it with the case closed (BOOT and RST sit inside). It turns the picture 270° (`SCREEN_ROTATION` in its `platformio.ini`): up is away from a USB-C facing down. A board that was on Wi-Fi before (the factory firmware is) joins that network instead of opening the "Resident …" hotspot: if I want the hotspot, erase NVS (`esptool.py erase_region 0x9000 0x5000`) after asking me. Check with me that the picture fills the glass the right way up and stays put after the first app is pushed (saving it writes flash); if it doesn\'t, flash stage 1 (`firmware/guition-4848s040/device-no-resident`) and go through its test card with me, as the README says.',
   },
   'waveshare-epd-2.13-v4|esp32-s3-devkitc-1-n16r8': {
     path: 'firmware/epd213/device-s3',

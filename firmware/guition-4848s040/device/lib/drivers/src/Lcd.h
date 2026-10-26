@@ -1,5 +1,7 @@
 // The one frame every drawing path shares: screen.* verbs, lgfx and the status
-// text all draw into `canvas`, a 480x480 RGB565 GFXcanvas16 (450 KB, in PSRAM).
+// text all draw into `canvas`, a 480x480 RGB565 GFXcanvas16 (450 KB, in PSRAM,
+// on a 64-byte boundary: a turned push reads it 32 bytes at a time, one cache
+// line each; a frame turned through a strip took 36 ms aligned, 44 not).
 //
 // The panel itself has no memory: the chip scans a second 450 KB frame out to
 // it all the time (RgbPanel). A push copies rows of the canvas into that frame,
@@ -9,6 +11,7 @@
 // frame is done.
 #pragma once
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <Adafruit_GFX.h>
 #include <ResidentRenderTargets.h>
 #include <RgbPanel.h>
@@ -21,7 +24,9 @@ constexpr int WIDTH = RgbPanel::WIDTH, HEIGHT = RgbPanel::HEIGHT;
 // Adafruit GFX draws (text and shapes included) goes through these four.
 class Canvas : public GFXcanvas16 {
 public:
-  Canvas(uint16_t w, uint16_t h) : GFXcanvas16(w, h) {}
+  Canvas(uint16_t w, uint16_t h) : GFXcanvas16(w, h, false) {
+    buffer = (uint16_t*)heap_caps_aligned_calloc(64, w * h, 2, MALLOC_CAP_SPIRAM);  // never freed
+  }
   void drawPixel(int16_t x, int16_t y, uint16_t c) override { mark(y, y); GFXcanvas16::drawPixel(x, y, c); }
   void fillScreen(uint16_t c) override { mark(0, HEIGHT - 1); GFXcanvas16::fillScreen(c); }
   void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t c) override {

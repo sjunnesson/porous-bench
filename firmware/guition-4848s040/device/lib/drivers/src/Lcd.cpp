@@ -1,5 +1,10 @@
 #include "Lcd.h"
 
+// How far the picture is turned on the glass, degrees clockwise (platformio.ini).
+#ifndef SCREEN_ROTATION
+#define SCREEN_ROTATION 0
+#endif
+
 namespace Lcd {
 
 GFXcanvas16* canvas = nullptr;
@@ -10,6 +15,9 @@ static uint32_t _frames = 0, _rows = 0, _pushUs = 0;
 
 bool begin() {
   if (!RgbPanel::begin()) return false;  // ST7701S init, the scan, the backlight
+  if (!RgbPanel::setRotation(SCREEN_ROTATION)) Serial.println("[lcd] no RAM to turn the picture: it stays at 0");
+  Serial.printf("[lcd] picture turned %d degrees%s\n", RgbPanel::rotation(),
+                !RgbPanel::rotation() ? "" : RgbPanel::writesDirect() ? ", straight into the frame" : ", through draw_bitmap");
   canvas = new Canvas(WIDTH, HEIGHT);    // 450 KB: Arduino puts big blocks in PSRAM
   if (!canvas || !canvas->getBuffer()) return false;
   canvas->fillScreen(0);

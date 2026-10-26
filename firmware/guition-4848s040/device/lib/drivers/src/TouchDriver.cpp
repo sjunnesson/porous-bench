@@ -47,6 +47,7 @@ void TouchDriver::update() {
     if (down && Bus::readRegs(ADDR, REG_POINT1, p, 4)) {
       x = constrain((int)(p[0] | (p[1] << 8)), 0, Lcd::WIDTH - 1);
       y = constrain((int)(p[2] | (p[3] << 8)), 0, Lcd::HEIGHT - 1);
+      RgbPanel::toImage(x, y);  // the panel's pixels to the picture's, however it's turned
     }
     Bus::writeReg(ADDR, REG_STATUS, 0);
   } else if (_down && now - _lastReport > STALE_MS) {

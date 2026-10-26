@@ -18,8 +18,9 @@ a USB Serial/JTAG port, and auto-reset flashes it without touching a key (BOOT a
 case). Give it a supply that holds 5 V: Wi-Fi's current spikes brown it out on a weak laptop port.
 On the relay versions, don't feed 5 V into header H1 and the USB-C at the same time.
 
-**Not run on hardware yet.** Every stage compiles (espressif32@6.12.0, Arduino core 2.0.17);
-everything below "What bring-up should check" is what the first board has to confirm.
+**Stage 3 has run on a board** (2026-10-26): "What bring-up found" says what that confirmed and
+what it didn't. Stages 1 and 2 compile (espressif32@6.12.0, Arduino core 2.0.17) but haven't been
+flashed.
 
 ## What stage 3 gives apps
 
@@ -28,6 +29,10 @@ everything below "What bring-up should check" is what the first board has to con
 `screens` (`"main"`: 480×480, 16-bit, dark, brightness). Lua, LVGL and both frames (the canvas apps
 draw in and the frame the panel is scanned from, 450 KB each) live in the 8 MB PSRAM. Bench's board
 entry (`guition-esp32-s3-4848s040`: screen, lgfx, lvgl, 8192 KB) matches.
+
+The picture is turned 270° (`SCREEN_ROTATION` in `platformio.ini`, degrees clockwise as ESPHome
+counts them): up is away from a USB-C facing down. At 0 the USB-C is on the right. Apps see 480×480
+either way, and touch turns with the picture.
 
 The board has no key an app can use, so the touch panel is Resident's system button: during the
 boot countdown, a touch anywhere loads the saved app now and a long one forgets it.
@@ -50,13 +55,44 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   (`esp_lcd_panel_draw_bitmap`, which also writes the cache back so the scan sees them). Drawing
   straight into the scanned frame would show every half-drawn frame. LVGL's flushes land in the
   canvas and its frame goes out whole when LVGL says it's done.
+- **The picture is turned as it's copied.** With `SCREEN_ROTATION` set, `RgbPanel::drawRows` turns
+  the rows drawn since the last flip into the scanned frame, and `RgbPanel::toImage` turns the
+  GT911's points back, so no drawing path and no app needs to know. Turned 90° or 270°, a band of
+  canvas rows is a band of the frame's columns: the CPU reads it along the canvas rows, 16 pixels
+  (one 32-byte cache line) at a time, and writes it straight into the scanned frame, 16 frame rows
+  at a time, writing the cache back after each. IDF 4.4 has no call that returns the frame buffer
+  (IDF 5 adds one), so `findFrameBuffer()` looks for the pointer among the driver's private fields:
+  a PSRAM pointer under which two pixels drawn through `draw_bitmap` read back. If none does, turned
+  rows go through a 15 KB strip in internal RAM and `draw_bitmap`. The canvas starts on a 64-byte
+  boundary, so each 32-byte read is a single cache line.
+- **PSRAM bandwidth is what a push costs.** Measured on the board (2026-10-26), a whole 480×480
+  frame:
+
+  | | ms |
+  |---|---|
+  | `draw_bitmap`, not turned (`memcpy` takes the same: PSRAM is the limit) | 26.2 |
+  | reading 450 KB of PSRAM / writing 450 KB, through the cache | 11.1 / 16.9 |
+  | turning 270° with the CPU, both sides in internal RAM | 5.0 |
+  | turned 270° through a strip and `draw_bitmap`, canvas not aligned | 43.7 |
+  | turned 270° through a strip, canvas aligned | 36 |
+  | turned 270° straight into the frame (shipped) | 34 |
+
+  In the apps, turned: `driver-check`, which repaints the whole screen every tick, runs at 16.7
+  frames a second (16.6 not turned); `lvgl-check` at 28, pushing ~41-row bands in 4.1 ms.
+- **Not by DMA.** GDMA (`esp_async_memcpy`, which IDF 4.4 lets write PSRAM) writes the frame past the
+  cache, about twice as fast: 8.2 ms for a frame from internal RAM, 15.3 from the canvas, 19-21 ms
+  turned with the CPU turning the next strip while the DMA writes the last. But it takes so much of
+  PSRAM that the LCD's own DMA runs dry: the picture slipped again and again, several shifted copies
+  ghosting across the glass, while the `[perf]` scan count stayed at 42.2. A slip doesn't show in
+  the log; only on the glass.
 - **Flash writes and the scan.** Writing flash stops the cache, and the PSRAM the scan reads from
   with it. On these RGB boards that is known to make the picture flicker or scroll (users of Tasmota
   and ESPHome report it during OTA and saves), and on IDF 4.4 a scan that loses its place can stay
   shifted. IDF 4.4 has no
   bounce buffers and no way to resynchronise the scan, so after every app save (and forget) the
   firmware tears the scan down and starts it again, then copies the canvas back: `Lcd::resync()`,
-  a blink of black. Whether it's needed, and enough, is the first thing to check.
+  a blink of black. On the first board the picture stayed put after every save; whether it would
+  without the resync is untested (stage 1's FLASH test).
 - **Touch: GT911 at 0x5D** on SDA 19, SCL 45 (a strapping pin), 400 kHz, pull-ups on the board. INT
   and RST aren't wired, so the address is whatever the board's straps make it and the chip is
   polled every 10 ms: status at 0x814E (bit 7: report ready, bits 0-3: fingers), the first finger
@@ -79,32 +115,38 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
 - **`on_tick` every 33 ms, not 100** (since 2026-10-23): `SandboxConfig::tickIntervalMs = 33`, a
   field on Bench's Resident fork (`sjunnesson/resident`, 0.12.0 plus the field) until
   inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
-  fps); not yet on this board. Bench's profile for the display ticks at 33 too (`tickMs`).
+  fps). On this board `lvgl-check`, which moves its box in `on_tick`, pushes 28 frames a second:
+  the tick is what holds it. Bench's profile for the display ticks at 33 too (`tickMs`).
 
-## What bring-up should check
+## What bring-up found
 
-Stage 1's card and serial log answer most of it:
+The first board (2026-10-26) ran stage 3 with both check apps, not turned and then turned 270°.
+Stage 1's card would answer what's still open.
 
-1. **The picture:** a 1 px white border on all four edges and a magenta square in each corner. A
-   missing edge or a black band means the porches are off (try ESPHome's H 8/10/20, V 8/10/10 in
-   `RgbPanel.cpp`).
-2. **Orientation:** "TOP" at the top with the USB-C on the right is what the sources say. If not,
-   say where the USB-C is; Bench's profile and DEVICE-SKILL.md follow the board.
-3. **Colours:** red, green and blue bars labelled correctly (swapped red and blue = data pin order),
-   not inverted (= INVON), and four smooth ramps (banding in red and blue only = 0xCD didn't take).
-4. **Touch:** the crosshair sits under the finger, in the same corner. If x and y are swapped or
-   mirrored, transform them in `TouchDriver.cpp` and in stage 1. If nothing answers at 0x5D, the I2C
-   scan line says what does (0x14 is the GT911's other address).
-5. **The scan rate** (`[lcd] scanning at … Hz`, ~42 expected) and **the frame copy time** (a full
-   480×480 frame, PSRAM to PSRAM): that's the cost of a full-screen flip.
-6. **Flash writes:** tap FLASH (256 KB to LittleFS, as a big app save) and watch the picture. If it
-   slips, tap RESTART: if that puts it back, `Lcd::resync()` is the right remedy; if the picture
-   never slips, it can go. If it slips during Wi-Fi traffic too, the pixel clock comes down (8 MHz).
-7. **Backlight:** the ramp at start is smooth, no whine at low duty.
+1. **The picture** fills the glass with Arduino_GFX's porches: `driver-check`'s border shows on all
+   four edges. (Otherwise try ESPHome's H 8/10/20, V 8/10/10 in `RgbPanel.cpp`.)
+2. **Orientation:** at 0, up has the USB-C on the right, as the sources say.
+3. **Colours:** red, green and blue in order, not inverted. Still open: stage 1's ramps, which would
+   show red and blue banding if 0xCD didn't take.
+4. **Touch:** the GT911 answers at 0x5D (product "911"), and the crosshair sits under the finger,
+   not turned and turned.
+5. **The scan** runs at 42.2 Hz (42.3 expected). A whole frame costs 26.2 ms to copy (more above).
+6. **Flash writes:** the picture stayed put after every app save, with `Lcd::resync()`. Still open:
+   whether it slips without the resync (stage 1's FLASH and RESTART), and so whether the resync can
+   go.
+7. **Backlight:** dimming to 0.3 and back is smooth. Still open: the start, and whine at low duty.
 
-Then stage 2 (the device ID shows up, a touch during the countdown loads the saved app) and stage 3
-with `device-apps/driver-check.lua` and `lvgl-check.lua`, and its heartbeat (`[perf]`: pushes a
-second, push time, the scan rate) and memory lines.
+Also from that board:
+
+- The CH340 shows up as `/dev/cu.usbserial-10` (VID:PID 1A86:7523), and auto-reset flashes it with
+  the case closed. A full flash backup (`esptool.py read_flash 0 0x1000000`) takes ~7 minutes at
+  460800 baud.
+- The factory firmware leaves its Wi-Fi in NVS, and WiFiManager tries that network before opening
+  its portal: a board that was on Wi-Fi before comes up without the "Resident …" hotspot. Erase NVS
+  (`esptool.py erase_region 0x9000 0x5000`) to get the portal.
+- Memory, turned, with `driver-check` running: 164 KB of internal RAM free (151 KB in one block),
+  7.4 MB of PSRAM.
+- Stage 3 connects to the relay ~6 s after power-on, on a supply that held 5 V (no brownouts).
 
 ## Check apps (device/device-apps/)
 

@@ -10,7 +10,8 @@ defines them; the firmware itself has only the modules below.
 
 ## Hardware
 
-- **Screen** `"main"`: 480×480 pixels, square. Up has the USB-C on the right edge. Origin top-left,
+- **Screen** `"main"`: 480×480 pixels, square. Up has the USB-C on the bottom edge (the firmware
+  turns the picture 270°, `SCREEN_ROTATION` in `platformio.ini`; touch turns with it). Origin top-left,
   x to the right, y down. 16-bit colour (RGB565), dark scheme: blank is black, the backlight shines
   through. About 170 dpi: text that reads well on a 1" screen is small here, so scale up.
 - **Backlight**: dimmable, 0..255 (`screen.set_brightness`) or 0..1 (`screens.set`). Every app

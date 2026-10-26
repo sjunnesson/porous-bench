@@ -1,6 +1,7 @@
 // `touchscreen`: the GT911 touch panel (I2C 0x5D), one finger, as Bench's
-// touchscreen module. It reports in panel pixels (0-479), which should be the
-// ones apps draw in: stage 1 draws a crosshair at the reported point to check.
+// touchscreen module. It reports in panel pixels (0-479), turned into the
+// ones apps draw in when SCREEN_ROTATION turns the picture: stage 1 draws a
+// crosshair at the reported point to check.
 //
 //   touchscreen.read()     -> { pressed = bool, x, y }: the last point touched
 //   touchscreen.pressed()  -> bool

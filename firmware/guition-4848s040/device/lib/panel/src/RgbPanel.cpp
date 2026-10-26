@@ -1,7 +1,10 @@
 #include "RgbPanel.h"
 #include <initializer_list>
+#include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
+#include <esp32s3/rom/cache.h>
+#include <soc/soc_memory_types.h>
 
 namespace RgbPanel {
 
@@ -20,9 +23,16 @@ static constexpr uint32_t PCLK_HZ = 12000000;
 // The backlight's PWM: ESPHome runs it at 150 Hz, others at 100 Hz.
 static constexpr int BL_CHANNEL = 0, BL_HZ = 150, BL_BITS = 10;
 
+// A turned picture goes out STRIP frame rows at a time, read along image rows
+// 16 pixels (32 bytes, one cache line) at a time.
+static constexpr int STRIP = 16;
+
 static esp_lcd_panel_handle_t s_panel = nullptr;
 static volatile uint32_t s_scans = 0;
 static float s_backlight = 1.0f;
+static int s_rotation = 0;
+static uint16_t* s_fb = nullptr;     // the frame being scanned, once found (findFrameBuffer)
+static uint16_t* s_strip = nullptr;  // WIDTH x STRIP pixels for draw_bitmap, only if the frame wasn't found
 
 static void spiWord(bool data, uint8_t v) {
   uint16_t word = (data ? 0x100 : 0) | v;
@@ -108,6 +118,71 @@ static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, esp_lcd_rgb_panel_event_dat
   return false;
 }
 
+// A turned picture is fastest turned straight into the frame (34 ms a frame,
+// against 36 through a strip in internal RAM, 2026-10-26), but IDF 4.4 has no
+// call that hands out the frame buffer (5.0 adds
+// esp_lcd_rgb_panel_get_frame_buffer). The driver keeps the pointer in the
+// panel's private state, so look for it there instead of copying 4.4's struct:
+// a pointer into PSRAM, aligned as psram_trans_align asked, under which two
+// corner pixels drawn through draw_bitmap read back, twice over. Not found,
+// turned pushes go through draw_bitmap.
+//
+// The frame is written by the CPU, through the cache. GDMA (esp_async_memcpy)
+// writes it twice as fast, but takes so much of PSRAM that the scan runs dry
+// and the picture slips, again and again (2026-10-26, on the board).
+static uint16_t* findFrameBuffer() {
+  static const uint16_t marks[2][2] = {{0xA5C3, 0x3C5A}, {0x0FF0, 0xF00F}}, black = 0;
+  const uint32_t* words = (const uint32_t*)s_panel;  // the base struct, then the driver's fields
+  uint16_t* found = nullptr;
+  for (int i = 0; i < 64 && !found; i++) {
+    uint16_t* fb = (uint16_t*)words[i];
+    if (((uint32_t)fb & 63) || !esp_ptr_external_ram(fb) || !esp_ptr_external_ram(fb + WIDTH * HEIGHT - 1)) continue;
+    bool ok = true;
+    for (const auto& m : marks) {
+      esp_lcd_panel_draw_bitmap(s_panel, 0, 0, 1, 1, &m[0]);
+      esp_lcd_panel_draw_bitmap(s_panel, WIDTH - 1, HEIGHT - 1, WIDTH, HEIGHT, &m[1]);
+      ok = ok && fb[0] == m[0] && fb[WIDTH * HEIGHT - 1] == m[1];
+    }
+    if (ok) found = fb;
+  }
+  esp_lcd_panel_draw_bitmap(s_panel, 0, 0, 1, 1, &black);
+  esp_lcd_panel_draw_bitmap(s_panel, WIDTH - 1, HEIGHT - 1, WIDTH, HEIGHT, &black);
+  return found;
+}
+
+// Without the frame, a turned picture needs a strip to hand draw_bitmap.
+static bool haveStrip() {
+  if (s_rotation && !s_fb && !s_strip) {
+    s_strip = (uint16_t*)heap_caps_malloc(WIDTH * STRIP * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+  return !s_rotation || s_fb || s_strip;
+}
+
+// Frame rows fy..fy+n-1, columns fx0..fx0+w-1, turned out of the image into
+// `dst` (the frame at (fx0, fy), or a strip), `stride` pixels a frame row.
+// Image (x, y) lands in the frame at 90: (H-1-y, x), 180: (W-1-x, H-1-y),
+// 270: (y, W-1-x).
+static void turn(const uint16_t* img, uint16_t* dst, int stride, int fx0, int w, int fy, int n) {
+  if (s_rotation == 180) {
+    for (int r = 0; r < n; r++) {
+      const uint16_t* src = img + (HEIGHT - 1 - fy - r) * WIDTH + WIDTH - 1 - fx0;
+      uint16_t* d = dst + r * stride;
+      for (int c = 0; c < w; c++) *d++ = *src--;
+    }
+    return;
+  }
+  for (int c = 0; c < w; c++) {
+    uint16_t* d = dst + c;
+    if (s_rotation == 90) {
+      const uint16_t* src = img + (HEIGHT - 1 - fx0 - c) * WIDTH + fy;
+      for (int r = 0; r < n; r++, d += stride) *d = *src++;
+    } else {
+      const uint16_t* src = img + (fx0 + c) * WIDTH + WIDTH - 1 - fy;
+      for (int r = 0; r < n; r++, d += stride) *d = *src--;
+    }
+  }
+}
+
 static bool startScan() {
   esp_lcd_rgb_panel_config_t cfg = {};
   cfg.clk_src = LCD_CLK_SRC_PLL160M;
@@ -137,6 +212,8 @@ static bool startScan() {
   }
   esp_lcd_panel_reset(s_panel);
   esp_lcd_panel_init(s_panel);  // starts the scan, which never stops on its own
+  s_fb = findFrameBuffer();
+  if (!haveStrip()) s_rotation = 0;
   return true;
 }
 
@@ -152,19 +229,73 @@ bool begin() {
   return true;
 }
 
+// `rows` is image row y0 of the whole image (the canvas).
 void drawRows(const uint16_t* rows, int y0, int y1) {
   if (!s_panel) return;
   y0 = max(y0, 0);
   y1 = min(y1, HEIGHT - 1);
   if (y1 < y0) return;
-  esp_lcd_panel_draw_bitmap(s_panel, 0, y0, WIDTH, y1 + 1, rows);
+  if (s_rotation == 0) {
+    esp_lcd_panel_draw_bitmap(s_panel, 0, y0, WIDTH, y1 + 1, rows);  // as fast as memcpy: PSRAM is the limit
+    return;
+  }
+
+  // Turned: a window of the frame, STRIP rows of it at a time.
+  const uint16_t* img = rows - y0 * WIDTH;
+  int fx0, w, fyA, fyB;
+  if (s_rotation == 180) {
+    // Image rows y1..y0 are frame rows H-1-y1..H-1-y0, each reversed.
+    fx0 = 0;
+    w = WIDTH;
+    fyA = HEIGHT - 1 - y1;
+    fyB = HEIGHT - y0;
+  } else {
+    // Image rows y0..y1 are a band of frame columns, all frame rows tall.
+    fx0 = s_rotation == 90 ? HEIGHT - 1 - y1 : y0;
+    w = y1 - y0 + 1;
+    fyA = 0;
+    fyB = HEIGHT;
+  }
+  for (int fy = fyA; fy < fyB; fy += STRIP) {
+    int n = min(STRIP, fyB - fy);
+    if (s_fb) {
+      // The strip's frame rows (15 KB) stay in the cache while they fill, then go out together.
+      turn(img, s_fb + fy * WIDTH + fx0, WIDTH, fx0, w, fy, n);
+      Cache_WriteBack_Addr((uint32_t)(s_fb + fy * WIDTH), n * WIDTH * 2);
+    } else {
+      turn(img, s_strip, w, fx0, w, fy, n);
+      esp_lcd_panel_draw_bitmap(s_panel, fx0, fy, fx0 + w, fy + n, s_strip);
+    }
+  }
+}
+
+bool setRotation(int degrees) {
+  degrees = ((degrees % 360) + 360) % 360;
+  s_rotation = degrees == 90 || degrees == 180 || degrees == 270 ? degrees : 0;
+  if (haveStrip()) return true;
+  s_rotation = 0;
+  return false;
+}
+
+int rotation() { return s_rotation; }
+
+void toImage(int& x, int& y) {
+  int fx = x, fy = y;
+  switch (rotation()) {
+    case 90: x = fy; y = HEIGHT - 1 - fx; break;
+    case 180: x = WIDTH - 1 - fx; y = HEIGHT - 1 - fy; break;
+    case 270: x = WIDTH - 1 - fy; y = fx; break;
+  }
 }
 
 bool restart() {
   if (s_panel) esp_lcd_panel_del(s_panel);
   s_panel = nullptr;
+  s_fb = nullptr;
   return startScan();
 }
+
+bool writesDirect() { return s_fb; }
 
 void setBacklight(float v) {
   s_backlight = constrain(v, 0.0f, 1.0f);
