@@ -200,3 +200,24 @@ plus 4x the code with its spaces, a few per cent under these:
 | LVGL apps (patterns, ...) | 66-144 KB | no `lvgl`; out of memory | |
 
 No `lvgl`: luavgl's first bind alone keeps ~30 KB.
+
+### A saved app makes the next push smaller
+
+Resident reads the saved app from NVS before Wi-Fi starts and holds the source until the 20 s
+countdown ends, so Wi-Fi, TLS and the WebSocket allocate around it. Once it compiles, its space is
+freed in the middle of theirs, and the next app has to arrive in what's left in one piece. The
+largest block in the shared heap once connected, by the app saved (sizes as sent):
+
+| Saved app | largest block |
+|---|---|
+| a small test app | 36 KB |
+| Flame C6 at 15 fps, 8.4 KB | 29 KB |
+| Flame C6 at 30 fps, 8.6 KB (spaces dropped) | 25 / 29 KB (two boots) |
+| Flame C6 at 30 fps, 10.4 KB | 18 / 21 KB (two boots) |
+
+After a boot with the 10.4 KB flame saved, pushing the same flame (a 10.7 KB message) was dropped,
+`[courier] ws: dropping non-JSON payload (10748 bytes): NoMemory`, and the board kept running the
+one it had; it went through after a boot with the small app saved. The 8.6 KB flame pushed after a
+boot with itself saved compiles, the shared heap 21 KB free at its lowest while it arrives. So an app
+this board keeps saved should stay under ~9 KB as sent, or the next push may need a boot with
+something small saved first.
