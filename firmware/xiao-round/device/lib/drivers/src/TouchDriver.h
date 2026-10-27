@@ -1,7 +1,7 @@
 // `touchscreen`: the CHSC6X touch panel (I2C 0x2E), one finger, as Bench's
-// touchscreen module. Its coordinates are the panel's own pixels, which are
-// the ones apps draw in (checked in stage 1: a crosshair drawn at the reported
-// point sits under the finger).
+// touchscreen module. It reports in the panel's own pixels, the ones apps draw
+// in at rotation 0 (checked in stage 1: a crosshair drawn at the reported point
+// sits under the finger), turned with the picture when SCREEN_ROTATION turns it.
 //
 //   touchscreen.read()     -> { pressed = bool, x, y }: the last point touched
 //   touchscreen.pressed()  -> bool

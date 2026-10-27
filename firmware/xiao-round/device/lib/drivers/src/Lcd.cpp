@@ -2,6 +2,13 @@
 #include <SPI.h>
 #include <Adafruit_GC9A01A.h>
 
+// Degrees clockwise the picture is turned (0, 90, 180, 270). The GC9A01 turns
+// it as it stores what it's sent (MADCTL), so the canvas and every push stay
+// as they are.
+#ifndef SCREEN_ROTATION
+#define SCREEN_ROTATION 0
+#endif
+
 namespace Lcd {
 
 // Wiring, fixed by the display's sockets (XIAO D8, D9, D10, D1, D3, D6, D2).
@@ -27,7 +34,10 @@ bool begin() {
   SPI.begin(PIN_SCLK, PIN_MISO, PIN_MOSI, -1);
 
   tft.begin(SPI_HZ);        // SWRESET, Adafruit's GC9A01A init, INVON; no RAM offset
-  tft.setRotation(0);       // up with the XIAO's USB-C on the right (checked on the glass)
+  // Adafruit's rotation 0 is up with the XIAO's USB-C on the right (checked on
+  // the glass); each step turns the picture 90 degrees clockwise.
+  tft.setRotation(SCREEN_ROTATION / 90 % 4);
+  Serial.printf("[lcd] picture turned %d degrees\n", SCREEN_ROTATION / 90 % 4 * 90);
   tft.fillScreen(GC9A01A_BLACK);
 
   // Backlight: PWM through a transistor, with the KE switch's 2 on (off, it's
@@ -101,6 +111,15 @@ void setBrightness(float v) {
 }
 
 float brightness() { return _brightness; }
+
+void toImage(int& x, int& y) {
+  int px = x, py = y;
+  switch (SCREEN_ROTATION / 90 % 4) {
+    case 1: x = py, y = WIDTH - 1 - px; break;
+    case 2: x = WIDTH - 1 - px, y = HEIGHT - 1 - py; break;
+    case 3: x = HEIGHT - 1 - py, y = px; break;
+  }
+}
 
 uint32_t lastPushUs() { return _lastPushUs; }
 

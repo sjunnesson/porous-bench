@@ -15,6 +15,8 @@ export default {
   controller: 'GC9A01',
   bus: { kind: 'spi', hz: 80_000_000 },
   ram: { width: 240, height: 240, offsetX: 0, offsetY: 0 },
+  // Bench's firmware turns the picture 270° (SCREEN_ROTATION), so up is away from a USB-C facing down.
+  firmwareRotation: 3,
   // Bench's firmware ticks on_tick every 33 ms (SandboxConfig::tickIntervalMs), not Resident's 100.
   tickMs: 33,
   // Bench's firmware flips only the 16×16 tiles drawn on (Lcd::presentDirty).
@@ -37,7 +39,7 @@ export default {
   },
   porting: [
     'GC9A01 round IPS LCD, 240×240, on the XIAO\'s SPI pins (SCK D8, MISO D9, MOSI D10), CS on D1, DC on D3, at 80 MHz: a full frame in ~18 ms, clean on the glass (Seeed asks for 50 MHz, which the S3 makes 40: 31 ms). Adafruit\'s GC9A01A driver works as it is (its init, BGR order, INVON); RGB565 pixels go out big-endian.',
-    'Rotation 0 (Adafruit\'s) is up with the XIAO\'s USB-C on the right, as Seeed holds it, and the touch panel reports in the same pixels.',
+    'Rotation 0 (Adafruit\'s) is up with the XIAO\'s USB-C on the right, as Seeed holds it, and the touch panel reports in the same pixels. Bench\'s firmware turns it 270° (rotation 3, SCREEN_ROTATION in platformio.ini) for a USB-C facing down, and turns the touch points with it.',
     'The LCD\'s reset is an RC circuit on the board, not a GPIO (RST -1): reset it with the software reset command (0x01).',
     'Backlight: D6 switches it through a transistor, so PWM dims it, but only with the KE switch\'s 2 on; with it off, a pull-up keeps the backlight at full. D6 is also the chip\'s UART0 TX, so the backlight flickers with the boot log at reset.',
     'The power switch on the rim cuts the display board\'s 3.3 V even on USB: switched off, the screen stays dark and the I2C bus loses its pull-ups, so an I2C scan without a timeout hangs.',

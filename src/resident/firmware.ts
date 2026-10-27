@@ -38,7 +38,7 @@ const BENCH_FIRMWARE: Record<string, { path: string; tested: boolean; note?: str
   'seeed-xiao-round-display|seeed-xiao-esp32s3-round-display': {
     path: 'firmware/xiao-round/device',
     tested: true,
-    note: 'Check with me that the display\'s power switch (on its rim) is on: it cuts the display\'s power even on USB, and the screen stays dark. If the serial port doesn\'t show up, I hold B (BOOT) on the XIAO while pressing R.',
+    note: 'Check with me that the display\'s power switch (on its rim) is on: it cuts the display\'s power even on USB, and the screen stays dark. If the serial port doesn\'t show up, I hold B (BOOT) on the XIAO while pressing R. It turns the picture 270° (`SCREEN_ROTATION` in its `platformio.ini`): up is away from a USB-C facing down.',
   },
   'guition-esp32-s3-4848s040|guition-esp32-s3-4848s040': {
     path: 'firmware/guition-4848s040/device',

@@ -79,6 +79,7 @@ void TouchDriver::update() {
   if (down) {
     x = constrain((int)b[2], 0, Lcd::WIDTH - 1);
     y = constrain((int)b[4], 0, Lcd::HEIGHT - 1);
+    Lcd::toImage(x, y);  // the panel's pixels to the picture's, however it's turned
   }
 
   if (down && !_down) {

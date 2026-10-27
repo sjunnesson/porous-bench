@@ -37,6 +37,12 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
 - **Panel:** Adafruit's GC9A01A driver as it is: `begin()` sends SWRESET (the LCD's reset is an RC on
   the board, not a pin), its init sequence (BGR) and INVON. Rotation 0 is up with the XIAO's USB-C on
   the right, as Seeed holds it; colours, the edge circle and orientation checked on a test card.
+- **Stage 3 turns the picture 270°** (since 2026-10-27, `SCREEN_ROTATION` in `platformio.ini`,
+  degrees clockwise, as on the Guition): up is away from a USB-C facing down. The GC9A01 turns it
+  as it stores what it's sent (Adafruit's rotation 3, MADCTL MX MY MV), so the canvas and every push
+  stay as they are, at no cost; `Lcd::toImage` turns the touch chip's points to match. Checked on
+  the board: an arrow drawn pointing up points away from the USB-C, and a dot drawn at each touch
+  sits under the finger. Stages 1 and 2 stay at 0.
 - **SPI at 80 MHz** pushes a full frame in ~18 ms and looks identical on the glass to 40 MHz (31 ms).
   Seeed's setup asks for 50 MHz, which the S3 can't make and turns into 40.
 - **The frame:** `screen`, `lgfx`, LVGL and the status text share one 240×240 RGB565 canvas

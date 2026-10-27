@@ -84,6 +84,9 @@ void present();                // push the canvas to the glass
 void presentDirty();           // push only the tiles drawn since the last push (lgfx and screen flips)
 void setBrightness(float v);   // backlight, 0..1 (PWM duty)
 float brightness();
+// The panel's pixels (the touch chip's, as at rotation 0) to the picture's,
+// however SCREEN_ROTATION turns it.
+void toImage(int& x, int& y);
 uint32_t lastPushUs();
 // Since the last call: frames pushed, pixels pushed and push time in total (for the heartbeat).
 void takeStats(uint32_t& frames, uint32_t& pixels, uint32_t& pushUs);

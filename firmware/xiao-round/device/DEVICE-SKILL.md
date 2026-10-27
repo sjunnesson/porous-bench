@@ -11,8 +11,9 @@ firmware itself has only the modules below.
 ## Hardware
 
 - **Screen** `"main"`: 240×240 pixels, round: only the circle of radius 120 around (120, 120) is
-  visible, the square's corners are not. Up is away from the panel's ribbon, with the XIAO's USB-C on
-  the right. Origin top-left, x to the right, y down. 16-bit colour (RGB565), dark scheme: blank is
+  visible, the square's corners are not. Up is away from the XIAO's USB-C, facing down (the firmware
+  turns the picture 270°, `SCREEN_ROTATION` in `platformio.ini`; touch turns with it). Origin
+  top-left, x to the right, y down. 16-bit colour (RGB565), dark scheme: blank is
   black, the backlight shines through. About 188 dpi.
 - **Backlight**: dimmable, 0..255 (`screen.set_brightness`) or 0..1 (`screens.set`), with the
   display's KE switch 2 on (off, it stays at full). Every app starts at full brightness.
