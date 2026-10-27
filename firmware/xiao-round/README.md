@@ -50,10 +50,11 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
   Pond's flips from 11.6 ms (158 rows, 66% of the frame) to 5.5 ms (29%), on the 33 ms tick
   either way; a 40 px diagonal from 24 us to 12, a 30 px circle from 60 to 30; a full-screen flip
   unchanged at ~17.5 ms. The `[perf]` line gives the share of the frame a push instead of rows.
-- **Rectangles fill row by row** (since 2026-10-27, as on the C6; not yet measured on this board).
-  Adafruit GFX fills a rectangle a column at a time, each column through two virtual calls and its
-  own tile marking, so wide, short ones cost most: on the C6 a 60×2 span went from 50 us to 10
-  (the same pixels as 2×60 took 14), the full-screen clear from 3.0 ms to 1.4.
+- **Rectangles fill row by row** (since 2026-10-27, as on the C6). Adafruit GFX fills a rectangle
+  a column at a time, each column through two virtual calls and its own tile marking, so wide,
+  short ones cost most. Measured here: a 60×2 span from 42 us to 10 (2×60: 13 to 11), a 70×4 row
+  54 to 14, a 60×40 block 130 to 57, a 70×16 rounded box 87 to 43, 200×200 4.0 ms to 2.5, the
+  whole 240×240 5.6 ms to 3.3, as fast as `fillScreen` (writing the canvas in PSRAM is the limit).
 - **LVGL refreshes every 15 ms, and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
   `LV_DEF_REFR_PERIOD` was 33, which held LVGL to 30 frames a second however fast it drew. Resident
   runs LVGL's timers at most every 5 ms (`lv_timer_handler_run_in_period(5)`), so the period should
