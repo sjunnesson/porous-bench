@@ -48,7 +48,10 @@ export interface OutputCaps {
 // mirror sends it (shim + app, minified): the message costs ~2x its size while it's parsed and
 // compiling ~3.5-4x, so ~6x in all. LVGL's first bind keeps ~30 KB and `datetime` ~35 KB once touched.
 // Fragmentation leaves only part of the free heap usable in one go: a load fits in about 3/4 of it.
-const LOAD_FACTOR = 6;
+// Compiling costs by the token, not the byte, so since the minifier drops the spaces between tokens
+// (2026-10-27) that part is still counted on the code with them, as it was measured.
+const MESSAGE_FACTOR = 2;
+const COMPILE_FACTOR = 4;
 const LVGL_KB = 30;
 const DATETIME_KB = 35;
 const USABLE = 0.75;
@@ -67,7 +70,7 @@ export function appNeeds(code: string): AppNeeds {
   const words = (NEEDS_LINE.exec(code)?.[1] ?? '').toLowerCase().split(/[\s,]+/).filter(Boolean);
   const size = words.map((w) => /^(\d+)x(\d+)$/.exec(w)).find(Boolean);
 
-  const kb = (remoteApp(code).length * LOAD_FACTOR) / 1024;
+  const kb = (remoteApp(code).length * MESSAGE_FACTOR + remoteApp(code, true).length * COMPILE_FACTOR) / 1024;
   const ramKb = Math.ceil(kb + (libraries.includes('lvgl') ? LVGL_KB : 0) + (/\bdatetime\./.test(code) ? DATETIME_KB : 0));
 
   return {

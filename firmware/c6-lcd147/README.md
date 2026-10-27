@@ -186,7 +186,10 @@ block 57 KB), so the arena grew to 88.
 An app arrives as one WebSocket message (the app wrapped in Bench's shim when it mirrors), which is
 parsed in the shared heap (ArduinoJson 7 copies the code string, so ~2-3x its size in large blocks)
 and compiled in the arena (~4x its size). Bench's estimate (`src/resident/needs.ts`: ~6x the wrapped
-size, fitting in 3/4 of the app memory) matches what the rebuilt core runs:
+size, fitting in 3/4 of the app memory) matched what the rebuilt core ran, below. Since 2026-10-27
+the minifier also drops the spaces between tokens, a fifth of a minified app: the message is that
+much smaller, compiling costs what it did (it goes by the token), and the estimate is 2x the message
+plus 4x the code with its spaces, a few per cent under these:
 
 | App, mirrored from Bench | Bench's estimate | rebuilt core (84 KB) | prebuilt core (59 KB) |
 |---|---|---|---|

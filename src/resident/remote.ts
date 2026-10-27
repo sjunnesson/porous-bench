@@ -23,11 +23,12 @@ function shimFor(code: string): string {
 
 /**
  * The app as the real device runs it: Bench's driver shim around it, trimmed to the stand-ins the app
- * uses and minified. A board without PSRAM has only ~50-85 KB to receive and compile it in.
+ * uses and minified. A board without PSRAM has only ~50-85 KB to receive and compile it in. `spaced`:
+ * with a space kept between tokens (see `minifyLua`).
  */
-export function remoteApp(code: string): string {
+export function remoteApp(code: string, spaced = false): string {
   const [head, foot] = shimFor(code).split('-- @@APP@@');
-  return minifyLua(`${head}\n${code}\n${foot}`);
+  return minifyLua(`${head}\n${code}\n${foot}`, spaced);
 }
 
 export interface Snapshot {
