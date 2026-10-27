@@ -11,6 +11,7 @@
 // done.
 #pragma once
 #include <Arduino.h>
+#include <algorithm>
 #include <utility>
 #include <esp_heap_caps.h>
 #include <Adafruit_GFX.h>
@@ -50,6 +51,18 @@ public:
   void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t c) override {
     markRect(x, y, x + w - 1, y);
     GFXcanvas16::drawFastHLine(x, y, w, c);
+  }
+  // Rectangles row by row, straight into the buffer: Adafruit fills them a
+  // column at a time, each column through two virtual calls and its own tile
+  // marking (on the C6 a 60x2 span took 50 us, the same pixels as 2x60 14 us).
+  // As Adafruit's: nothing for w <= 0, and a negative h fills rows y+h+1 to y.
+  void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c) override {
+    if (w <= 0 || h == 0) return;
+    if (h < 0) y += h + 1, h = -h;
+    int x0 = max((int)x, 0), y0 = max((int)y, 0), x1 = min(x + w, W), y1 = min(y + h, H);
+    if (x1 <= x0 || y1 <= y0) return;
+    markRect(x0, y0, x1 - 1, y1 - 1);
+    for (int r = y0; r < y1; r++) std::fill_n(buffer + r * W + x0, x1 - x0, c);
   }
   void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c) override;
 

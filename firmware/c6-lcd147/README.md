@@ -53,6 +53,11 @@ enter your network. The screen then shows the 8-character device ID.
 
 ## Quirks worth knowing
 
+- **`pio run -t upload` puts otadata's `boot_app0` at 0x19000**, where this partition table has it
+  (`board_upload.arduino.boot_app0`, since 2026-10-27). Core 3.x writes it at 0xe000 unless told,
+  which here is the middle of NVS: an upload before then overwrote two of its 16 pages. NVS reads
+  them as corrupt and reclaims them, so what was on them is gone (on 2026-10-27 only superseded
+  entries; Wi-Fi and the saved app were on other pages). The other boards keep otadata at 0xe000.
 - **It's an ESP32-C6FH8, 8 MB of flash** (esptool: "ESP32-C6FH8 (QFN32) (revision v0.2)"), not the
   4 MB FH4 some listings show. The `esp32-c6-devkitc-1` board profile (8 MB) fits as it is.
 - **Arduino core 3.x only.** The C6 needs pioarduino's platform; Resident's examples use
@@ -87,6 +92,11 @@ enter your network. The screen then shows the 8-character device ID.
   the frame); a 40 px diagonal from 28 us to 12, a 30 px circle from 60 to 40; `flame-c6`, which
   draws whole rows, unchanged at ~30.5 ms. The `[perf]` line every 30 s gives pushes a second, the
   share of the frame a push, ms a push and loop time.
+- **Rectangles fill row by row** (since 2026-10-27, as on the other colour boards). Adafruit GFX
+  fills a rectangle a column at a time, each column through two virtual calls and its own tile
+  marking, so wide, short ones cost most. Measured here: a 60×2 flame span from 50 us to 10 (the
+  same pixels as 2×60 took 14), a 70×4 candle row 64 to 14, a 70×16 rounded box 113 to 57, the
+  full 172×320 clear 3.0 ms to 1.4.
 - **Built with `-O2`, not `-Os`** (since 2026-10-23), as the S3-Touch-LCD-2 is, for Lua and the
   drivers: flash went from 1,733,642 to 1,854,720 bytes (of the 4 MB app slot); static RAM 63,860 →
   63,884 bytes. ESP-IDF's own optimisation (`CONFIG_COMPILER_OPTIMIZATION_PERF`) stays off: it

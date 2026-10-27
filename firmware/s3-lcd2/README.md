@@ -114,8 +114,13 @@ What it taught:
   through Adafruit GFX's two virtual calls a pixel. Measured here: Koi Pond's flips from 14.1 ms
   (192 rows, 60% of the frame) to 5.4 ms (22%), its frame from 34-35 ms to the 33 ms tick; a 40 px
   diagonal from 24 us to 12, a 30 px circle from 60 to 30; a full-screen flip unchanged at 23.4
-  ms. The `[perf]` line gives the share of the frame a push instead of rows. An app gets LVGL's 30 fps timer by binding LVGL
-  first and lgfx last (the last bind owns the screen; Resident and Bench keep running LVGL timers).
+  ms. The `[perf]` line gives the share of the frame a push instead of rows.
+- **Rectangles fill row by row** (since 2026-10-27, as on the C6; not yet measured on this board).
+  Adafruit GFX fills a rectangle a column at a time, each column through two virtual calls and its
+  own tile marking, so wide, short ones cost most: on the C6 a 60×2 span went from 50 us to 10
+  (the same pixels as 2×60 took 14), the full-screen clear from 3.0 ms to 1.4.
+- An app gets LVGL's 30 fps timer by binding LVGL first and lgfx last (the last bind owns the
+  screen; Resident and Bench keep running LVGL timers).
 - **A DMA push in the background (ESP-IDF esp_lcd) left the screen black** on this panel, though
   the transfers completed; it measured a full flip at ~15 ms against Adafruit's 25. Pushing only
   what changed mattered more: with the flame's ~160 rows a frame, the blocking Adafruit push keeps

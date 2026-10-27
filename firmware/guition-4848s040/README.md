@@ -64,6 +64,10 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   its own Bresenham (a 40 px diagonal: 26 us down to 12), and `drawPixel`/`writePixel` write the
   buffer themselves, which circles and text go through (a 30 px circle: 65 us down to 40). A call
   from Lua costs ~3 us before it draws anything; `fillRect` ~0.05 us a pixel.
+- **Rectangles fill row by row** (since 2026-10-27, as on the C6; not yet measured on this board).
+  Adafruit GFX fills a rectangle a column at a time, each column through two virtual calls and its
+  own tile marking, so wide, short ones cost most: on the C6 a 60×2 span went from 50 us to 10
+  (the same pixels as 2×60 took 14), the full-screen clear from 3.0 ms to 1.4.
 - **The picture is turned as it's copied.** With `SCREEN_ROTATION` set, `RgbPanel::drawRect` turns
   each rectangle into the scanned frame, and `RgbPanel::toImage` turns the GT911's points back, so
   no drawing path and no app needs to know. Turned 90° or 270°, a rectangle's canvas rows are frame
