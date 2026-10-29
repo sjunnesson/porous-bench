@@ -56,7 +56,7 @@ local function ck_str(v, i, fname, n)
   argerr(i, fname, "string expected, got " .. tname(v, i, n))
 end
 
--- spec letters: i = integer, n = number, s = string, I = optional integer,
+-- spec letters: i = integer, n = number, s = string, I = optional integer, S = optional string,
 -- t = (int) cast of a number (the m5stick driver's `(int)luaL_checknumber`).
 -- `method` = colon-called, so argument numbers shift down by one as lauxlib does.
 local function wrap(fname, spec, fn, method)
@@ -74,6 +74,7 @@ local function wrap(fname, spec, fn, method)
       elseif c == "n" then a[idx] = ck_num(v, k, fname, n - off)
       elseif c == "s" then a[idx] = ck_str(v, k, fname, n - off)
       elseif c == "I" then if v ~= nil then a[idx] = ck_int(v, k, fname, n - off) end
+      elseif c == "S" then if v ~= nil then a[idx] = ck_str(v, k, fname, n - off) end
       elseif c == "t" then
         local x = ck_num(v, k, fname, n - off)
         a[idx] = x >= 0 and math.floor(x) or -math.floor(-x)
@@ -117,23 +118,71 @@ local LGFX = {
   setTextColor = "iI", setTextSize = "n", setTextDatum = "i", setCursor = "ii",
   print = "s", drawString = "sii", width = "", height = "", flip = "",
 }
--- g:pushImage(x, y, w, h, data): data is w * h * 2 bytes of RGB565, big-endian, row by row. The
--- host reads Lua strings as UTF-8, which raw bytes aren't, so each byte goes across as the code
--- point 256 + byte (two UTF-8 bytes, never NUL). This runs as the board's C would: not counted.
-local sbyte, uchar = string.byte, utf8.char
-local SHIFT = {}
-local function pushImage(x, y, w, h, data)
-  if w <= 0 or h <= 0 then return end
-  if w > 4096 or h > 4096 or #data ~= w * h * 2 then
-    error("bad argument #5 to 'pushImage' (expected w * h * 2 bytes of RGB565, big-endian)", 3)
-  end
+-- g:pushImage(x, y, w, h, data[, palette[, transparent]]): without a palette, data is w * h * 2
+-- bytes of RGB565, big-endian, row by row. With one (a string of 1 to 256 colours, RGB565
+-- big-endian), data is w * h bytes, each an index into it; an index equal to transparent or past
+-- the palette's end isn't drawn. The host reads Lua strings as UTF-8, which raw bytes aren't, so
+-- each byte goes across as the code point 256 + byte (two UTF-8 bytes, never NUL); of an indexed
+-- block only the part inside the clip and the display goes across (a scene's backdrop pushed for
+-- every 16 px cell would be 230 KB a time). This runs as the board's C would: not counted.
+local sbyte, ssub, uchar = string.byte, string.sub, utf8.char
+local function across(data)
   local parts = {}
   for i = 1, #data, 2048 do
     local bytes = { sbyte(data, i, math.min(i + 2047, #data)) }
     for k = 1, #bytes do bytes[k] = bytes[k] + 256 end
     parts[#parts + 1] = uchar(unpack(bytes))
   end
-  H.lg_pushImage(x, y, w, h, concat(parts))
+  return concat(parts)
+end
+local function pushIndexed(x, y, w, h, data, palette, transparent, clip)
+  if #palette == 0 or #palette > 512 or #palette % 2 ~= 0 then
+    error("bad argument #6 to 'pushImage' (expected 1 to 256 colours of RGB565, big-endian)", 4)
+  end
+  if w <= 0 or h <= 0 then return end
+  if w > 4096 or h > 4096 or #data ~= w * h then
+    error("bad argument #5 to 'pushImage' (expected w * h bytes of palette indices)", 4)
+  end
+  local cx0, cy0, cx1, cy1 = 0, 0, H.lg_width(), H.lg_height()
+  if clip then
+    cx0, cy0 = math.max(cx0, clip[1]), math.max(cy0, clip[2])
+    cx1, cy1 = math.min(cx1, clip[3]), math.min(cy1, clip[4])
+  end
+  local c0, r0 = math.max(0, cx0 - x), math.max(0, cy0 - y)
+  local c1, r1 = math.min(w, cx1 - x), math.min(h, cy1 - y)
+  if c1 <= c0 or r1 <= r0 then return end
+  local rows = {}
+  for r = r0, r1 - 1 do rows[#rows + 1] = ssub(data, r * w + c0 + 1, r * w + c1) end
+  local seen, vw, n = concat(rows), c1 - c0, #palette // 2
+  if H.lg_pushIndexed then
+    H.lg_pushIndexed(x + c0, y + r0, vw, r1 - r0, across(seen), across(palette), transparent or -1)
+    return
+  end
+  -- A host without it (the iPhone app): each run of drawn pixels as RGB565.
+  for r = 0, r1 - r0 - 1 do
+    local c = 0
+    while c < vw do
+      local i = sbyte(seen, r * vw + c + 1)
+      if i == transparent or i >= n then
+        c = c + 1
+      else
+        local start, px = c, {}
+        repeat
+          px[#px + 1] = ssub(palette, 2 * i + 1, 2 * i + 2)
+          c = c + 1
+          i = c < vw and sbyte(seen, r * vw + c + 1)
+        until not i or i == transparent or i >= n
+        H.lg_pushImage(x + c0 + start, y + r0 + r, c - start, 1, across(concat(px)))
+      end
+    end
+  end
+end
+local function pushImage(x, y, w, h, data)
+  if w <= 0 or h <= 0 then return end
+  if w > 4096 or h > 4096 or #data ~= w * h * 2 then
+    error("bad argument #5 to 'pushImage' (expected w * h * 2 bytes of RGB565, big-endian)", 3)
+  end
+  H.lg_pushImage(x, y, w, h, across(data))
 end
 
 function lgfx.bind(name)
@@ -141,7 +190,22 @@ function lgfx.bind(name)
   if not H.lgfx_bind(name) then error(fmt("lgfx.bind: no display named '%s'", name), 2) end
   local g = {}
   for m, spec in pairs(LGFX) do g[m] = wrap(m, spec, fn("lg_" .. m), true) end
-  g.pushImage = wrap("pushImage", "iiiis", pushImage, true)
+  local clip -- { x0, y0, x1, y1 } while set: the prelude sends only what's inside it
+  g.pushImage = wrap("pushImage", "iiiisSI", function(x, y, w, h, data, palette, transparent)
+    if palette == nil then return pushImage(x, y, w, h, data) end
+    return pushIndexed(x, y, w, h, data, palette, transparent, clip)
+  end, true)
+  -- The clip, where the host has one (the iPhone app hasn't yet: apps see no setClipRect there).
+  if H.lg_setClipRect then
+    g.setClipRect = wrap("setClipRect", "iiii", function(x, y, w, h)
+      clip = table.pack(x, y, x + w, y + h)
+      H.lg_setClipRect(x, y, w, h)
+    end, true)
+    g.clearClipRect = wrap("clearClipRect", "", function()
+      clip = nil
+      H.lg_clearClipRect()
+    end, true)
+  end
   return g
 end
 

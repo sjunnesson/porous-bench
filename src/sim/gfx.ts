@@ -27,6 +27,8 @@ export class Gfx {
   private wrap = true;
   private font: Font = font5x7;
   private fontCache = new Map<string, Font>();
+  /** Drawing stays inside [x0, x1) x [y0, y1), in the app's coordinates, until clearClipRect(). */
+  private clip: [number, number, number, number] | null = null;
 
   constructor(protected fb: Framebuffer) {
     this.w = fb.width;
@@ -55,9 +57,23 @@ export class Gfx {
     this.fb.dither = on;
   }
 
+  // ---- clipping ----------------------------------------------------------------------------
+
+  /** As LovyanGFX's: everything drawn stays inside the rectangle until clearClipRect(). */
+  setClipRect(x: number, y: number, w: number, h: number): void {
+    x = Math.floor(x);
+    y = Math.floor(y);
+    this.clip = [x, y, x + Math.floor(w), y + Math.floor(h)];
+  }
+  clearClipRect(): void {
+    this.clip = null;
+  }
+
   // ---- pixels & shapes ---------------------------------------------------------------------
 
   fillScreen(c: Color): void {
+    const k = this.clip;
+    if (k) return this.fillRect(k[0], k[1], k[2] - k[0], k[3] - k[1], c);
     this.fb.fill(0, 0, this.fb.width - 1, this.fb.height - 1, c);
   }
 
@@ -65,6 +81,8 @@ export class Gfx {
     x = Math.floor(x);
     y = Math.floor(y);
     if (x < 0 || y < 0 || x >= this.w || y >= this.h) return;
+    const k = this.clip;
+    if (k && (x < k[0] || y < k[1] || x >= k[2] || y >= k[3])) return;
     const [nx, ny] = this.toNative(x, y);
     this.fb.set(nx, ny, c);
   }
@@ -92,10 +110,11 @@ export class Gfx {
       y += h;
       h = -h;
     }
-    let x0 = Math.max(0, x);
-    let y0 = Math.max(0, y);
-    let x1 = Math.min(this.w - 1, x + w - 1);
-    let y1 = Math.min(this.h - 1, y + h - 1);
+    const k = this.clip;
+    let x0 = Math.max(0, x, k ? k[0] : 0);
+    let y0 = Math.max(0, y, k ? k[1] : 0);
+    let x1 = Math.min(this.w - 1, x + w - 1, k ? k[2] - 1 : Infinity);
+    let y1 = Math.min(this.h - 1, y + h - 1, k ? k[3] - 1 : Infinity);
     if (!(x1 >= x0 && y1 >= y0)) return; // also NaN
     const [ax, ay] = this.toNative(x0, y0);
     const [bx, by] = this.toNative(x1, y1);

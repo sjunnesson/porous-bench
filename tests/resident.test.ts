@@ -46,7 +46,7 @@ async function boot(code: string, deviceId = 'm5stickc-plus2', buttonsOn?: (benc
   for (let i = 0; i < 20; i++) clock.advance(1);
   await cleared;
   const { host, error } = await ResidentHost.boot(factory, board, { code });
-  return { host, error, clock, display, logs, telemetry, buttons, declared, bench };
+  return { host, error, clock, display, logs, telemetry, buttons, declared, bench, board };
 }
 
 function glass(d: Display, x: number, y: number): [number, number, number] {
@@ -142,6 +142,41 @@ describe('Resident sandbox', () => {
     expect([px(60, 60), px(61, 60), px(60, 61), px(61, 61), px(62, 60)]).toEqual([0xf800, 0x07e0, 0x0000, 0xffff, 0x001f]);
     expect(t.logs[0]).toContain("false");
     expect(t.logs[0]).toContain("expected w * h * 2 bytes of RGB565, big-endian");
+  });
+
+  it('pushes an image through a palette, clipped, and clears the clip for the next app', async () => {
+    // Indices into red, green, blue: index 1 is transparent and 3 is past the palette's end.
+    const t = await boot(`local g = lgfx.bind("main")
+      function init(ctx)
+        g:fillScreen(0x000000)
+        local pal = "\\248\\0\\7\\224\\0\\31"
+        g:pushImage(10, 10, 2, 2, "\\0\\1\\2\\3", pal, 1)
+        g:setClipRect(20, 20, 2, 2)
+        g:pushImage(0, 0, 40, 40, string.rep("\\2", 1600), pal)
+        g:fillRect(18, 21, 6, 1, 0xFF0000)
+        g:fillScreen(0x00FF00)
+        g:clearClipRect()
+        g:pushImage(30, 30, 1, 1, "\\0", pal)
+        g:flip()
+        local ok, err = pcall(g.pushImage, g, 0, 0, 2, 2, "abc", pal)
+        log.info(tostring(ok) .. " " .. err)
+        ok, err = pcall(g.pushImage, g, 0, 0, 1, 1, "a", "\\0")
+        log.info(tostring(ok) .. " " .. err)
+      end`);
+    expect(t.error).toBeUndefined();
+    await run(t, 50);
+    const px = (x: number, y: number) => t.display.getPixel(x, y);
+    expect([px(10, 10), px(11, 10), px(10, 11), px(11, 11)]).toEqual([0xf800, 0x0000, 0x001f, 0x0000]);
+    // Inside the clip only: the blue block, then the red line, then green over the clip's 2x2.
+    expect([px(19, 20), px(20, 20), px(21, 21), px(22, 21), px(19, 21), px(25, 25)]).toEqual([0, 0x07e0, 0x07e0, 0, 0, 0]);
+    expect(px(30, 30)).toBe(0xf800);
+    expect(t.logs[0]).toContain("expected w * h bytes of palette indices");
+    expect(t.logs[1]).toContain("expected 1 to 256 colours of RGB565, big-endian");
+    // The next app on the same board draws everywhere.
+    t.display.setClipRect(0, 0, 1, 1);
+    await ResidentHost.boot(factory, t.board, { code: 'function init(ctx) end' });
+    t.display.fillRect(3, 3, 1, 1, 0xffff);
+    expect(t.display.getPixel(3, 3)).toBe(0xffff);
   });
 
   it('checks integer arguments like luaL_checkinteger, numbering method args from 1', async () => {

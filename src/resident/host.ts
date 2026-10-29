@@ -158,6 +158,7 @@ export class ResidentHost {
     const engine = await factory.createEngine({ enableProxy: false, injectObjects: false, openStandardLibs: true, traceAllocations: true });
     engine.global.setMemoryMax(LUA_HEAP_MAX);
     const host = new ResidentHost(engine, board);
+    board.display.clearClipRect(); // the last app's clip, as Resident's app reset clears it
     engine.global.set('__ss_host', host.bridge());
     engine.global.set('__ss_datetime_src', datetimeSrc);
     engine.global.set('__ss_lvgl_src', lvglSrc);
@@ -520,6 +521,21 @@ export class ResidentHost {
           for (let c = 0; c < w; c++, i += 2) d.drawPixel(x + c, y + r, ((s.charCodeAt(i) - 256) << 8) | (s.charCodeAt(i + 1) - 256));
         }
       },
+      // A block of palette indices (the part inside the clip; the prelude cuts it): an index equal
+      // to transparent or past the palette's end isn't drawn.
+      lg_pushIndexed: (x: number, y: number, w: number, h: number, s: string, pal: string, transparent: number) => {
+        const n = pal.length >> 1;
+        const colours: number[] = [];
+        for (let i = 0; i < n; i++) colours[i] = ((pal.charCodeAt(2 * i) - 256) << 8) | (pal.charCodeAt(2 * i + 1) - 256);
+        for (let r = 0, k = 0; r < h; r++) {
+          for (let c = 0; c < w; c++, k++) {
+            const i = s.charCodeAt(k) - 256;
+            if (i !== transparent && i < n) d.drawPixel(x + c, y + r, colours[i]);
+          }
+        }
+      },
+      lg_setClipRect: (x: number, y: number, w: number, h: number) => d.setClipRect(x, y, w, h),
+      lg_clearClipRect: () => d.clearClipRect(),
       lg_width: () => d.width(),
       lg_height: () => d.height(),
       lg_flip: () => this.present(),
