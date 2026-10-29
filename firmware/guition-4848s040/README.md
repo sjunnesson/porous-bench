@@ -18,6 +18,18 @@ a USB Serial/JTAG port, and auto-reset flashes it without touching a key (BOOT a
 case). Give it a supply that holds 5 V: Wi-Fi's current spikes brown it out on a weak laptop port.
 On the relay versions, don't feed 5 V into header H1 and the USB-C at the same time.
 
+Stage 3 connects to `resident.inanimate.tech`. For a self-hosted relay on the same wire (a
+Cloudflare Worker), give its host at build time; a plain upload puts the board back on the hosted one:
+
+```sh
+PLATFORMIO_BUILD_FLAGS='-DRELAY_HOST=\"my-relay.example.workers.dev\"' pio run -t upload
+```
+
+The board trusts ISRG Root X1 and X2 and GTS Root R1 and R4 for the relay's certificate
+(`src/RootCerts.h`). Courier on this core can't use IDF's certificate bundle and would trust GTS
+Root R4 alone, and `workers.dev` serves a Let's Encrypt certificate: the handshake failed with
+`-0x2700` (certificate not verified) until the ISRG roots went in.
+
 **Stage 3 has run on a board** (2026-10-26): "What bring-up found" says what that confirmed and
 what it didn't. Stages 1 and 2 compile (espressif32@6.12.0, Arduino core 2.0.17) but haven't been
 flashed.
@@ -29,6 +41,20 @@ flashed.
 `screens` (`"main"`: 480×480, 16-bit, dark, brightness). Lua, LVGL and both frames (the canvas apps
 draw in and the frame the panel is scanned from, 450 KB each) live in the 8 MB PSRAM. Bench's board
 entry (`guition-esp32-s3-4848s040`: screen, lgfx, lvgl, 8192 KB) matches.
+
+`lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
+`setClipRect` / `clearClipRect` (Resident's fork, branch `lgfx-pushimage`). The canvas writes both
+kinds of image straight into its buffer and clips everything drawn into it. Plenum's isometric
+scenes draw each changed 16 px cell as the backdrop and the sprites over it, pushed through the
+palette and clipped to the cell. Measured on the board with a full-screen harbour scene (~115 cells
+a tick, its water cycling): 245 ms a tick when Lua composed the pixels and sent them as `fillRect`
+runs, 34 ms with this (25-26 frames a second), and Lua's heap 1.2 MB instead of 3-5.
+
+Apps can be big: Plenum's are ~430 KB. ArduinoJson keeps a string's length in 2 bytes unless
+told otherwise, so anything over 65,535 characters was dropped ("NoMemory") before it reached
+Resident; `ARDUINOJSON_STRING_LENGTH_SIZE=4` in `platformio.ini` lifts that. Such an app also
+takes longer than Resident's 1 s guard to run its top level (~3 s here, decoding its pictures), so
+the guard is 8 s, and a dispatch over 100 ms is reported on serial and as `slow_dispatch`.
 
 The picture is turned 270° (`SCREEN_ROTATION` in `platformio.ini`, degrees clockwise as ESPHome
 counts them): up is away from a USB-C facing down. At 0 the USB-C is on the right. Apps see 480×480

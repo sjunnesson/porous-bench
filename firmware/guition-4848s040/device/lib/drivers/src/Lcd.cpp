@@ -32,15 +32,44 @@ void Canvas::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c
   markRect(x0, y0, x1, y1);
   int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
   int err = dx + dy, x = x0, y = y0;
-  bool inside = (unsigned)x0 < (unsigned)W && (unsigned)x1 < (unsigned)W && (unsigned)y0 < (unsigned)H &&
-                (unsigned)y1 < (unsigned)H;
+  auto in = [this](int px, int py) { return px >= clipX0 && px < clipX1 && py >= clipY0 && py < clipY1; };
+  bool inside = in(x0, y0) && in(x1, y1);
   uint16_t* buf = buffer;
   for (;;) {
-    if (inside || ((unsigned)x < (unsigned)W && (unsigned)y < (unsigned)H)) buf[y * W + x] = c;
+    if (inside || in(x, y)) buf[y * W + x] = c;
     if (x == x1 && y == y1) break;
     int e2 = 2 * err;
     if (e2 >= dy) err += dy, x += sx;
     if (e2 <= dx) err += dx, y += sy;
+  }
+}
+
+// The palette as native RGB565, one entry for each byte an index can be, with the indices not
+// drawn (transparent, past the end) above 0xFFFF. A cell is drawn from one palette several times
+// over (its backdrop, then each sprite), so the last one is kept and only made again when the
+// palette's bytes differ.
+void Canvas::pushIndexed(int x, int y, int w, int h, const uint8_t* idx, const uint8_t* palette, int ncolors,
+                         int transparent) {
+  static uint32_t pal[256];
+  static uint8_t lastBytes[512];
+  static int lastCount = -1, lastTransparent = -2;
+  int x0 = max(x, clipX0), y0 = max(y, clipY0), x1 = min(x + w, clipX1), y1 = min(y + h, clipY1);
+  if (x1 <= x0 || y1 <= y0) return;
+  if (ncolors != lastCount || transparent != lastTransparent || memcmp(palette, lastBytes, ncolors * 2) != 0) {
+    for (int i = 0; i < 256; i++) {
+      pal[i] = (i < ncolors && i != transparent) ? (uint32_t)(palette[i * 2] << 8 | palette[i * 2 + 1]) : 0x10000u;
+    }
+    memcpy(lastBytes, palette, ncolors * 2);
+    lastCount = ncolors, lastTransparent = transparent;
+  }
+  markRect(x0, y0, x1 - 1, y1 - 1);
+  for (int r = y0; r < y1; r++) {
+    const uint8_t* s = idx + (size_t)(r - y) * w + (x0 - x);
+    uint16_t* d = buffer + r * W + x0;
+    for (int n = x1 - x0; n > 0; n--, d++) {
+      uint32_t v = pal[*s++];
+      if (v < 0x10000u) *d = (uint16_t)v;
+    }
   }
 }
 

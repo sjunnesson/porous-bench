@@ -37,20 +37,33 @@ public:
   Canvas(uint16_t w, uint16_t h) : GFXcanvas16(w, h, false) {
     buffer = (uint16_t*)heap_caps_aligned_calloc(64, w * h, 2, MALLOC_CAP_SPIRAM);  // never freed
   }
+  // Drawing stays inside [clipX0, clipX1) x [clipY0, clipY1): the whole canvas, or lgfx's
+  // setClipRect. Every path that writes the buffer stops at it.
+  int clipX0 = 0, clipY0 = 0, clipX1 = W, clipY1 = H;
+  void setClip(int x, int y, int w, int h) {
+    clipX0 = max(x, 0), clipY0 = max(y, 0), clipX1 = min(x + w, W), clipY1 = min(y + h, H);
+    if (clipX1 < clipX0) clipX1 = clipX0;
+    if (clipY1 < clipY0) clipY1 = clipY0;
+  }
+  void clearClip() { clipX0 = 0, clipY0 = 0, clipX1 = W, clipY1 = H; }
+  bool clipped() const { return clipX0 != 0 || clipY0 != 0 || clipX1 != W || clipY1 != H; }
+
   void drawPixel(int16_t x, int16_t y, uint16_t c) override {
-    if ((unsigned)x >= (unsigned)W || (unsigned)y >= (unsigned)H) return;
+    if (x < clipX0 || x >= clipX1 || y < clipY0 || y >= clipY1) return;
     buffer[y * W + x] = c;
     dirty[y / TILE] |= 1u << (x / TILE);
   }
   void writePixel(int16_t x, int16_t y, uint16_t c) override { Canvas::drawPixel(x, y, c); }  // circles, text
-  void fillScreen(uint16_t c) override { markRect(0, 0, W - 1, H - 1); GFXcanvas16::fillScreen(c); }
-  void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t c) override {
-    markRect(x, y, x, y + h - 1);
-    GFXcanvas16::drawFastVLine(x, y, h, c);
+  void fillScreen(uint16_t c) override {
+    if (clipped()) return fillRect(clipX0, clipY0, clipX1 - clipX0, clipY1 - clipY0, c);
+    markRect(0, 0, W - 1, H - 1);
+    GFXcanvas16::fillScreen(c);
   }
+  // As Adafruit's: a negative length runs the other way from x or y.
+  void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t c) override { fillRect(x, y, 1, h, c); }
   void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t c) override {
-    markRect(x, y, x + w - 1, y);
-    GFXcanvas16::drawFastHLine(x, y, w, c);
+    if (w < 0) x += w + 1, w = -w;
+    fillRect(x, y, w, 1, c);
   }
   // Rectangles row by row, straight into the buffer: Adafruit fills them a
   // column at a time, each column through two virtual calls and its own tile
@@ -59,12 +72,30 @@ public:
   void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c) override {
     if (w <= 0 || h == 0) return;
     if (h < 0) y += h + 1, h = -h;
-    int x0 = max((int)x, 0), y0 = max((int)y, 0), x1 = min(x + w, W), y1 = min(y + h, H);
+    int x0 = max((int)x, clipX0), y0 = max((int)y, clipY0), x1 = min(x + w, clipX1), y1 = min(y + h, clipY1);
     if (x1 <= x0 || y1 <= y0) return;
     markRect(x0, y0, x1 - 1, y1 - 1);
     for (int r = y0; r < y1; r++) std::fill_n(buffer + r * W + x0, x1 - x0, c);
   }
   void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c) override;
+  // lgfx's pushImage: w x h pixels of RGB565, big-endian, row by row, straight into the buffer.
+  // Resident's default draws them a pixel at a time through two virtual calls each; Plenum's iso
+  // scenes send every changed 16x16 cell this way. Read a byte at a time: a Lua string's bytes
+  // needn't be 2-aligned.
+  void pushBE(int x, int y, int w, int h, const uint8_t* be) {
+    int x0 = max(x, clipX0), y0 = max(y, clipY0), x1 = min(x + w, clipX1), y1 = min(y + h, clipY1);
+    if (x1 <= x0 || y1 <= y0) return;
+    markRect(x0, y0, x1 - 1, y1 - 1);
+    for (int r = y0; r < y1; r++) {
+      const uint8_t* p = be + ((size_t)(r - y) * w + (x0 - x)) * 2;
+      uint16_t* d = buffer + r * W + x0;
+      for (int n = x1 - x0; n > 0; n--, p += 2) *d++ = (uint16_t)(p[0] << 8 | p[1]);
+    }
+  }
+  // lgfx's pushImage with a palette: w x h bytes of indices into palette (ncolors colours, RGB565
+  // big-endian); an index equal to transparent (-1: none) or past the palette's end isn't drawn.
+  void pushIndexed(int x, int y, int w, int h, const uint8_t* idx, const uint8_t* palette, int ncolors,
+                   int transparent);
 
   // The tiles under a rectangle (corners either way round), clipped to the canvas.
   void markRect(int x0, int y0, int x1, int y1) {

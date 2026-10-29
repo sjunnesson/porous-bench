@@ -17,8 +17,15 @@
 #include "ButtonsDriver.h"
 #include "TouchDriver.h"
 #include "AppStore.h"
+#include "RootCerts.h"
 
+// Another relay that speaks the same wire (a self-hosted Worker) goes in at
+// build time: PLATFORMIO_BUILD_FLAGS='-DRELAY_HOST=\"my-relay.example.dev\"'.
+#ifdef RELAY_HOST
+static constexpr const char* RESIDENT_HOST = RELAY_HOST;
+#else
 static constexpr const char* RESIDENT_HOST = "resident.inanimate.tech";
+#endif
 static constexpr uint16_t RESIDENT_PORT = 443;
 
 ScreenDriver screenDriver;
@@ -43,6 +50,10 @@ static Resident::SandboxConfig makeConfig() {
   cfg.deviceType = "guition-4848";
   cfg.firmwareVersion = "guition-4848-0.1";
   cfg.tickIntervalMs = 33;  // on_tick at ~30 FPS, not Resident's 10: the panel keeps up (README)
+  // Plenum's iso surfaces (~430 KB) decode their backdrop and sprites before init: over Resident's
+  // 1 s guard on the S3, so the app was aborted before it started. Report what runs past 100 ms.
+  cfg.executionDeadlineMs = 8000;
+  cfg.executionSoftDeadlineMs = 100;
   lgfxModule.addDisplay("main", &lgfxMain);
   // LVGL's display is only created when an app first calls lvgl.bind("main");
   // it flushes into the same frame as screen/lgfx. Its draw buffer is ours, in
@@ -94,6 +105,8 @@ void setup() {
   sandbox.onTransportsWillConnect([]() {
     String wsPath = String("/devices/") + sandbox.getDeviceId();
     sandbox.ws().setEndpoint(RESIDENT_HOST, RESIDENT_PORT, wsPath.c_str());
+    // Trust the roots either CA's certificate chains to, not GTS Root R4 alone (RootCerts.h).
+    sandbox.ws().onConfigure([](esp_websocket_client_config_t& c) { c.cert_pem = RELAY_ROOT_CAS; });
     Serial.printf("[resident] device ID %s, WS wss://%s%s\n", sandbox.getDeviceId().c_str(),
                   RESIDENT_HOST, wsPath.c_str());
   });
