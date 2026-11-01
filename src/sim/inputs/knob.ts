@@ -27,6 +27,8 @@ export class Knob extends SimInput {
   readonly button: Button;
   private pos: number;
   private pending = 0;
+  /** Clicks turned so far, never consumed: each control reading the encoder counts from its own place. */
+  clicks = 0;
 
   constructor(opts: KnobOptions, clock: SimClock) {
     super(opts.label ?? 'Knob');
@@ -49,6 +51,7 @@ export class Knob extends SimInput {
       next = ((((next - this.min) % span) + span) % span) + this.min;
     } else next = Math.min(this.max, Math.max(this.min, next));
     this.pending += clicks;
+    this.clicks += clicks;
     if (next !== this.pos) this.pos = next;
     this.changed();
   }

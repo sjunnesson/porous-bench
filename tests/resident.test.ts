@@ -42,9 +42,12 @@ async function boot(code: string, deviceId = 'm5stickc-plus2', buttonsOn?: (benc
     telemetry: (name, data) => telemetry.push(data?.error ? `${name}: ${data.error}` : name),
     publish: () => 'sent',
   };
-  const cleared = resetScreen(display); // the board clears the glass on app reset
-  for (let i = 0; i < 20; i++) clock.advance(1);
-  await cleared;
+  let cleared = false;
+  void resetScreen(display).then(() => (cleared = true)); // the board clears the frame on app reset
+  for (let i = 0; i < 200 && !cleared; i++) {
+    clock.advance(1);
+    await Promise.resolve();
+  }
   const { host, error } = await ResidentHost.boot(factory, board, { code });
   return { host, error, clock, display, logs, telemetry, buttons, declared, bench, board };
 }

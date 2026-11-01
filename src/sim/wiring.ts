@@ -845,17 +845,30 @@ export function wiring(device: DeviceProfile, board: Board, hardware: (PartSpec 
         notes: [...(MODULES.button.notes ?? []), `Bench's firmware for this board reads ${gpioName(pinout, k.gpio)} as ${label.toLowerCase()}, so it stays on that pin.`],
       });
   });
+  const moduleOf = (h: (typeof hardware)[number]) => (h.kind === 'touch' && touchByModule(board.id) ? TTP223 : MODULES[h.kind]);
+  // The scarce pins first, the I2C bus and then the ADC pins, so a part that would do with any pin
+  // can't take one an I2C or analog part needs: what fits doesn't hang on the order parts were added.
+  const early = new Map<string, Gpio | undefined>();
+  for (const phase of [['sda', 'scl'], ['adc']] as Need[][]) {
+    for (const h of hardware) {
+      if (h.builtin) continue;
+      moduleOf(h).pins.forEach((p, i) => {
+        if (p.to && phase.includes(p.to as Need)) early.set(`${h.id}:${i}`, take(p.to as Need, h.label));
+      });
+    }
+  }
   for (const h of hardware) {
     if (h.builtin) {
       builtins.push({ id: h.id, label: h.label });
       continue;
     }
-    const module = h.kind === 'touch' && touchByModule(board.id) ? TTP223 : MODULES[h.kind];
+    const module = moduleOf(h);
     let last = -1;
-    const wires: Wire[] = module.pins.map((p) => {
+    const wires: Wire[] = module.pins.map((p, i) => {
       if (p.to === null) return { pin: p.name, note: 'not connected' };
       if (p.to === '3V3' || p.to === 'GND' || p.to === '5V') return { pin: p.name, rail: p.to, note: p.note };
-      const g = take(p.to, h.label, last);
+      const key = `${h.id}:${i}`;
+      const g = early.has(key) ? early.get(key) : take(p.to, h.label, last);
       if (!g) return { pin: p.name, missing: true, note: p.note };
       if (p.to !== 'sda' && p.to !== 'scl') last = pinout!.pins.indexOf(g);
       const role = p.to === 'adc' ? `ADC1 ch ${g.adc}` : p.to === 'touch' ? `touch T${g.touch}` : p.to === 'sda' ? 'I2C SDA' : p.to === 'scl' ? 'I2C SCL' : p.role;

@@ -101,7 +101,8 @@ export class Co2 extends SimInput {
 
   /** Each measurement since the last read, at its time. */
   private pump() {
-    const last = Math.floor((this.clock.now() - this.started) / PERIOD_MS);
+    // A hair of slack: a measurement exactly due shouldn't wait on how the time's float rounded.
+    const last = Math.floor((this.clock.now() - this.started) / PERIOD_MS + 1e-9);
     if (last < 1) return;
     // A long gap: only the latest few matter.
     for (let n = Math.max((this.measured?.n ?? 0) + 1, last - 3); n <= last; n++) {

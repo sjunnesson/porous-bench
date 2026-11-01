@@ -494,6 +494,7 @@ describe('distance (time of flight)', () => {
     const reach = new Dial({ min: 0, max: 120, via: 'distance' }, bench);
     const near = new Trigger({ via: 'near' }, bench);
     tof.setTarget(600);
+    clock.advance(50); // the reading under way when it moved (the dial read it on connecting) is the old one
     const reads = new Set<number>();
     for (let i = 0; i < 20; i++) {
       clock.advance(10);

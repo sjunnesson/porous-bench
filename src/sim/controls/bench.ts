@@ -26,6 +26,7 @@ import { Switch } from '../inputs/switch';
 import { Thermal } from '../inputs/thermal';
 import { Tof } from '../inputs/tof';
 import { Touch } from '../inputs/touch';
+import { PINOUTS } from '../wiring';
 
 export type PartKind = 'button' | 'switch' | 'knob' | 'pot' | 'joystick' | 'keypad' | 'ir' | 'rfid' | 'imu' | 'mic' | 'ld2410' | 'tof' | 'thermal' | 'light' | 'pir' | 'climate' | 'co2' | 'pulse' | 'touch' | 'buzzer';
 
@@ -191,14 +192,21 @@ export function createPart(kind: PartKind, label: string, clock: SimClock): SimI
   }
 }
 
-/** A bench for a board: its built-in buttons, IMU and buzzer, then the parts you saved. */
-export function boardBench(device: DeviceProfile, clock: SimClock, saved: PartSpec[]): Bench {
+/**
+ * A bench for a board: its built-in buttons (the output's own, or keys on the board driving it that
+ * Bench's firmware reads, like the e-paper driver board's IO12), IMU and buzzer, then the parts you saved.
+ */
+export function boardBench(device: DeviceProfile, clock: SimClock, saved: PartSpec[], board?: string): Bench {
   const b = new Bench(clock);
   for (const p of device.enclosure?.parts ?? []) {
     if (p.kind !== 'button' || p.input === undefined) continue;
     const name = p.label ?? `Button ${'AB'[p.input] ?? p.input}`;
     b.addBuiltin(`builtin-button-${p.input}`, new Button({ label: name.replace(/\s*\(.*\)$/, '') }, clock), p.input);
   }
+  (PINOUTS[board ?? '']?.keys ?? []).forEach((k, i) => {
+    if (!k.onBoard || (k.output && k.output !== device.id) || b.builtinButton(i)) return;
+    b.addBuiltin(`builtin-button-${i}`, new Button({ label: `Button ${'AB'[i] ?? i}` }, clock), i);
+  });
   for (const k of device.builtins ?? []) b.addBuiltin(`builtin-${k}`, createPart(k, { imu: 'IMU', buzzer: 'Buzzer', mic: 'Microphone' }[k], clock));
   b.load(saved);
   return b;
@@ -268,9 +276,9 @@ export class Bench {
   add(kind: PartKind): SimInput {
     let n = 1;
     while (this.list.some((e) => e.id === `${kind}-${n}`)) n++;
-    const count = this.list.filter((e) => e.part.kind === kind && !e.builtin).length + 1;
     const id = `${kind}-${n}`;
-    const part = createPart(kind, `${SHORT[kind]} ${count}`, this.clock);
+    // Numbered as its id is: a part added after one was taken off takes its number, not a sibling's.
+    const part = createPart(kind, `${SHORT[kind]} ${n}`, this.clock);
     part.name = id;
     this.list.push({ id, part });
     this.edited();
@@ -348,8 +356,10 @@ export class Bench {
       if (prefer.external && o.builtin) s -= 50;
       // A free part beats a busy one of the kind asked for: two "next" buttons shouldn't share one.
       if (inUse(o.connection)) s -= 30;
-      // Without a preference, controls take the plain controls first: buttons, encoders, pots.
-      if (!prefer.kind && ['button', 'knob', 'pot', 'touch'].includes(o.part.kind)) s += 2;
+      // Short of the kind asked for, controls take the plain controls first: buttons, encoders, pots;
+      // and your own parts before the board's (its IMU or mic isn't a second dial).
+      if (o.part.kind !== prefer.kind && ['button', 'knob', 'pot', 'touch'].includes(o.part.kind)) s += 2;
+      if (o.builtin && prefer.builtin === undefined) s -= 1;
       return s;
     };
     let best: (typeof opts)[number] | null = null;

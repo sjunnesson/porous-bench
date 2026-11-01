@@ -50,7 +50,10 @@ export interface DeviceProfile {
   /** ws2812: one-wire, 24 bits per LED at 800 kHz, the whole chain every time. qspi: 4 data lines.
    *  rgb: a parallel RGB panel the chip scans out of a frame buffer in PSRAM, 16 bits a pixel
    *  clock (hz); it has no RAM of its own. */
-  bus: { kind: 'spi' | 'qspi' | 'rgb' | 'i2c' | 'ws2812'; hz: number; i2cAddress?: number };
+  /** `flipMs`: a whole-frame flip as measured on the board with Bench's firmware, which a flip then
+   *  takes its share of (what it sends); unset, the time comes from `hz` alone. A real flip costs more
+   *  than its clock: the CPU feeding the bus, PSRAM, the firmware turning the picture. */
+  bus: { kind: 'spi' | 'qspi' | 'rgb' | 'i2c' | 'ws2812'; hz: number; i2cAddress?: number; flipMs?: number };
   /** Where the visible area sits inside controller RAM (what drivers call colstart/rowstart). */
   ram?: { width: number; height: number; offsetX: number; offsetY: number };
   /** setRotation() the board's firmware applies (e.g. M5StickC Plus2 runs landscape). Used for Resident apps. */

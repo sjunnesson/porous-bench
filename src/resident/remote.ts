@@ -107,10 +107,12 @@ export class SnapshotReader {
       const driver = DRIVERS[kind]!;
       if (part) snap.s[kind] = driver.mirror ? driver.mirror(part) : driver.read(part);
     }
-    const imu = bench.first<Imu>('imu');
+    // The IMU and radar too, only for an app that names them: the IMU's noise would make every update new.
+    const named = (kind: PartKind) => !this.modules || this.modules.has(kind);
+    const imu = named('imu') ? bench.first<Imu>('imu') : undefined;
     // Acceleration in g, then the rotation rate in °/s.
     if (imu) snap.s.imu = [...imu.accel().map((x) => round(x)), ...imu.gyro().map((x) => round(x, 1))];
-    const radar = bench.first<LD2410>('ld2410');
+    const radar = named('ld2410') ? bench.first<LD2410>('ld2410') : undefined;
     if (radar) {
       radar.read();
       snap.s.radar = {
@@ -180,6 +182,7 @@ const SAVED_KEY = 'bench:remote-devices';
 const PERIOD_MS = 100; // up to 10 updates a second, and only when something changed
 const HEARTBEAT_MS = 2000; // …or this often anyway, so a device that just connected catches up
 const MAX_BYTES = 1000; // Resident drops events over 1024 bytes
+const SEND_TIMEOUT_MS = 10_000; // a request the relay never answers would hold every update after it
 const bytes = (s: string) => new TextEncoder().encode(s).length;
 
 /** Sends to a real device through the relay, from this page's origin. */
@@ -188,6 +191,7 @@ async function send(deviceId: string, body: unknown): Promise<number> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
   });
   return res.status;
 }
@@ -217,6 +221,11 @@ export class RemoteMirror {
   message = '';
   sent = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Mirroring was asked for and not stopped: from the first push on, even before it lands or after it fails. */
+  private wanted = false;
+  /** After a failed update, the next waits this long (doubling up to the heartbeat), not 100 ms. */
+  private backoff = 0;
+  private retryAt = 0;
   private source: (() => MirrorSource) | null = null;
   private reader = new SnapshotReader();
   private last = '';
@@ -289,41 +298,52 @@ export class RemoteMirror {
   async start(app: { name: string; code: string }, source: NonNullable<RemoteMirror['source']>, opts: { display?: { id: string; name: string }; tz?: string } = {}): Promise<void> {
     if (!this.deviceId) return;
     const run = ++this.run;
+    this.wanted = true;
     this.source = source;
     this.reader = new SnapshotReader(modulesNamed(app.code));
     this.last = '';
     this.eventsSent = 0;
     this.waiting = new Set();
+    this.backoff = this.retryAt = 0;
     this.set('pushing', `Sending ${app.name}…`);
     try {
       if (opts.tz) await send(this.deviceId, { channel: 'bench', type: 'timezone', data: { tz: opts.tz } }).catch(() => 0);
       if (run !== this.run) return;
       const status = await send(this.deviceId, { channel: 'system', type: 'app', code: remoteApp(app.code), description: `${app.name} (from Bench)` });
-      if (run !== this.run || !this.result(status)) return;
+      if (run !== this.run) return;
+      if (!this.result(status)) return this.halt();
       this.remember(opts.display);
     } catch (e) {
       if (run !== this.run) return;
       this.set('error', `Couldn't reach the relay: ${e instanceof Error ? e.message : e}`);
-      return;
+      return this.halt();
     }
     this.set('live', `${app.name} is running on the device, driven by this bench.`);
     if (!this.timer) this.timer = setInterval(() => void this.tick(), PERIOD_MS);
   }
 
-  stop(): void {
-    this.run++;
+  /** The board didn't get the app: it still runs another, so this one's updates don't go. */
+  private halt(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  stop(): void {
+    this.run++;
+    this.wanted = false;
+    this.halt();
     this.source = null;
     this.set('off', '');
   }
 
+  /** Mirroring, or about to: a new run (another app, a restart) is pushed too. */
   get active(): boolean {
-    return this.timer !== null;
+    return this.wanted;
   }
 
   private async tick(): Promise<void> {
-    if (!this.source || this.inFlight) return;
+    // While an app is on its way, an update would go to the one it replaces.
+    if (!this.source || this.inFlight || this.status === 'pushing' || Date.now() < this.retryAt) return;
     const { controls, bench, buttons, gestures, touches, events } = this.source();
     const sent = this.eventsSent;
     const fresh = events?.filter((e) => e[0] > sent) ?? [];
@@ -349,14 +369,24 @@ export class RemoteMirror {
         this.waiting = new Set(offered.filter((k) => !(k in snap.s)));
         this.reader.confirm();
         this.sent++;
+        this.backoff = this.retryAt = 0;
         if (this.status !== 'live') this.set('live', 'Back in touch with the device.');
         else this.notify();
-      }
+      } else this.wait();
     } catch {
-      if (run === this.run) this.set('error', "Couldn't reach the relay. Still trying…");
+      if (run === this.run) {
+        this.set('error', "Couldn't reach the relay. Still trying…");
+        this.wait();
+      }
     } finally {
       this.inFlight = false;
     }
+  }
+
+  /** Try again later, and later still while the board stays out of reach. */
+  private wait(): void {
+    this.backoff = Math.min(HEARTBEAT_MS, this.backoff ? this.backoff * 2 : 2 * PERIOD_MS);
+    this.retryAt = Date.now() + this.backoff;
   }
 
   /** True when the relay delivered it. */

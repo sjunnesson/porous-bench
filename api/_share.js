@@ -33,7 +33,13 @@ export async function createShare(request, store, allow = async () => true) {
   if (request.method !== 'POST') return text('Send a setup with POST.', 405, { allow: 'POST' });
   if (Number(request.headers.get('content-length') ?? 0) > MAX_DATA) return text('That setup is too big to store.', 413);
   const who = request.headers.get('x-real-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'someone';
-  if (!(await allow(who))) return text('Too many shares for now: try again in a while.', 429);
+  let allowed;
+  try {
+    allowed = await allow(who);
+  } catch {
+    return text("Bench's share store can't be reached right now.", 503);
+  }
+  if (!allowed) return text('Too many shares for now: try again in a while.', 429);
   const data = (await request.text()).trim();
   if (data.length > MAX_DATA) return text('That setup is too big to store.', 413);
   if (!(await decodeSetup(data))) return text("That isn't a setup Bench can open.", 400);

@@ -16,7 +16,9 @@ export default {
   height: 480,
   controller: 'ST7701S',
   // 16-bit RGB at 12 MHz, as ESPHome runs it: no panel RAM, the chip scans a frame out of PSRAM.
-  bus: { kind: 'rgb', hz: 12_000_000 },
+  // A flip of every tile, turned, measured 30.5 ms (firmware/guition-4848s040/README.md): PSRAM's
+  // bandwidth, not the 12 MHz pixel clock, sets it.
+  bus: { kind: 'rgb', hz: 12_000_000, flipMs: 30.5 },
   // Bench's firmware turns the picture 270° (SCREEN_ROTATION), so up is away from a USB-C facing down.
   firmwareRotation: 3,
   // and copies only the 16×16 tiles drawn on since the last flip into the frame the panel scans.

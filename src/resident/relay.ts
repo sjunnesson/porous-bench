@@ -279,7 +279,7 @@ export class ResidentRelay {
         break;
       case 'app_event':
         if (!channel && typeof msg.name === 'string')
-          this.h.onEvent({ name: msg.name, data: (msg.data as Record<string, unknown>) ?? {}, channel: 'app' });
+          this.h.onEvent({ name: msg.name, data: msg.data && typeof msg.data === 'object' ? (msg.data as Record<string, unknown>) : {}, channel: 'app' });
         break;
       case 'forget':
         this.h.onForget();

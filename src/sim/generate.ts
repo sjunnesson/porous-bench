@@ -77,8 +77,9 @@ function inputsTable(controls: Control[]): string {
     if (c.dial) {
       const d = c.dial;
       const k = dials > 0 ? DIAL_KEYS[dials - 1] : undefined;
-      const keys = k ? `, keys = { down = ${lua(k[0])}, up = ${lua(k[1])} }` : '';
-      const note = dials === 0 ? ' -- keys ← →' : k ? ` -- keys ${k[2]}` : '';
+      // Past the key pairs, none: without its own, a dial would take the first's ← →.
+      const keys = k ? `, keys = { down = ${lua(k[0])}, up = ${lua(k[1])} }` : dials > 0 ? ', keys = { down = "", up = "" }' : '';
+      const note = dials === 0 ? ' -- keys ← →' : k ? ` -- keys ${k[2]}` : ' -- no keys left';
       dials++;
       return `  value(${lua(c.label)}, ${lua(d.unit)}, { min = ${d.min}, max = ${d.max}, step = ${d.step}, start = ${d.start}, connect = ${lua(c.connect)}${keys} }),${note}`;
     }

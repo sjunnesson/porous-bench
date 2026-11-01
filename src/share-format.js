@@ -23,8 +23,8 @@ const MAX_BYTES = 1 << 20;
  */
 const MAX_PARTS = 64;
 const MAX_CONNECTIONS = 128;
-const MAX_NAME = 80;
-const MAX_DESCRIPTION = 2000;
+export const MAX_NAME = 80;
+export const MAX_DESCRIPTION = 2000;
 
 /**
  * A setup as link data (`1.<base64url>`).
@@ -60,6 +60,7 @@ function asSetup(s) {
   const app = s?.app;
   const ok =
     short(s?.output?.kind) &&
+    (s.output.device === undefined || short(s.output.device)) &&
     short(s.board) &&
     Array.isArray(s.parts) &&
     s.parts.length <= MAX_PARTS &&

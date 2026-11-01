@@ -17,6 +17,7 @@ import { devices, outputDevice } from './sim/devices';
 import { type LogLine, SketchRun } from './sim/runner';
 import type { InputSpecs, Sketch } from './sim/sketch';
 import { backToMyBench, keepShared, type Opened, openedNote, type Setup, shareLink } from './share';
+import { MAX_DESCRIPTION, MAX_NAME } from './share-format';
 import { About } from './ui/About';
 import { Console } from './ui/Console';
 import { Copy } from './ui/Copy';
@@ -197,11 +198,11 @@ export default function App({ shared = null }: { shared?: Opened | string | null
   // The bench: the board's own hardware plus your parts. It outlives app switches (a new board
   // brings its own built-ins), and every add or remove is saved in this browser.
   const bench = useMemo(() => {
-    const b = boardBench(device, clock, loadParts());
+    const b = boardBench(device, clock, loadParts(), board.id);
     b.onEdit = saveParts;
     b.onRemove = forgetPart;
     return b;
-  }, [device, clock]);
+  }, [device, clock, board.id]);
 
   // Why Bench didn't start the app it ran last, if the page froze on it (see freeze.ts).
   const [notice, setNotice] = useState(() => {
@@ -236,34 +237,53 @@ export default function App({ shared = null }: { shared?: Opened | string | null
     };
   }, [entry.sketch, device, clock, bench, restarts, caps.libraries.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keyboard → the app's controls (each knows its keys).
+  // Keyboard → the app's controls (each knows its keys). A shortcut (⌘A, Ctrl+1) is the browser's,
+  // and a key held as the window loses focus is let go: its keyup goes elsewhere.
   useEffect(() => {
     if (!run) return;
-    const handler = (down: boolean) => (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest?.('input, select, textarea')) return;
+    const held = new Set<string>();
+    const press = (code: string, down: boolean) => {
       let handled = false;
-      for (const control of run.controls) if (control.handleKey(e.code, down)) handled = true;
-      if (handled) e.preventDefault();
+      for (const control of run.controls) if (control.handleKey(code, down)) handled = true;
+      if (handled && down) held.add(code);
+      if (!down) held.delete(code);
+      return handled;
     };
+    const handler = (down: boolean) => (e: KeyboardEvent) => {
+      if (down && (e.metaKey || e.ctrlKey || e.altKey)) return;
+      if ((e.target as HTMLElement).closest?.('input, select, textarea') && !held.has(e.code)) return;
+      if (press(e.code, down)) e.preventDefault();
+    };
+    const letGo = () => {
+      for (const code of [...held]) press(code, false);
+    };
+    const onHide = () => document.hidden && letGo();
     const onDown = handler(true);
     const onUp = handler(false);
     window.addEventListener('keydown', onDown);
     window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', letGo);
+    document.addEventListener('visibilitychange', onHide);
     return () => {
+      letGo();
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', letGo);
+      document.removeEventListener('visibilitychange', onHide);
     };
   }, [run]);
 
-  // Mirroring on a real device: it reads this run's controls, and a new run (another app, a
-  // restart) is sent to the device too.
-  const mirrorSource = useCallback(
-    () => ({ controls: run?.controls ?? [], bench, buttons: { a: run?.inputs.a, b: run?.inputs.b }, gestures: session.host?.gestureCounts(), touches: session.host?.touchEvents(), events: session.host?.sensorEvents() }),
-    [run, bench],
-  );
+  // Mirroring on a real device: it reads the current run's controls (through a ref, so a push that
+  // lands after a restart reads the new run), and a new run (another app, a restart) is sent too.
+  const runRef = useRef(run);
+  runRef.current = run;
+  const mirrorSource = useCallback(() => {
+    const r = runRef.current;
+    return { controls: r?.controls ?? [], bench, buttons: { a: r?.inputs.a, b: r?.inputs.b }, gestures: session.host?.gestureCounts(), touches: session.host?.touchEvents(), events: session.host?.sensorEvents() };
+  }, [bench]);
   useEffect(() => {
     if (run && remote.active) void remote.start({ name: entry.name.replace(/^▶ /, ''), code: entry.code }, mirrorSource, { display: { id: device.id, name: device.name }, tz: session.zone.name });
-  }, [run, mirrorSource]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [run]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What a share link carries: this output and board, your parts, the app's connections, and the app.
   const shareSetup = (): Setup => ({
@@ -271,7 +291,12 @@ export default function App({ shared = null }: { shared?: Opened | string | null
     board: board.id,
     parts: bench.specs(),
     connections: Object.fromEntries((run?.controls ?? []).map((c) => [c.name, c.source])),
-    app: entry.id === 'resident:live' && live ? { name: live.name, code: live.code, description: live.description } : { bundled: entry.id.replace(/^resident:/, '') },
+    // Your own app's name comes from a file name or a relay description, which can run past what a
+    // link may carry: cut to fit, or the link would never open.
+    app:
+      entry.id === 'resident:live' && live
+        ? { name: live.name.slice(0, MAX_NAME), code: live.code, description: live.description?.slice(0, MAX_DESCRIPTION) }
+        : { bundled: entry.id.replace(/^resident:/, '') },
   });
 
   const byTech = (['lcd', 'amoled', 'oled', 'epaper'] as const).map((tech) => ({ tech, list: devices.filter((d) => d.tech === tech) }));

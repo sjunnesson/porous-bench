@@ -217,7 +217,20 @@ function OBJ:set_style(props, selector)
   P.add_style(id, plain(props), floor(selector or 0))
   return self
 end
-function OBJ:remove_style(style, selector) P.remove_styles(alive(self, "remove_style")) return self end
+-- That style for that selector, as luavgl's; with no style, every style (lv_obj_remove_style's NULL).
+function OBJ:remove_style(style, selector)
+  local id = alive(self, "remove_style")
+  if type(style) ~= "table" or not style.__style then
+    P.remove_styles(id)
+    self.__styles = {}
+    return self
+  end
+  P.remove_styles(id, style.__sid, floor(selector or 0))
+  for i, s in ipairs(self.__styles or {}) do
+    if s == style then table.remove(self.__styles, i) break end
+  end
+  return self
+end
 function OBJ:set_parent(parent) P.set(alive(self, "set_parent"), { parent = alive(parent, "set_parent") }) return self end
 function OBJ:get_child_cnt() return P.child_count(alive(self, "get_child_cnt")) end
 function OBJ:set_flex_flow(flow) P.set(alive(self, "set_flex_flow"), { flex_flow = floor(flow) }) return self end

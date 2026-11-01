@@ -122,7 +122,7 @@ export class Pulse extends SimInput {
   /** Every sample up to now, and the beats the driver finds among them. */
   private pump() {
     const now = this.clock.now();
-    const due = Math.floor((now - this.t0) / SAMPLE_MS);
+    const due = Math.floor((now - this.t0) / SAMPLE_MS + 1e-9); // a sample exactly due is taken
     // A long gap: the FIFO only holds the last 32, and the driver only cares about the last few seconds.
     // It starts its count over, as a driver whose FIFO overflowed would: beats across the gap aren't a rate.
     if (due - this.next > 600) {

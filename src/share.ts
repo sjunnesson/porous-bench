@@ -137,7 +137,8 @@ export async function openShared(): Promise<Opened | string | null> {
   let why = "That share link didn't open: it's damaged or cut short (chat apps with a message limit cut long links off). Your bench is as it was.";
   if (short) {
     try {
-      const r = await fetch(`/api/share/${short[1]}`);
+      // The page waits on this before it draws: a store that doesn't answer mustn't leave it blank.
+      const r = await fetch(`/api/share/${short[1]}`, { signal: AbortSignal.timeout(8000) });
       if (r.ok) setup = await decodeSetup(await r.text());
       else if (r.status === 404) why = "That share link didn't open: nothing is stored under it. Check that the whole link was copied. Your bench is as it was.";
       else throw new Error(`HTTP ${r.status}`); // the server or its store is down: the link may be fine

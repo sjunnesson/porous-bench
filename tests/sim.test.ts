@@ -54,12 +54,16 @@ describe('device catalog', () => {
 });
 
 describe('font', () => {
-  it('has 5x7 glyphs for printable ASCII', () => {
+  it("is Adafruit GFX's classic font, a glyph per byte", () => {
     const a = font5x7.glyph('A');
     expect(a.w).toBe(5);
-    // 'A' = 7E 11 11 11 7E: top row has ink in the middle three columns only
-    expect(Array.from(a.bits.slice(0, 5))).toEqual([0, 1, 1, 1, 0]);
-    expect(font5x7.glyph('ÿ')).toEqual(font5x7.glyph('?'));
+    // Adafruit's 'A' = 7C 12 11 12 7C: a point at the top, ink in the middle column only
+    expect(Array.from(a.bits.slice(0, 5))).toEqual([0, 0, 1, 0, 0]);
+    // "°" is two bytes of UTF-8, so two glyphs, as a board prints it: the cursor moves 12 px.
+    const d = new Display(device('waveshare-esp32-c6-lcd-1.47'), pausedClock());
+    d.setCursor(0, 0);
+    d.print('°');
+    expect(d.getCursorX()).toBe(12);
   });
 });
 
@@ -99,13 +103,13 @@ describe('Display.show timing', () => {
     const d = new Display(device('waveshare-esp32-c6-lcd-1.47'), clock);
     const t0 = clock.now();
     await settle(clock, d.show(), 0.5);
-    // 172*320*2 bytes + 11 command bytes at 80 MHz ≈ 11.0 ms
-    expect(clock.now() - t0).toBeGreaterThanOrEqual(11);
-    expect(clock.now() - t0).toBeLessThan(12);
+    // A full push as measured on the board, 30.6 ms (80 MHz alone would make it 11.0)
+    expect(clock.now() - t0).toBeGreaterThanOrEqual(30.6);
+    expect(clock.now() - t0).toBeLessThan(31.5);
     d.fillRect(0, 0, 10, 10, colors.RED);
     const t1 = clock.now();
     await settle(clock, d.show(), 0.01);
-    expect(clock.now() - t1).toBeLessThan(0.1);
+    expect(clock.now() - t1).toBeLessThan(0.2); // the one 16×16 tile it's in: its share of the push, ~0.15 ms
   });
 
   it('costs only the tiles drawn on, on a display whose firmware flips tiles', async () => {
@@ -113,9 +117,9 @@ describe('Display.show timing', () => {
     const d = new Display(device('guition-esp32-s3-4848s040'), clock);
     let t0 = clock.now();
     await settle(clock, d.show(), 0.5);
-    // The whole 480×480 frame: a pixel a clock at 12 MHz ≈ 19.2 ms.
-    expect(clock.now() - t0).toBeGreaterThan(19);
-    expect(clock.now() - t0).toBeLessThan(20);
+    // The whole 480×480 frame, as measured on the board: 30.5 ms (a pixel a clock at 12 MHz would be 19.2).
+    expect(clock.now() - t0).toBeGreaterThan(30);
+    expect(clock.now() - t0).toBeLessThan(31);
     // Two squares in opposite corners: the box round them is the whole frame, but they're two tiles.
     d.fillRect(0, 0, 10, 10, colors.RED);
     d.fillRect(470, 470, 10, 10, colors.RED);

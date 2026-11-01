@@ -66,7 +66,12 @@ export function minifyLua(src: string, spaced = false): string {
     }
     if (c === '"' || c === "'") {
       let j = i + 1;
-      while (j < src.length && src[j] !== c && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1;
+      while (j < src.length && src[j] !== c && src[j] !== '\n') {
+        if (src[j] !== '\\') j++;
+        // `\z` skips the white space after it, line breaks too; `\` before CRLF is one escaped break.
+        else if (src[j + 1] === 'z') for (j += 2; j < src.length && /\s/.test(src[j]); ) j++;
+        else j += (src[j + 1] === '\r' && src[j + 2] === '\n') || (src[j + 1] === '\n' && src[j + 2] === '\r') ? 3 : 2;
+      }
       put(src.slice(i, j + 1));
       i = j + 1;
       continue;
@@ -81,12 +86,12 @@ export function minifyLua(src: string, spaced = false): string {
     if (c === '\n') {
       lineStart = true;
       gap = false;
-      out += c;
+      // The blank lines comments leave behind go; those inside a long string were copied whole above.
+      if (out && !out.endsWith('\n')) out += c;
     } else {
       put(c);
     }
     i++;
   }
-  // The blank lines comments leave behind.
-  return out.replace(/\n{2,}/g, '\n').replace(/^\n/, '');
+  return out;
 }

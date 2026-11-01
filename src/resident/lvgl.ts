@@ -28,7 +28,6 @@ interface Node {
   styles: StyleEntry[];
   flags: number;
   states: number;
-  alignTo?: { base: number | null; type: number; x: number; y: number };
   // Layout result, in screen coordinates.
   x: number;
   y: number;
@@ -189,8 +188,39 @@ export class LvglScreen {
     return n ? (n.props[key] ?? n.theme[key]) : undefined;
   }
 
-  alignTo(id: number, base: number | null, type: number, x: number, y: number): void {
-    this.get(id).alignTo = { base, type, x, y };
+  /**
+   * As lv_obj_align_to: placed once, from the layout as it is now, inside the base's content box (or
+   * around the base, for the OUT_ alignments), and from then on an ordinary top-left position: it
+   * doesn't follow the base, and a later align or x moves it.
+   */
+  alignTo(id: number, baseId: number | null, type: number, xOfs: number, yOfs: number): void {
+    const n = this.get(id);
+    const parent = n.parent;
+    if (!parent) return;
+    this.layout();
+    const base = baseId != null ? this.get(baseId) : parent;
+    const bp = this.pads(base);
+    const pp = this.pads(parent);
+    const cw = base.w - bp.l - bp.r;
+    const ch = base.h - bp.t - bp.b;
+    const half = (v: number) => Math.trunc(v / 2);
+    const inX = { left: bp.l, mid: half(cw) - half(n.w) + bp.l, right: cw - n.w + bp.l };
+    const inY = { top: bp.t, mid: half(ch) - half(n.h) + bp.t, bottom: ch - n.h + bp.t };
+    const outX = { left: -n.w, start: 0, mid: half(base.w) - half(n.w), end: base.w - n.w, right: base.w };
+    const outY = { top: -n.h, start: 0, mid: half(base.h) - half(n.h), end: base.h - n.h, bottom: base.h };
+    const at: Record<number, [number, number]> = {
+      1: [inX.left, inY.top], 2: [inX.mid, inY.top], 3: [inX.right, inY.top],
+      4: [inX.left, inY.bottom], 5: [inX.mid, inY.bottom], 6: [inX.right, inY.bottom],
+      7: [inX.left, inY.mid], 8: [inX.right, inY.mid], 9: [inX.mid, inY.mid],
+      10: [outX.start, outY.top], 11: [outX.mid, outY.top], 12: [outX.end, outY.top],
+      13: [outX.start, outY.bottom], 14: [outX.mid, outY.bottom], 15: [outX.end, outY.bottom],
+      16: [outX.left, outY.start], 17: [outX.left, outY.mid], 18: [outX.left, outY.end],
+      19: [outX.right, outY.start], 20: [outX.right, outY.mid], 21: [outX.right, outY.end],
+    };
+    const [x, y] = at[type] ?? [bp.l, bp.t];
+    n.props.align = 1;
+    n.props.x = x + xOfs + base.x - parent.x - pp.l;
+    n.props.y = y + yOfs + base.y - parent.y - pp.t;
     this.dirty = true;
   }
 
@@ -275,16 +305,20 @@ export class LvglScreen {
   getState(id: number): number {
     return this.get(id).states;
   }
-  removeStyles(id: number): void {
-    this.get(id).styles = [];
+  /** Every style, or (`sid`) that style for that selector only. */
+  removeStyles(id: number, sid?: number, selector = 0): void {
+    const n = this.get(id);
+    n.styles = sid === undefined ? [] : n.styles.filter((e) => !(e.sid === sid && e.selector === selector));
     this.dirty = true;
   }
-  /** x1, y1, x2, y2 (inclusive, like lv_area_t) and the position within the parent. */
+  /** x1, y1, x2, y2 (inclusive, like lv_area_t) and the position within the parent's content box
+   *  (inside its padding and border), as lv_obj_get_x and _get_y give it. */
   coords(id: number): number[] {
     this.layout();
     const n = this.get(id);
     const p = n.parent;
-    return [n.x, n.y, n.x + n.w - 1, n.y + n.h - 1, p ? n.x - p.x : n.x, p ? n.y - p.y : n.y];
+    const pad = p ? this.pads(p) : { l: 0, t: 0 };
+    return [n.x, n.y, n.x + n.w - 1, n.y + n.h - 1, p ? n.x - p.x - pad.l : n.x, p ? n.y - p.y - pad.t : n.y];
   }
   parentOf(id: number): number | undefined {
     return this.get(id).parent?.id;
@@ -326,14 +360,17 @@ export class LvglScreen {
     const last = this.last ?? new Uint16Array(W * H).fill(0xffff);
     const first = !this.last;
     let changed = false;
-    for (let i = 0, p = 0; p < W * H; p++, i += 4) {
-      const c = color565(data[i], data[i + 1], data[i + 2]);
-      if (first || c !== last[p]) {
-        last[p] = c;
-        this.display.drawPixel(p % W, (p / W) | 0, c);
-        changed = true;
+    // LVGL's flush writes the frame straight to the panel's buffer: an lgfx clip doesn't cut it.
+    this.display.unclipped(() => {
+      for (let i = 0, p = 0; p < W * H; p++, i += 4) {
+        const c = color565(data[i], data[i + 1], data[i + 2]);
+        if (first || c !== last[p]) {
+          last[p] = c;
+          this.display.drawPixel(p % W, (p / W) | 0, c);
+          changed = true;
+        }
       }
-    }
+    });
     this.last = last;
     return changed;
   }
@@ -362,9 +399,13 @@ export class LvglScreen {
     return ids;
   }
 
+  /** As LVGL: a screen keeps no parent, and its own parent, itself or one of its own children isn't
+   *  a new one (LVGL warns and leaves it; a loop would hang the layout). */
   private reparent(n: Node, parentId: number) {
     const p = this.get(parentId);
-    if (n.parent) n.parent.children = n.parent.children.filter((c) => c !== n);
+    if (!n.parent || p === n.parent) return;
+    for (let a: Node | null = p; a; a = a.parent) if (a === n) return;
+    n.parent.children = n.parent.children.filter((c) => c !== n);
     n.parent = p;
     p.children.push(n);
   }
@@ -560,9 +601,10 @@ export class LvglScreen {
     return (this.num(n, 'flex_flow') & 1) === 0;
   }
 
-  /** Where an alignment puts a box of w×h inside (or around) a box. */
+  /** Where a style alignment puts a box of w×h inside a box, as lv_obj_refr_pos does: each half
+   *  truncated, and the OUT_ alignments (only align_to's) as TOP_LEFT. */
   private aligned(type: number, bx: number, by: number, bw: number, bh: number, w: number, h: number): [number, number] {
-    const mid = (a: number, b: number) => Math.floor((a - b) / 2);
+    const mid = (a: number, b: number) => Math.trunc(a / 2) - Math.trunc(b / 2);
     switch (type) {
       case 2: return [bx + mid(bw, w), by];
       case 3: return [bx + bw - w, by];
@@ -572,18 +614,6 @@ export class LvglScreen {
       case 7: return [bx, by + mid(bh, h)];
       case 8: return [bx + bw - w, by + mid(bh, h)];
       case 9: return [bx + mid(bw, w), by + mid(bh, h)];
-      case 10: return [bx, by - h];
-      case 11: return [bx + mid(bw, w), by - h];
-      case 12: return [bx + bw - w, by - h];
-      case 13: return [bx, by + bh];
-      case 14: return [bx + mid(bw, w), by + bh];
-      case 15: return [bx + bw - w, by + bh];
-      case 16: return [bx - w, by];
-      case 17: return [bx - w, by + mid(bh, h)];
-      case 18: return [bx - w, by + bh - h];
-      case 19: return [bx + bw, by];
-      case 20: return [bx + bw, by + mid(bh, h)];
-      case 21: return [bx + bw, by + bh - h];
       default: return [bx, by];
     }
   }
@@ -617,21 +647,9 @@ export class LvglScreen {
       const yo = coord(this.prop(c, 'y'), ch);
       const ox = typeof xo === 'number' ? xo : 0;
       const oy = typeof yo === 'number' ? yo : 0;
-      let x: number;
-      let y: number;
-      const base = c.alignTo?.base != null ? this.nodes.get(c.alignTo.base) : null;
-      if (c.alignTo && (base || c.alignTo.base == null)) {
-        const b = base ?? n;
-        [x, y] = this.aligned(c.alignTo.type, b.x, b.y, b.w, b.h, c.w, c.h);
-        x += c.alignTo.x;
-        y += c.alignTo.y;
-      } else {
-        [x, y] = this.aligned(this.num(c, 'align', 1), cx, cy, cw, ch, c.w, c.h);
-        x += ox;
-        y += oy;
-      }
-      c.x = x;
-      c.y = y;
+      const [x, y] = this.aligned(this.num(c, 'align', 1), cx, cy, cw, ch, c.w, c.h);
+      c.x = x + ox;
+      c.y = y + oy;
     }
     if (flex) this.flex(n, cx, cy, cw, ch, n.children.filter(inFlow));
     for (const c of n.children) {
@@ -650,24 +668,26 @@ export class LvglScreen {
     const mainPlace = this.num(n, 'flex_main_place');
     const crossPlace = this.num(n, 'flex_cross_place');
     const list = reverse ? [...kids].reverse() : kids;
-    const room = row ? cw : ch;
-    const used = list.reduce((s, c) => s + (row ? c.w : c.h), 0);
-    let free = room - used - gap * Math.max(0, list.length - 1);
+    const count = list.length;
+    // As lv_flex.c's place_content, in whole pixels: what's left over, and where the items start.
+    const free = (row ? cw : ch) - list.reduce((s, c) => s + (row ? c.w : c.h), 0) - gap * Math.max(0, count - 1);
+    const place = count <= 1 && (mainPlace === 3 || mainPlace === 4) ? 2 : mainPlace;
     let start = 0;
-    let between = gap;
-    if (mainPlace === 1) start = free; // END
-    else if (mainPlace === 2) start = free / 2; // CENTER
-    else if (mainPlace === 3 && list.length) { between = gap + free / (list.length + 1); start = between - gap; } // SPACE_EVENLY
-    else if (mainPlace === 4 && list.length) { between = gap + free / list.length; start = (between - gap) / 2; } // SPACE_AROUND
-    else if (mainPlace === 5 && list.length > 1) between = gap + free / (list.length - 1); // SPACE_BETWEEN
-    free = 0;
+    let spread = 0;
+    if (place === 1) start = free; // END
+    else if (place === 2) start = Math.trunc(free / 2); // CENTER
+    else if (place === 3) start = spread = Math.trunc(free / (count + 1)); // SPACE_EVENLY
+    else if (place === 4) start = Math.trunc((spread = Math.trunc(free / count)) / 2); // SPACE_AROUND
+    else if (place === 5 && count > 1) spread = Math.trunc(free / (count - 1)); // SPACE_BETWEEN
+    // Across: one track, the whole content box; centred from it rounded up to even, as LVGL does.
+    const track = row ? ch : cw;
     let pos = start;
     for (const c of list) {
-      const crossRoom = (row ? ch : cw) - (row ? c.h : c.w);
-      const cross = crossPlace === 1 ? crossRoom : crossPlace === 2 ? crossRoom / 2 : 0;
-      c.x = Math.round(row ? cx + pos : cx + cross);
-      c.y = Math.round(row ? cy + cross : cy + pos);
-      pos += (row ? c.w : c.h) + between;
+      const size = row ? c.h : c.w;
+      const cross = crossPlace === 1 ? track - size : crossPlace === 2 ? Math.trunc((((track + 1) & ~1) - size) / 2) : 0;
+      c.x = row ? cx + pos : cx + cross;
+      c.y = row ? cy + cross : cy + pos;
+      pos += (row ? c.w : c.h) + gap + spread;
     }
   }
 

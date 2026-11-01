@@ -29,6 +29,9 @@ export class Display extends Gfx {
   readonly stats: DisplayStats = { shows: 0, bytes: 0, busMs: 0, refreshMs: 0, fullRefreshes: 0 };
   private partialsSinceFull = 0;
   private everRefreshed = false;
+  /** When the bus is free again: a flip shown while another is still being sent waits its turn, as
+   *  each push on the board blocks until it's done. */
+  private busUntil = 0;
   // E-paper, driven the way its firmware drives it: one refresh at a time.
   /** The newest frame shown while the panel was busy: the only one that will reach the glass. */
   private epaperNext: Uint8Array | null = null;
@@ -38,6 +41,8 @@ export class Display extends Gfx {
   private epaperLast: Uint8Array | null = null;
   /** The refresh loop while it runs: resolves once no frame is waiting. */
   private epaperRun: Promise<void> | null = null;
+  /** Whether that loop will still look for a waiting frame: false from the moment it stops looking. */
+  private epaperLooping = false;
   private epaperFb: Framebuffer | null = null;
 
   constructor(
@@ -45,8 +50,10 @@ export class Display extends Gfx {
     private clock: SimClock,
     private signal?: AbortSignal,
   ) {
-    super(new Framebuffer(profile.width, profile.height, profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led' ? 'rgb565' : 'mono', profile.flip?.tile ?? 0));
+    const format = profile.tech === 'led' ? 'rgb888' : profile.tech === 'lcd' || profile.tech === 'amoled' ? 'rgb565' : 'mono';
+    super(new Framebuffer(profile.width, profile.height, format, profile.flip?.tile ?? 0));
     this.panel = createPanel(profile);
+    this.adafruitLines = profile.tech === 'epaper' || profile.tech === 'oled'; // a GFXcanvas1's lines
     this.touch = profile.touch ? new TouchScreen(profile.width, profile.height, () => clock.now()) : null;
   }
 
@@ -54,7 +61,7 @@ export class Display extends Gfx {
     return this.profile.tech;
   }
   isColor(): boolean {
-    return this.fb.format === 'rgb565';
+    return this.fb.format !== 'mono';
   }
   hasPendingChanges(): boolean {
     return this.fb.isDirty() || this.epaperNext !== null;
@@ -101,10 +108,18 @@ export class Display extends Gfx {
 
     const bytes = this.transferBytes(region, false, tilePixels ?? region.w * region.h);
     const busMs = this.transferMs(bytes);
-    this.panel.write(this.fb, region); // the whole box: what it adds is unchanged, so only the time differs
     this.stats.shows++;
     this.stats.bytes += bytes;
     this.stats.busMs += busMs;
+    const now = this.clock.now();
+    const start = Math.max(now, this.busUntil);
+    this.busUntil = start + busMs;
+    if (start > now) {
+      // The bus is still sending the last flip: this one goes after it, as it is now.
+      const frame = this.fb.copy();
+      await this.clock.sleep(start - now, this.signal);
+      this.panel.write(frame, region);
+    } else this.panel.write(this.fb, region); // the whole box: what it adds is unchanged, so only the time differs
     await this.clock.sleep(busMs, this.signal);
   }
 
@@ -119,8 +134,12 @@ export class Display extends Gfx {
     if (dirty || mode !== 'auto') {
       this.epaperNext = (this.fb.data as Uint8Array).slice();
       if (mode !== 'auto') this.epaperMode = mode;
-      if (!this.epaperRun) {
-        this.epaperRun = this.runEpaper().finally(() => (this.epaperRun = null));
+      if (!this.epaperLooping) {
+        this.epaperLooping = true;
+        const run: Promise<void> = this.runEpaper().finally(() => {
+          if (this.epaperRun === run) this.epaperRun = null;
+        });
+        this.epaperRun = run;
       }
     }
     return this.epaperRun ?? Promise.resolve();
@@ -130,19 +149,29 @@ export class Display extends Gfx {
     const { width, height } = this.profile;
     const whole = { x: 0, y: 0, w: width, h: height };
     this.epaperFb ??= new Framebuffer(width, height, 'mono');
+    try {
+      await this.refreshEpaper(whole, this.epaperFb);
+    } finally {
+      this.epaperLooping = false; // a frame shown from now on starts a new run
+    }
+  }
+
+  private async refreshEpaper(whole: Rect, fb: Framebuffer): Promise<void> {
     while (this.epaperNext) {
       const frame = this.epaperNext;
       this.epaperNext = null;
       const mode = this.epaperMode;
       this.epaperMode = 'auto';
+      // The frame already on the glass isn't sent again, even when a full refresh is due; only one
+      // asked for as 'full' is (as the firmware's EpdFrame does).
+      if (mode !== 'full' && this.epaperLast && sameBytes(frame, this.epaperLast)) continue;
       const full = !this.everRefreshed || mode === 'full' || (mode === 'auto' && this.needsFullRefresh());
-      if (!full && this.epaperLast && sameBytes(frame, this.epaperLast)) continue;
       this.epaperLast = frame;
 
       const bytes = this.transferBytes(whole, full);
       const busMs = this.transferMs(bytes);
-      this.epaperFb.data.set(frame);
-      this.panel.write(this.epaperFb, whole);
+      fb.data.set(frame);
+      this.panel.write(fb, whole);
       this.stats.shows++;
       this.stats.bytes += bytes;
       this.stats.busMs += busMs;
@@ -181,7 +210,12 @@ export class Display extends Gfx {
   }
 
   private transferMs(bytes: number): number {
-    const { kind, hz } = this.profile.bus;
+    const { kind, hz, flipMs } = this.profile.bus;
+    // Measured on the board: a flip takes its share of a whole frame's time.
+    if (flipMs) {
+      const { width, height } = this.profile;
+      return (flipMs * bytes) / this.transferBytes({ x: 0, y: 0, w: width, h: height }, false);
+    }
     // WS2812: 1.25 µs a bit, then a ≥280 µs low to latch.
     if (kind === 'ws2812') return ((bytes * 8) / hz) * 1000 + 0.3;
     // I2C: 9 clocks per byte plus address+control bytes for every ~32-byte chunk.

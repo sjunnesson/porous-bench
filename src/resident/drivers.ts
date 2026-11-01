@@ -200,7 +200,8 @@ export const DRIVERS: Partial<Record<PartKind, PartDriver>> = { light, pir, clim
 /** The sensors' modules an app's code names (not in a comment): the ones whose readings it can use. */
 export function modulesNamed(app: string): Set<PartKind> {
   const code = minifyLua(app);
-  return new Set((Object.keys(DRIVERS) as PartKind[]).filter((k) => new RegExp(`\\b${k}\\b`).test(code)));
+  const kinds = [...(Object.keys(DRIVERS) as PartKind[]), 'imu', 'ld2410'] as PartKind[];
+  return new Set(kinds.filter((k) => new RegExp(`\\b${k}\\b`).test(code)));
 }
 
 // ---- packing arrays for the relay -------------------------------------------------------------

@@ -26,14 +26,14 @@ export class AppStore {
     if (!saved || saved.ns !== ns) this.write();
   }
 
+  // Only the app's own keys: "constructor" or "__proto__" are keys like any other.
   get(key: string): Scalar | undefined {
-    return this.slot.data[key];
+    return Object.hasOwn(this.slot.data, key) ? this.slot.data[key] : undefined;
   }
 
   set(key: string, value: Scalar | null | undefined): boolean {
-    const next = { ...this.slot.data };
-    if (value === null || value === undefined) delete next[key];
-    else next[key] = value;
+    const kept = Object.entries(this.slot.data).filter(([k]) => k !== key);
+    const next: Record<string, Scalar> = Object.fromEntries(value === null || value === undefined ? kept : [...kept, [key, value]]);
     if (size({ ns: this.slot.ns, data: next }) > BUDGET) {
       if (!this.warned.has(key)) {
         this.warned.add(key);
@@ -79,4 +79,5 @@ export class AppStore {
   }
 }
 
-const size = (s: Slot) => new TextEncoder().encode(JSON.stringify(s)).length;
+/** What the board counts against the budget: the slot as it writes it, `{"ns":…,"kv":…}`. */
+const size = (s: Slot) => new TextEncoder().encode(JSON.stringify({ ns: s.ns, kv: s.data })).length;

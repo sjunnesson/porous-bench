@@ -68,7 +68,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         sensor: (kind) => sensor(kind),
         present: (kind) => bench.first(kind),
         libraries,
-        store: new AppStore(app.storeNs ?? 'app', true, (key) => {
+        store: new AppStore(app.storeNs || 'app', true, (key) => { // no namespace, or an empty one: the shared slot, as on the board
           warn(`store: '${key}' rejected, over the 2048-byte budget`);
           session.telemetry('store_full', { error: key });
         }),
@@ -80,16 +80,17 @@ export function residentSketch(app: ResidentAppSource): Sketch {
           return r;
         },
       };
-      const { host, error: bootError } = await ResidentHost.boot(await luaFactory(), board, app);
+      const { host, error: bootError, running } = await ResidentHost.boot(await luaFactory(), board, app);
       // Stopped while it booted (another app came in): the next app's host is the session's now.
       if (stopped()) {
         host.close();
         return;
       }
-      if (bootError) {
+      if (bootError && !running) {
         host.close();
         throw new Error(bootError);
       }
+      if (bootError) error(bootError); // reported, and the app runs on, as on the board
       hosts.set(display, host);
       session.host = host;
       if (app.live) session.persistLive(app.live);

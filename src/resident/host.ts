@@ -5,7 +5,7 @@
 
 import qrcode from 'qrcode-generator';
 import type { LuaEngine, LuaFactory } from 'wasmoon';
-import { color565, colors, rgb565ToRgb } from '../sim/color';
+import { color565, colors } from '../sim/color';
 import { DIAL_VIA, type Dial, type DialOptions, TRIGGER_VIA, type Trigger, type TriggerOptions } from '../sim/controls/controls';
 import type { LD2410, LD2410Options } from '../sim/inputs/ld2410';
 import type { Library } from '../sim/boards';
@@ -84,6 +84,8 @@ export interface ResidentApp {
 
 interface Api {
   load(code: string, generation?: string): string | null;
+  /** The app defined a callback: it runs, even after an error in its top-level code. */
+  loaded(): boolean;
   chunk(code: string): string | null;
   has(name: string): boolean;
   call(name: string, timeMs: number, arg?: unknown): string | null;
@@ -93,12 +95,14 @@ interface Api {
   halted(): boolean;
 }
 
-const RING = 8;
+/** The board's event ring has 8 slots and keeps one free: 7 events wait at most. */
+const RING = 7;
 /** Resident's default on_tick interval; a device profile's tickMs overrides it, as its firmware does (Bench's colour boards tick at 33). */
 const TICK_MS = 100;
 /** LV_DEF_REFR_PERIOD on the reference board: LVGL's anim timer and display refresh run this often. */
 const LV_PERIOD_MS = 33;
-const EVENT_JSON_MAX = 1024;
+/** The most an event's JSON may be, incoming or sent, in bytes, as the board takes it. */
+const EVENT_JSON_MAX = 1023;
 /**
  * A ceiling on an app's Lua heap, to keep a runaway allocation from taking the tab down. Not a model
  * of a board: the most memory any board Bench knows gives an app is 8 MB of PSRAM.
@@ -111,8 +115,8 @@ let raisedSeq = 0;
 const I32 = (v: number) => v >= -2147483648 && v <= 2147483647;
 
 /** 0xRRGGBB → RGB565 (LovyanGFX reads uint32 colours as RGB888). */
-const c24 = (c: number) => color565((c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff);
-const c565 = (r: number, g: number, b: number) => color565(r & 0xff, g & 0xff, b & 0xff);
+const rgb24 = (c: number) => color565((c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff);
+const rgb565 = (r: number, g: number, b: number) => color565(r & 0xff, g & 0xff, b & 0xff);
 
 export class ResidentHost {
   private api!: Api;
@@ -158,8 +162,12 @@ export class ResidentHost {
     this.touchSeq = board.display.touch?.seq ?? 0; // touches from before the app aren't its own
   }
 
-  /** Compile and init an app. Resolves with the host, or with the compile/init error. */
-  static async boot(factory: LuaFactory, board: ResidentBoard, app: ResidentApp): Promise<{ host: ResidentHost; error?: string }> {
+  /**
+   * Compile and init an app. Resolves with the host, and the error if there was one. `running`: the
+   * app runs on in spite of it, as on the board: an error in its top-level code keeps the callbacks
+   * it defined before it, and one in init is reported while on_tick and on_event carry on.
+   */
+  static async boot(factory: LuaFactory, board: ResidentBoard, app: ResidentApp): Promise<{ host: ResidentHost; error?: string; running?: boolean }> {
     const engine = await factory.createEngine({ enableProxy: false, injectObjects: false, openStandardLibs: true, traceAllocations: true });
     engine.global.setMemoryMax(LUA_HEAP_MAX);
     const host = new ResidentHost(engine, board);
@@ -172,15 +180,13 @@ export class ResidentHost {
     const loadErr = host.api.load(app.code, app.generationId);
     if (loadErr) {
       board.telemetry('compile_error', { error: loadErr });
-      return { host, error: loadErr };
+      if (!host.api.loaded()) return { host, error: loadErr };
     }
     board.telemetry('app_compiled');
     const initErr = host.api.call('init', 0);
-    if (initErr) {
-      board.telemetry('runtime_error', { error: initErr });
-      return { host, error: initErr };
-    }
-    return { host };
+    if (initErr) board.telemetry('runtime_error', { error: initErr });
+    const error = loadErr ?? initErr ?? undefined;
+    return error ? { host, error, running: true } : { host };
   }
 
   get timeMs(): number {
@@ -192,7 +198,7 @@ export class ResidentHost {
     if (!this.api.has('on_event')) return false;
     // Bytes, as the device counts them, not UTF-16 units.
     if (new TextEncoder().encode(JSON.stringify(e.data ?? {})).length > EVENT_JSON_MAX) return false;
-    this.ring.push({ ts_ms: Math.floor(this.board.now()), ...e, data: e.data ?? {} });
+    this.ring.push({ ...e, ts_ms: e.ts_ms ?? Math.floor(this.board.now()), data: e.data ?? {} });
     if (this.ring.length > RING) this.ring.shift();
     return true;
   }
@@ -473,18 +479,27 @@ export class ResidentHost {
     this.track(d.show());
   }
 
+  /**
+   * As the boards' firmware draws it (CanvasLgfxTarget): placed by the datum from 6 px a byte and
+   * 8 rows, in whole pixels, then printed from there without wrapping, so the cursor ends after it
+   * and a "\n" starts a line at x = 0.
+   */
   private drawString(s: string, x: number, y: number) {
     const d = this.board.display;
-    const w = d.textWidth(s);
-    const h = d.fontHeight();
+    const size = d.textSize;
+    const w = new TextEncoder().encode(s).length * 6 * size;
+    const h = 8 * size;
     const datum = this.datum;
     const col = datum & 3;
-    const dx = col === 1 ? w / 2 : col === 2 ? w : 0;
+    const dx = col === 1 ? Math.trunc(w / 2) : col === 2 ? w : 0;
     let dy = 0;
-    if (datum >= 16) dy = (h * 7) / 8; // baseline of the 8-px font
-    else if ((datum & 12) === 4) dy = h / 2;
+    if (datum >= 16) dy = Math.trunc((h * 7) / 8); // the 8-px font's baseline
+    else if ((datum & 12) === 4) dy = Math.trunc(h / 2);
     else if ((datum & 12) === 8) dy = h;
-    d.drawString(s, Math.round(x - dx), Math.round(y - dy));
+    d.setCursor(x - dx, y - dy);
+    d.setTextWrap(false);
+    d.print(s);
+    d.setTextWrap(true);
   }
 
   private screenInfo() {
@@ -506,6 +521,14 @@ export class ResidentHost {
     };
   }
 
+  /** Summer time: an offset past the year's standard one (the lesser of January's and July's, so
+   *  southern zones count too). */
+  private summer(year: number, gmtoff: number): boolean {
+    const zone = this.board.zone();
+    const standard = Math.min(zone.at(Date.UTC(year, 0, 1) / 1000).gmtoff, zone.at(Date.UTC(year, 6, 1) / 1000).gmtoff);
+    return gmtoff > standard;
+  }
+
   private tm(secs: number, local: boolean): Tm {
     if (!local) return breakDown(secs, 0, 'UTC');
     const z = this.board.zone().at(secs);
@@ -517,6 +540,12 @@ export class ResidentHost {
   private bridge() {
     const b = this.board;
     const d = b.display;
+    // A 1-bit panel inks a colour by its own 24-bit luminance, as the e-paper board's ink() does, not
+    // once it's rounded to RGB565 (0x00A8F8 is ink on the board, and would be paper after rounding).
+    const ink = (r: number, g: number, bl: number) => (r * 299 + g * 587 + bl * 114 >= 128_000 ? colors.WHITE : colors.BLACK);
+    const byte = (v: number) => Math.min(255, Math.max(0, v));
+    const c24 = d.isColor() ? rgb24 : (c: number) => ink((c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff);
+    const c565 = d.isColor() ? rgb565 : (r: number, g: number, bl: number) => ink(byte(r), byte(g), byte(bl));
     const now = () => Math.floor(Date.now() / 1000);
     return {
       log: (level: 'info' | 'warn' | 'error', text: string) => {
@@ -583,7 +612,7 @@ export class ResidentHost {
       sc_text: (x: number, y: number, s: string, size: number, r: number, g: number, bl: number) => {
         d.setCursor(x, y);
         d.setTextColor(c565(r, g, bl));
-        d.setTextSize(Math.max(1, size));
+        d.setTextSize(Math.min(16, Math.max(1, size))); // as the boards clamp it
         d.print(s);
       },
       sc_fill_rect: (x: number, y: number, w: number, h: number, r: number, g: number, bl: number) => d.fillRect(x, y, w, h, c565(r, g, bl)),
@@ -631,6 +660,7 @@ export class ResidentHost {
         const o = checkOpts('dial.new', opts, { label: 'string', min: 'number', max: 'number', step: 'number', start: 'number', wrap: 'boolean', via: 'string', connect: 'string', keys: 'object' });
         if (typeof o === 'string') return o;
         if (o.via !== undefined && !(String(o.via) in DIAL_VIA)) return `dial.new: via must be one of ${Object.keys(DIAL_VIA).map((v) => `"${v}"`).join(', ')}`;
+        if (o.step !== undefined && !((o.step as number) > 0)) return 'dial.new: step must be more than 0';
         try {
           const dial = b.dial(name, { label: titleCase(name), ...o } as DialOptions);
           this.dials.set(name, { dial, last: dial.value });
@@ -726,7 +756,7 @@ export class ResidentHost {
       lv_add_style: (id: number, props: Record<string, unknown>, selector?: number, sid?: number | null) =>
         this.lv!.addStyle(id, props ?? {}, selector ?? 0, sid),
       lv_update_style: (sid: number, props: Record<string, unknown>) => this.lv!.updateStyle(sid, props ?? {}),
-      lv_remove_styles: (id: number) => this.lv!.removeStyles(id),
+      lv_remove_styles: (id: number, sid?: number, selector?: number) => this.lv!.removeStyles(id, sid ?? undefined, selector ?? 0),
       lv_coords: (id: number) => this.lv!.coords(id),
       lv_parent: (id: number) => this.lv!.parentOf(id),
       lv_child_count: (id: number) => this.lv!.childCount(id),
@@ -740,16 +770,13 @@ export class ResidentHost {
       led_size: () => (d.tech === 'led' ? [d.width(), d.height()] : undefined),
       led_xy: (x: number, y: number) => chainIndex(d.profile, x, y),
       led_set: (i: number, c: number) => {
-        if (i >= 0 && i < d.width() * d.height()) d.drawPixel(...chainPoint(d.profile, i), c24(c));
+        if (i >= 0 && i < d.width() * d.height()) d.drawPixelRgb(...chainPoint(d.profile, i), c);
       },
-      led_get: (i: number) => {
-        if (i < 0 || i >= d.width() * d.height()) return 0;
-        const [r, g, bl] = rgb565ToRgb(d.getPixel(...chainPoint(d.profile, i)));
-        return (r << 16) | (g << 8) | bl;
-      },
+      // What leds.set wrote, 8 bits a channel (a WS2812 has no fewer).
+      led_get: (i: number) => (i < 0 || i >= d.width() * d.height() ? 0 : d.getPixelRgb(...chainPoint(d.profile, i))),
       led_fill: (c: number, from: number, count: number) => {
         const n = d.width() * d.height();
-        for (let i = Math.max(0, from); i < Math.min(n, from + count); i++) d.drawPixel(...chainPoint(d.profile, i), c24(c));
+        for (let i = Math.max(0, from); i < Math.min(n, from + count); i++) d.drawPixelRgb(...chainPoint(d.profile, i), c);
       },
       led_show: () => this.present(),
       led_brightness: (v: number) => d.setBrightness((Math.min(255, Math.max(0, v)) / 255) * 100),
@@ -851,7 +878,7 @@ export class ResidentHost {
         const t = this.tm(secs, local);
         return {
           tm_year: t.year, tm_mon: t.mon, tm_mday: t.mday, tm_hour: t.hour, tm_min: t.min, tm_sec: t.sec,
-          tm_wday: t.wday, tm_yday: t.yday, tm_isdst: local && t.gmtoff !== this.board.zone().at(secs - 182 * 86400).gmtoff ? 1 : 0,
+          tm_wday: t.wday, tm_yday: t.yday, tm_isdst: local && this.summer(t.year, t.gmtoff) ? 1 : 0,
           tm_zone: t.zone, tm_gmtoff: t.gmtoff,
         };
       },
@@ -885,12 +912,18 @@ function checkOpts(fname: string, opts: Record<string, unknown> | null | undefin
 
 const titleCase = (s: string) => s.replace(/[_-]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
-/** Clear the glass the way the board does on app reset. */
+/**
+ * Start an app's frame the way the board does on app reset: black on a screen that lights, white
+ * paper (and ink to write in) on e-paper. A lit screen shows the black until the app's first frame:
+ * the board would still show the picture before, which Bench hasn't got, only the panel's power-on
+ * noise. Paper starts blank, so it isn't refreshed: the board doesn't refresh it either.
+ */
 export function resetScreen(display: Display): Promise<void> {
-  display.fillScreen(colors.BLACK);
-  display.setTextColor(colors.WHITE);
+  const paper = display.tech === 'epaper';
+  display.fillScreen(paper ? colors.WHITE : colors.BLACK);
+  display.setTextColor(paper ? colors.BLACK : colors.WHITE);
   display.setTextSize(1);
   display.setCursor(0, 0);
   display.invalidate();
-  return display.show();
+  return paper ? Promise.resolve() : display.show();
 }

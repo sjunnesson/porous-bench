@@ -10,7 +10,8 @@ export default {
   width: 240,
   height: 320,
   controller: 'ST7789T3',
-  bus: { kind: 'spi', hz: 80_000_000 },
+  // A full-screen flip measured 23.4 ms (firmware/s3-lcd2/README.md).
+  bus: { kind: 'spi', hz: 80_000_000, flipMs: 23.4 },
   ram: { width: 240, height: 320, offsetX: 0, offsetY: 0 },
   // Bench's firmware ticks on_tick every 33 ms (SandboxConfig::tickIntervalMs), not Resident's 100.
   tickMs: 33,

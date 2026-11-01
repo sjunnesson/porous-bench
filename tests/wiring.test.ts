@@ -101,8 +101,10 @@ describe('wiring', () => {
     const w = wiring(amoled, findBoard('waveshare-esp32-s3-touch-amoled-1.32')!, hw([...DEFAULT_PARTS, part('imu')]));
     expect(uses(w).get(47)).toEqual(['imu 1 SDA']);
     expect(uses(w).get(48)).toEqual(['imu 1 SCL']);
-    expect(['CLK', 'DT'].map((p) => pinOf(w, 'knob-1', p))).toEqual([1, 2]);
-    expect(w.problems).toEqual(expect.arrayContaining([expect.stringMatching(/^Encoder 1: no free GPIO/), expect.stringMatching(/^Slide pot 1: no free ADC1 pin/), expect.stringMatching(/^Button 1: no free GPIO/)]));
+    // Two GPIOs for the rest: the pot's ADC pin first, as only it needs one, then the encoder's CLK.
+    expect(pinOf(w, 'pot-1', 'OUT')).toBe(1);
+    expect(['CLK', 'DT'].map((p) => pinOf(w, 'knob-1', p))).toEqual([2, undefined]);
+    expect(w.problems).toEqual(expect.arrayContaining([expect.stringMatching(/^Encoder 1: no free GPIO/), expect.stringMatching(/^Button 1: no free GPIO/)]));
   });
 
   it("wires the keys Bench's own firmware reads, and keeps parts off them", () => {

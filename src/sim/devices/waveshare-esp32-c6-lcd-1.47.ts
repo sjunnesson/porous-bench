@@ -7,7 +7,8 @@ export default {
   width: 172,
   height: 320,
   controller: 'ST7789V3',
-  bus: { kind: 'spi', hz: 80_000_000 },
+  // A full push measured 30.6 ms (firmware/c6-lcd147/README.md): the C6's one core feeds the SPI.
+  bus: { kind: 'spi', hz: 80_000_000, flipMs: 30.6 },
   ram: { width: 240, height: 320, offsetX: 34, offsetY: 0 },
   // Bench's firmware ticks on_tick every 33 ms (SandboxConfig::tickIntervalMs), not Resident's 100.
   tickMs: 33,

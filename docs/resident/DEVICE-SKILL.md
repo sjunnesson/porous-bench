@@ -31,7 +31,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 | Waveshare ESP32-S3-AMOLED-1.91 | 536×240 (landscape) | 16 | dark | AMOLED, black is off; IMU; the Touch version adds a touch panel (`touchscreen`) |
 | 1.3" ST7789 | 240×240 | 16 | dark | |
 | SSD1306 OLED | 128×64 or 128×32 | 1 | dark | colours threshold to lit/unlit at 50% brightness |
-| 2.13" e-paper | 122×250 | 1 | light | every `flip()` is a refresh (0.2 s partial, 1.9 s full every 10th); it runs in the background and only the newest frame reaches the glass: flip only when something changed |
+| 2.13" e-paper | 122×250 | 1 | light | every `flip()` that changes the frame is a refresh (0.2 s partial, and a 1.9 s full one after every 10 partials); it runs in the background, only the newest frame reaches the glass, and an unchanged frame isn't refreshed. Each app starts on blank paper |
 
 On 1-bit screens use pure white for marks on a dark scheme, pure black on a light one.
 
@@ -89,6 +89,11 @@ Each dispatch (loading the app, `init`, a tick, an event) gets 1000 ms. Past tha
 million Lua instructions, what an ESP32-S3 runs (the C6 runs far fewer: see below). Nothing times an
 LVGL callback, a coroutine that never yields back, or a dispatch that catches the deadline error
 with `pcall` and carries on. On a board those hang it, so Bench halts the app.
+
+As on a board, an error doesn't end the app: one in `init` (or in the top-level code, past the
+callbacks defined above it) is reported and `on_tick` and `on_event` still run. The board takes
+`init`, `on_tick` and `on_event` once the top-level code has run: assigning `on_tick` later, or
+defining `on_event` inside `init`, changes nothing. Each call gets a fresh `ctx`.
 
 ## Speed on a real board
 
@@ -271,8 +276,27 @@ g:drawString("hi", g:width() // 2, g:height() // 2)
 g:flip()                          -- nothing is visible until flip
 ```
 
+Two more on Bench's boards, from Bench's Resident (fork `59cd3cf`; upstream's sheet doesn't have them):
+
+```lua
+g:pushImage(x, y, w, h, rgb565)           -- w*h*2 bytes, big-endian RGB565, row by row
+g:pushImage(x, y, w, h, idx, palette[, t]) -- w*h bytes, each an index into palette (1-256 colours,
+                                           -- 2 bytes each, big-endian RGB565); index t isn't drawn
+g:setClipRect(x, y, w, h)  g:clearClipRect() -- nothing drawn outside it until cleared
+```
+
+An image goes straight into the frame, far faster than drawing it a pixel or a rect at a time: a
+backdrop and sprites over it (palette images with a transparent index), redrawn in a clipped
+region, is the way to animate a full scene. The clip holds for every lgfx and `screen` call, not
+LVGL's, and each app starts without one. On e-paper, images ink by the 1-bit rule like everything else.
+
 Full sheet: Resident's `prompts/lgfx.md`. Integer arguments are checked like `luaL_checkinteger`:
 `g:fillRect(1.5, …)` raises, so `math.floor` computed coordinates.
+
+On Bench's boards `lgfx` draws through Adafruit GFX, and Bench draws as it does: its classic 6×8
+font, one glyph per byte, so text is ASCII (a UTF-8 "°" prints as two odd glyphs; `"\xF7"` is the
+font's degree sign). `drawString` places the text by its datum at 6 px a character, then prints
+it: the cursor ends after it, and a `"\n"` starts a line at x = 0.
 
 ### screen (M5Stick verbs, 0–255 channels)
 

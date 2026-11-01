@@ -190,7 +190,8 @@ class FolderWatch {
     const found = new Map<string, number>();
     for await (const entry of h.values()) {
       if (entry.kind !== 'file' || !entry.name.endsWith('.lua')) continue;
-      found.set(entry.name, (await entry.getFile()).lastModified);
+      const file = await read(entry);
+      if (file) found.set(entry.name, file.lastModified);
       if (found.size >= MAX_FILES) break;
     }
     return found;
@@ -207,13 +208,13 @@ class FolderWatch {
         if (entry.kind !== 'file' || !entry.name.endsWith('.lua')) continue;
         // The same files the baseline read: past them, every file would look newly saved.
         if (++count > MAX_FILES) break;
-        const file = await entry.getFile();
-        if (this.seen.get(entry.name) === file.lastModified) continue;
+        const file = await read(entry);
+        if (!file || this.seen.get(entry.name) === file.lastModified) continue;
         this.seen.set(entry.name, file.lastModified);
         if (!newest || file.lastModified > newest.file.lastModified) newest = { name: entry.name, file };
       }
       if (newest && this.folder === h) {
-        const code = await newest.file.text();
+        const code = await newest.file.text().catch(() => '');
         // An editor may save in two steps; an empty file is the first one.
         if (code.trim()) {
           this.last = newest.name;
@@ -222,8 +223,13 @@ class FolderWatch {
         }
       }
     } catch (e) {
+      // The folder itself can't be read (moved, access taken back): stop, but keep it for one click.
       this.fail(e);
-      this.stop();
+      if (this.timer) clearInterval(this.timer);
+      this.timer = null;
+      this.folder = null;
+      this.saved = h;
+      this.notify();
     } finally {
       this.busy = false;
     }
@@ -242,6 +248,16 @@ class FolderWatch {
   private notify() {
     this.version++;
     for (const fn of this.listeners) fn();
+  }
+}
+
+/** A file as it is now; null if it went between the listing and the read (an editor saving by
+ *  renaming, a git checkout): the next poll sees what's there then. */
+async function read(entry: { getFile(): Promise<File> }): Promise<File | null> {
+  try {
+    return await entry.getFile();
+  } catch {
+    return null;
   }
 }
 

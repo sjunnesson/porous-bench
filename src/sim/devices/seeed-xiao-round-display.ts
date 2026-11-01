@@ -13,7 +13,8 @@ export default {
   width: 240,
   height: 240,
   controller: 'GC9A01',
-  bus: { kind: 'spi', hz: 80_000_000 },
+  // A full-screen flip measured ~17.5 ms (firmware/xiao-round/README.md).
+  bus: { kind: 'spi', hz: 80_000_000, flipMs: 17.5 },
   ram: { width: 240, height: 240, offsetX: 0, offsetY: 0 },
   // Bench's firmware turns the picture 270° (SCREEN_ROTATION), so up is away from a USB-C facing down.
   firmwareRotation: 3,

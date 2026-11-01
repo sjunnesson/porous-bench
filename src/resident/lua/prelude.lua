@@ -30,16 +30,19 @@ local function argerr(i, fname, msg, level)
   error(fmt("bad argument #%d to '%s' (%s)", i, fname, msg), level or 4)
 end
 
+-- As luaL_checkinteger: a string that reads as a number ("10") is that number.
 local function ck_int(v, i, fname, n)
   local t = mtype(v)
   if t == "integer" then return v end
+  local given = v
   if t == nil and type(v) == "string" then v = tonumber(v); t = mtype(v) end
+  if t == "integer" then return v end
   if t == "float" then
     local k = tointeger(v)
     if k then return k end
     argerr(i, fname, "number has no integer representation")
   end
-  argerr(i, fname, "number expected, got " .. tname(v, i, n))
+  argerr(i, fname, "number expected, got " .. tname(given, i, n))
 end
 
 local function ck_num(v, i, fname, n)
@@ -135,13 +138,14 @@ local function across(data)
   end
   return concat(parts)
 end
+-- Errors at level 3: this function <- g.pushImage's own (called, not tail-called) <- the app.
 local function pushIndexed(x, y, w, h, data, palette, transparent, clip)
   if #palette == 0 or #palette > 512 or #palette % 2 ~= 0 then
-    error("bad argument #6 to 'pushImage' (expected 1 to 256 colours of RGB565, big-endian)", 4)
+    error("bad argument #6 to 'pushImage' (expected 1 to 256 colours of RGB565, big-endian)", 3)
   end
   if w <= 0 or h <= 0 then return end
   if w > 4096 or h > 4096 or #data ~= w * h then
-    error("bad argument #5 to 'pushImage' (expected w * h bytes of palette indices)", 4)
+    error("bad argument #5 to 'pushImage' (expected w * h bytes of palette indices)", 3)
   end
   local cx0, cy0, cx1, cy1 = 0, 0, H.lg_width(), H.lg_height()
   if clip then
@@ -185,15 +189,18 @@ local function pushImage(x, y, w, h, data)
   H.lg_pushImage(x, y, w, h, across(data))
 end
 
+-- The display's clip, { x0, y0, x1, y1 } while set: one for every handle bound to it, as the board
+-- keeps one. The prelude sends an indexed block only where it's inside it.
+local clip
 function lgfx.bind(name)
   name = ck_str(name, 1, "bind", select("#", name))
   if not H.lgfx_bind(name) then error(fmt("lgfx.bind: no display named '%s'", name), 2) end
   local g = {}
   for m, spec in pairs(LGFX) do g[m] = wrap(m, spec, fn("lg_" .. m), true) end
-  local clip -- { x0, y0, x1, y1 } while set: the prelude sends only what's inside it
+  -- Called, not returned: a tail call would drop this frame and move every error's level by one.
   g.pushImage = wrap("pushImage", "iiiisSI", function(x, y, w, h, data, palette, transparent)
-    if palette == nil then return pushImage(x, y, w, h, data) end
-    return pushIndexed(x, y, w, h, data, palette, transparent, clip)
+    if palette == nil then pushImage(x, y, w, h, data)
+    else pushIndexed(x, y, w, h, data, palette, transparent, clip) end
   end, true)
   -- The clip, where the host has one (the iPhone app hasn't yet: apps see no setClipRect there).
   if H.lg_setClipRect then
@@ -340,8 +347,10 @@ leds = {
   set = function(i, c) chain("set") return led_set(i, c) end,
   set_rgb = function(i, r, g, b)
     chain("set_rgb")
-    local function byte(v, k) return math.max(0, math.min(255, ck_int(v, k, "set_rgb", 4))) end
-    return led_set(i, (byte(r, 2) << 16) | (byte(g, 3) << 8) | byte(b, 4))
+    -- Checked here, not in a helper, so a bad one is reported at the app's line.
+    r, g, b = ck_int(r, 2, "set_rgb", 4), ck_int(g, 3, "set_rgb", 4), ck_int(b, 4, "set_rgb", 4)
+    local function byte(v) return math.max(0, math.min(255, v)) end
+    return led_set(i, (byte(r) << 16) | (byte(g) << 8) | byte(b))
   end,
   get = function(i) chain("get") return led_get(i) end,
   fill = function(c, from, count)
@@ -457,7 +466,8 @@ screens = {
   end,
 }
 
--- events: Resident's serialisation rules (depth 3 counting `data`, arrays when #t > 0)
+-- events: Resident's serialisation rules (depth 3 counting `data`, arrays when #t > 0, the top
+-- level always an object, floats as %g)
 local ESC = { ['"'] = '\\"', ['\\'] = '\\\\', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t' }
 local function esc(s)
   return (s:gsub('[%c"\\]', function(c) return ESC[c] or fmt("\\u%04x", c:byte()) end))
@@ -469,11 +479,11 @@ local function enc(v, level)
   if t == "number" then
     if mtype(v) == "integer" then return tostring(v) end
     if v ~= v or v == huge or v == -huge then return "null" end
-    return fmt("%.7g", v)
+    return fmt("%g", v)
   end
   if t ~= "table" or level > 3 then return nil end
   local parts, n = {}, rawlen(v)
-  if n > 0 then
+  if n > 0 and level > 1 then
     for i = 1, n do parts[i] = enc(v[i], level + 1) or "null" end
     return "[" .. concat(parts, ",") .. "]"
   end
@@ -488,11 +498,8 @@ end
 events = {
   send = function(name, data, opts)
     name = ck_str(name, 1, "send", select("#", name, data, opts))
-    local json = "{}"
-    if data ~= nil then
-      if type(data) ~= "table" then argerr(2, "send", "table expected, got " .. type(data), 3) end
-      json = enc(data, 1)
-    end
+    -- Anything but a table sends no data, as on the board.
+    local json = type(data) == "table" and enc(data, 1) or "{}"
     return H.events_send(name, json, type(opts) == "table" and opts.keep == true)
   end,
 }
@@ -527,16 +534,23 @@ local function deprecated(name)
   warned[name] = true
   H.log("warn", fmt("[deprecated] time.%s(): use %s", name, DEPRECATED[name]))
 end
-local function opt_secs(v, fname)
-  if v == nil then return H.dt_now() end
-  return math.floor(ck_num(v, 1, fname, 1))
-end
+-- The seconds a gmtime/localtime call gives, checked by the caller itself (`ck_num(s, …)`) so a bad
+-- one is reported at the app's line.
+local function opt_secs(v) return v == nil and H.dt_now() or math.floor(v) end
 time = {
   ticks_ms = function() return i32(H.millis()) end,
   ticks_diff = function(a, b) return i32(ck_int(a, 1, "ticks_diff", 2) - ck_int(b, 2, "ticks_diff", 2)) end,
   time = function() deprecated("time") return H.dt_now() end,
-  gmtime = function(s) deprecated("gmtime") return H.tm_struct(opt_secs(s, "gmtime"), false) end,
-  localtime = function(s) deprecated("localtime") return H.tm_struct(opt_secs(s, "localtime"), true) end,
+  gmtime = function(s)
+    deprecated("gmtime")
+    if s ~= nil then s = ck_num(s, 1, "gmtime", 1) end
+    return H.tm_struct(opt_secs(s), false)
+  end,
+  localtime = function(s)
+    deprecated("localtime")
+    if s ~= nil then s = ck_num(s, 1, "localtime", 1) end
+    return H.tm_struct(opt_secs(s), true)
+  end,
   mktime = function(t)
     deprecated("mktime")
     if type(t) ~= "table" then argerr(1, "mktime", "table expected, got " .. type(t), 3) end
@@ -556,7 +570,8 @@ local function raise_in_app(msg)
   while true do
     local ar = getinfo(level, "Sl")
     if not ar then error(msg, 0) end
-    if ar.currentline > 0 and ar.source ~= "=datetime" then
+    -- The first frame of the app's own (or a chunk's), past datetime and the prelude.
+    if ar.currentline > 0 and (ar.source == "=app" or ar.source == "=chunk") then
       error(ar.short_src .. ":" .. ar.currentline .. ": " .. msg, 0)
     end
     level = level + 1
@@ -750,32 +765,48 @@ function run(deadline, f, ...)
   return ok, err
 end
 
-local ctx = { time_ms = 0 }
+local generation
+-- A ctx of its own for every call, as the board builds one: what an app writes on it isn't kept.
+local function ctx_at(time_ms) return { time_ms = time_ms, generation_id = generation } end
 local api = {}
 
--- Returns nil on success, else the error message.
-function api.load(code, generation)
+-- The app's callbacks, as the board holds them: taken once its top-level code has run, and again
+-- after a chunk for those it defines. Assigning on_tick later, or defining on_event in init, changes
+-- nothing, as on the board.
+local lifecycle = {}
+local function capture()
+  for _, name in ipairs({ "init", "on_tick", "on_event" }) do
+    local f = rawget(_G, name)
+    if type(f) == "function" then lifecycle[name] = f end
+  end
+end
+
+-- Returns nil on success, else the error message. An error in the top-level code still leaves the
+-- callbacks defined before it (api.loaded()), which the board runs.
+function api.load(code, gen)
   local f, err = load(code, "=app", "t")
   if not f then return err end
-  ctx.generation_id = generation
+  generation = gen
   local ok, e = run(true, f)
-  if not ok then return e end
-  if type(rawget(_G, "init")) ~= "function" and type(rawget(_G, "on_tick")) ~= "function"
-     and type(rawget(_G, "on_event")) ~= "function" then
-    return "app rejected: define at least one of init, on_tick, on_event"
+  capture()
+  if not api.loaded() then
+    return ok and "app rejected: define at least one of init, on_tick, on_event" or e
   end
+  if not ok then return e end
   return nil
 end
+function api.loaded() return next(lifecycle) ~= nil end
 
 function api.chunk(code)
   local f, err = load(code, "=chunk", "t")
   if not f then return err end
   local ok, e = run(true, f)
   if not ok then return e end
+  capture()
   return nil
 end
 
-function api.has(name) return type(rawget(_G, name)) == "function" end
+function api.has(name) return lifecycle[name] ~= nil end
 function api.halted() return halted end
 
 -- leds.on_frame's timer, called on every pass of the host loop.
@@ -784,8 +815,7 @@ function api.frame(time_ms)
   if frameLast and time_ms - frameLast < framePeriod then return nil end
   local dt = frameLast and (time_ms - frameLast) or framePeriod
   frameLast = time_ms
-  ctx.time_ms = time_ms
-  local ok, err = run(true, frameFn, ctx, dt)
+  local ok, err = run(true, frameFn, ctx_at(time_ms), dt)
   if ok then return nil end
   return err
 end
@@ -793,16 +823,15 @@ end
 -- LVGL's timer pump, called on every pass of the host loop (not on_tick's 10 Hz).
 function api.lv_pump(time_ms, period)
   if not LVM then return nil end
-  ctx.time_ms = time_ms
   local ok, err = run(false, LVM._pump, time_ms, period)
   if ok then return nil end
   return err
 end
 
 function api.call(name, time_ms, arg)
-  local f = rawget(_G, name)
-  if type(f) ~= "function" then return nil end
-  ctx.time_ms = time_ms
+  local f = lifecycle[name]
+  if not f then return nil end
+  local ctx = ctx_at(time_ms)
   if name == "on_event" then
     local e = { name = arg.name, from = arg.from or "", ts_ms = arg.ts_ms, channel = arg.channel,
                 src = arg.src, seq = arg.seq, data = arg.data or {} }

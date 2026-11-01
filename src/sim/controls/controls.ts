@@ -277,8 +277,11 @@ export class Dial extends SimInput {
   readonly wrap: boolean;
   readonly keys: { down: string; up: string };
   private v: number;
+  private readonly start: number;
   private pending = 0;
+  /** The encoder it reads, and its click count as far as this dial has taken it. */
   private knobBase: Knob | null = null;
+  private knobSeen = 0;
 
   constructor(
     opts: DialOptions,
@@ -287,10 +290,11 @@ export class Dial extends SimInput {
     super(opts.label ?? 'Dial');
     this.min = opts.min ?? -Infinity;
     this.max = opts.max ?? Infinity;
-    this.step = opts.step ?? 1;
+    this.step = opts.step !== undefined && opts.step > 0 ? opts.step : 1;
     this.wrap = opts.wrap ?? false;
     this.keys = { down: 'ArrowLeft', up: 'ArrowRight', ...opts.keys };
     this.v = this.clamp(opts.start ?? (Number.isFinite(this.min) ? this.min : 0));
+    this.start = this.v;
     const c = bench.suggest('dial', this, { ...(DIAL_VIA[opts.via ?? 'encoder'] ?? {}), ...asked(opts.connect) });
     this.connect(c, connectionId(c) !== opts.connect);
   }
@@ -329,7 +333,10 @@ export class Dial extends SimInput {
     const hw = this.bench.resolve(c);
     // An encoder steps from where it is now.
     this.knobBase = hw?.channel.kind === 'relative' ? (hw.part as Knob) : null;
-    this.knobBase?.delta();
+    this.knobSeen = this.knobBase?.clicks ?? 0;
+    // A pot or a sensor reads where it is from the start: a step nobody took isn't one.
+    const f = hw && hw.channel.kind === 'absolute' ? absolute(hw.part, hw.channel.id) : null;
+    if (f !== null) this.setFraction(f, false);
     this.changed();
   }
   /** A stored or UI string: 'part:channel' or 'none'. Ignores connections the bench can't make. */
@@ -360,10 +367,13 @@ export class Dial extends SimInput {
     if (hw.channel.kind === 'relative') {
       const knob = hw.part as Knob;
       if (knob !== this.knobBase) {
-        knob.delta(); // reconnected to another encoder: count from here
-        this.knobBase = knob;
+        this.knobBase = knob; // reconnected to another encoder: count from here
+        this.knobSeen = knob.clicks;
       }
-      this.stepBy(knob.delta());
+      // Its own count, not the encoder's delta(): two dials on one encoder both turn.
+      const clicks = knob.clicks - this.knobSeen;
+      this.knobSeen = knob.clicks;
+      this.stepBy(clicks);
     } else {
       const f = absolute(hw.part, hw.channel.id);
       if (f !== null) this.setFraction(f);
@@ -387,8 +397,10 @@ export class Dial extends SimInput {
     if (!clicks) return;
     let next = this.v + clicks * this.step;
     if (this.wrap && Number.isFinite(this.min) && Number.isFinite(this.max)) {
-      const span = this.max - this.min + this.step;
-      next = ((((next - this.min) % span) + span) % span) + this.min;
+      // Round the steps that fit in the range (0, 3, 6, 9 for 0..10 by 3), never past max.
+      const n = Math.floor((this.max - this.min) / this.step + 1e-9) + 1;
+      const at = Math.round((this.v - this.min) / this.step) + clicks;
+      next = this.min + (((at % n) + n) % n) * this.step;
       this.pending += clicks;
     } else {
       next = this.clamp(next);
@@ -397,11 +409,12 @@ export class Dial extends SimInput {
     this.v = next;
   }
 
-  private setFraction(f: number) {
+  /** `count`: the move counts as steps (delta() and dial events); not when it's where it was all along. */
+  private setFraction(f: number, count = true) {
     const { base, span } = this.range();
     const next = this.clamp(base + Math.round((Math.min(1, Math.max(0, f)) * span) / this.step) * this.step);
     if (next === this.v) return;
-    this.pending += Math.round((next - this.v) / this.step);
+    if (count) this.pending += Math.round((next - this.v) / this.step);
     this.v = next;
   }
 
@@ -409,7 +422,7 @@ export class Dial extends SimInput {
   private range(): { base: number; span: number } {
     if (Number.isFinite(this.min) && Number.isFinite(this.max)) return { base: this.min, span: Math.max(this.step, this.max - this.min) };
     const span = 24 * this.step;
-    const base = Number.isFinite(this.min) ? this.min : Number.isFinite(this.max) ? this.max - span : -span / 2;
+    const base = Number.isFinite(this.min) ? this.min : Number.isFinite(this.max) ? this.max - span : this.start - span / 2;
     return { base, span };
   }
 
@@ -515,15 +528,18 @@ export class Trigger extends SimInput {
   }
   /** `auto`: picked by the bench rather than asked for, so it gives way to a control that asks. */
   connect(c: Connection | null, auto = false): void {
+    // Down on the part it leaves: that press ends here, so presses and releases still pair up.
+    if (this.presses > this.releases) this.edge(false);
     this.bench.link(this, c, auto);
     this.prev = false;
-    // Ignore edges that happened before this connection.
+    // Ignore edges that happened before this connection, and the releases of presses already held
+    // then (a button held through a restart): those presses weren't this trigger's.
     const hw = this.bench.resolve(c);
     const p = hw && pushableOf(hw.part, hw.channel.id);
     p?.wasPressed();
     p?.wasReleased();
     this.seenPresses = p?.presses ?? 0;
-    this.seenReleases = p?.releases ?? 0;
+    this.seenReleases = p?.presses ?? 0;
     this.changed();
   }
   bind(id: string): void {
@@ -572,10 +588,10 @@ export class Trigger extends SimInput {
           this.edge(true, p.codeOf?.(this.seenPresses) ?? null, p.pressedAt?.(this.seenPresses));
         } else if (this.seenReleases < p.releases) {
           this.seenReleases++;
-          this.edge(false);
+          if (this.presses > this.releases) this.edge(false); // not one of a press held before it connected
         } else break;
       }
-      this.prev = p.isPressed();
+      this.prev = this.presses > this.releases;
       return;
     }
     const down = this.keyDown || (hw ? levelOn(hw.part, hw.channel.id) : false);

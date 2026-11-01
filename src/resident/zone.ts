@@ -45,13 +45,23 @@ export class Zone {
     return { gmtoff, abbr: name === 'GMT' && gmtoff === 0 && this.name === 'UTC' ? 'UTC' : name };
   }
 
-  /** A local wall time → the instant. Skipped hours resolve forward, repeated ones to the first. */
+  /**
+   * A local wall time → the instant, as ezTime resolves it on the board: a repeated hour is its first
+   * time round, and an hour the clocks skipped is read as summer time (the later, larger offset, and
+   * its name), so wall time minus the offset given is always the instant given.
+   */
   resolve(wall: number): { utc: number; gmtoff: number; abbr: string } {
-    let utc = wall - this.at(wall).gmtoff;
-    for (let i = 0; i < 2; i++) utc = wall - this.at(utc).gmtoff;
-    const earlier = wall - this.at(utc - 3600).gmtoff;
-    if (earlier < utc && wall - this.at(earlier).gmtoff === earlier) utc = earlier;
-    const z = this.at(utc);
-    return { utc, gmtoff: z.gmtoff, abbr: z.abbr };
+    // The offsets either side of any change near this wall time; the ones it really has are those
+    // that give back an instant with that offset.
+    const before = this.at(wall - 86400).gmtoff;
+    const after = this.at(wall + 86400).gmtoff;
+    const fits = [before, after].filter((off) => this.at(wall - off).gmtoff === off);
+    if (fits.length) {
+      const off = Math.max(...fits); // both, in a repeated hour: the larger offset is the earlier instant
+      return { utc: wall - off, gmtoff: off, abbr: this.at(wall - off).abbr };
+    }
+    const off = Math.max(before, after);
+    // The name from just after the change (wall less the earlier offset lands there).
+    return { utc: wall - off, gmtoff: off, abbr: this.at(wall - Math.min(before, after)).abbr };
   }
 }
