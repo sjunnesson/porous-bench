@@ -23,7 +23,11 @@ static int argi(lua_State* L, int idx) { return (int)luaL_checknumber(L, idx); }
 void ScreenDriver::update() { EpdFrame::poll(); }
 
 void ScreenDriver::onAppReset() {
-  canvas.fillScreen(WHITE);  // each app starts on blank paper
+  // Each app starts on blank paper. The last app's lgfx clip goes first, or the
+  // white would only fill it: lgfx's own reset, which clears it too, runs after
+  // this one.
+  canvas.clearClip();
+  canvas.fillScreen(WHITE);
 }
 
 // Resident's status strings: "WiFi...", "Configure WiFi\n\n<AP>",

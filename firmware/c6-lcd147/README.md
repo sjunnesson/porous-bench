@@ -16,7 +16,7 @@ core3.py                  build fixes for Resident's libraries on Arduino core 3
 ```
 
 The projects pull Resident from GitHub, pinned to the commit they were built and tested against
-(0.12.0, `5ca238c`; stage 3 on Bench's fork at `4220083`, which adds the tick interval and the event drain), so nothing needs cloning.
+(0.12.0, `5ca238c`; stage 3 on Bench's fork at `59cd3cf`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```bash
 cd firmware/c6-lcd147/device && pio run -t upload && pio device monitor
@@ -26,6 +26,11 @@ cd firmware/c6-lcd147/device && pio run -t upload && pio device monitor
 "Memory"). It rebuilds the libraries inside the shared `~/.platformio` framework package, so building
 a project on the prebuilt core afterwards (stages 1-2, `device-prebuilt-core/`) reinstalls those,
 and the next `device/` build compiles its own again.
+
+Build these one at a time, and not while another board's project (`espressif32@6.12.0`) builds:
+both install packages into the same `~/.platformio/packages`, and run together (2026-11-01) each
+broke the other mid-install (`package-postinstall.py` missing here, `esptool.py` missing there).
+Run alone, each reinstalls what it needs.
 
 The rebuild ends by running `pio run` again from pioarduino's own Python environment
 (`~/.platformio/penv`), which installs pioarduino's PlatformIO Core as 6.2.0.post1. Its platform
@@ -120,6 +125,28 @@ enter your network. The screen then shows the 8-character device ID.
   against 1-6% at 100 ms. The fork also delivers every queued event each pass: 169-178 arrived.
   A burst bigger than Courier's and Resident's queues (8 and 7) within one tick still loses the
   rest at any tick rate: 10-19 of 40 sent at once.
+- **`lgfx` has `pushImage` and a clip rectangle** (since 2026-11-01, as on the Guition 4848S040):
+  `pushImage` plain (RGB565) or through a palette with a transparent index, and `setClipRect` /
+  `clearClipRect`, on Bench's Resident fork at `59cd3cf` (branch `lgfx-pushimage`; `device/` and
+  `device-prebuilt-core/` both). The canvas writes both kinds of image straight into its buffer,
+  marking the tiles they cover, and clips everything drawn into it, `screen` included, until the app
+  clears the clip or the next app starts. No new buffer: each palette index is looked up in the
+  palette's own bytes as it's drawn, where the S3 boards keep the palette made native in a 1.5 KB
+  static table that here would come out of the shared heap. `device/`: flash 1,856,416 →
+  1,859,532 bytes, static RAM 63,900 → 63,924; `device-prebuilt-core/`: 1,741,724 → 1,743,194 and
+  64,252 → 64,276. `device/` flashed and checked on the board 2026-11-01 with the S3-LCD-2's
+  `device-apps/image-check.lua`, matching Bench: blocks, a palette sprite's clear hole and corners,
+  everything cut to the clip, and the next app's black start whole after one that left a clip set.
+  A 172×20 push takes 0.25 ms (~27 KB a millisecond). The arena still has 83,856 bytes free for
+  apps. With the 10.4 KB flame saved, the shared heap read 46.5 KB free and a 21 KB largest block
+  once connected (as in "A saved app makes the next push smaller"), but its lowest free fell to
+  272 bytes: the first TLS handshake failed for memory (`PK verify failed with error 0x4290`) and
+  the second connected, and the first app pushed after that boot never ran (the relay said it was
+  delivered); the next push did. That's the saved flame, not this firmware (24 bytes more static
+  RAM): booted with a small app saved, the heap read as before (383 KB at boot, 277 KB after the
+  canvas) and it connected first time. Pushing the flame again (8.9 KB minified) into that
+  fragmented heap was dropped (`NoMemory`, 21 KB largest block); after a reset with the small app
+  saved it went in at once. Building `image-check.lua`'s images in Lua left 564 bytes of the arena.
 - **Lua is slow: the C6 has no FPU.** Floats, `math.sin`, `math.sqrt` and `^` are emulated. A
   full-screen `lgfx` flame doing ~137,000 Lua instructions and 985 draw calls a tick took ~285 ms
   (3.5 fps, `dt_ms` averaged over 30 ticks); with lookup tables, integer colour blends and fewer

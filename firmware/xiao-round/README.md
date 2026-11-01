@@ -3,7 +3,7 @@
 Firmware that puts the Seeed Studio Round Display for XIAO, driven by a XIAO ESP32S3 plugged into
 its back, on Resident's relay, so porous.systems Bench can mirror apps onto it. One PlatformIO
 project per stage of Resident's start-building guide, each buildable on its own; Resident is pinned
-by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `4220083`, which adds the tick interval and the event drain), so nothing needs cloning.
+by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `59cd3cf`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, RTC, touch crosshair
@@ -22,6 +22,17 @@ B key: `tap` / `hold`), `touchscreen` (CHSC6X: `read()`, `touch_*` events), `scr
 240×240 round, 16-bit, dark, brightness). Lua and LVGL live in the 8 MB PSRAM. Bench's board entry
 (`seeed-xiao-esp32s3-round-display`: screen, lgfx, lvgl, 8192 KB) matches: with LVGL bound and an app
 running, ~8.17 MB of PSRAM and ~163 KB of internal RAM stay free (measured).
+
+`lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
+`setClipRect` / `clearClipRect` (Resident's fork at `59cd3cf`, branch `lgfx-pushimage`; since
+2026-11-01, as on the Guition 4848S040). The canvas writes both kinds of image straight into its
+buffer, marking the tiles they cover, and clips everything drawn into it, `screen` included, until
+the app clears the clip or the next app starts. The palette is made native once and kept until it
+changes (1.5 KB of static RAM, as on the Guition). Flash 2,476,721 → 2,479,537 bytes, static RAM
+64,056 → 65,624. Flashed and checked on the board 2026-11-01 with the S3-LCD-2's
+`device-apps/image-check.lua` (it keeps inside the round glass), matching Bench: blocks, a palette
+sprite's clear hole and corners, everything cut to the clip. A 240×20 push takes 0.22 ms, as on the S3. An app that left a clip set no longer cuts the next
+app's black start (all black after one that filled white and left a 40×40 clip).
 
 Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware `xiao-round-0.1`.
 

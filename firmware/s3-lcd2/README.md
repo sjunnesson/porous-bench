@@ -2,7 +2,7 @@
 
 Firmware that puts the Waveshare ESP32-S3-Touch-LCD-2 on Resident's relay, so porous.systems Bench
 can mirror apps onto it. One PlatformIO project per stage of Resident's start-building guide, each
-buildable on its own; Resident is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `4220083`, which adds the tick interval and the event drain), so nothing needs cloning.
+buildable on its own; Resident is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `59cd3cf`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, touch crosshair
@@ -20,6 +20,20 @@ Serial/JTAG port (`/dev/cu.usbmodem…`); if it doesn't, hold BOOT while pressin
 (`"main"`: 240×320, 16-bit, dark, brightness). Lua and LVGL live in the 8 MB PSRAM. Bench's board
 entry (`waveshare-esp32-s3-touch-lcd-2`: screen, lgfx, lvgl, 8192 KB) matches: with LVGL bound and an
 app running, ~8.1 MB of PSRAM and ~204 KB of internal RAM stay free (measured).
+
+`lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
+`setClipRect` / `clearClipRect` (Resident's fork at `59cd3cf`, branch `lgfx-pushimage`; since
+2026-11-01, as on the Guition 4848S040). The canvas writes both kinds of image straight into its
+buffer, marking the tiles they cover, and clips everything drawn into it, `screen` included, until
+the app clears the clip or the next app starts. The palette is made native once and kept until it
+changes (1.5 KB of static RAM, as on the Guition). Flash 2,539,245 → 2,541,849 bytes, static RAM
+64,376 → 65,928. Flashed and checked on the board 2026-11-01 with `device-apps/image-check.lua`
+(the same app in Bench draws the same): a plain block whole and one half off the edge, a palette
+sprite's transparent hole and out-of-palette corners showing the stripes under them, and fills,
+lines, a circle, text, `screen.fill_rect` and an image all cut to the clip. A 240×20 push takes
+0.22 ms (~44 KB a millisecond into the frame; a whole screen ~3.5 ms), before the flip. And an app
+that leaves a clip set no longer cuts the next app's black start: after one that filled white and
+left a 40×40 clip, the next app's first flip was all black.
 
 Brought up and tested on hardware 2026-10-12: device type `s3-lcd2`, firmware `s3-lcd2-0.1`.
 

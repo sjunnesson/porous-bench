@@ -38,6 +38,10 @@ g:setTextSize(n)                 -- whole multiples of the 6x8 font: 1 = 6x8 px,
 g:setTextDatum(lgfx.MC_DATUM)    -- TL TC TR ML MC MR BL BC BR _DATUM, L/C/R_BASELINE (for drawString)
 g:setCursor(x, y)  g:print("text")   -- print wraps at the right edge
 g:drawString("text", x, y)       -- anchored by the datum, never wraps
+g:pushImage(x, y, w, h, data)    -- data: w*h*2 bytes, RGB565 big-endian, row by row
+g:pushImage(x, y, w, h, idx, pal[, t])  -- idx: w*h bytes, each a colour of pal (1-256 colours,
+                                 -- RGB565 big-endian); index t, or one past pal's end, isn't drawn
+g:setClipRect(x, y, w, h)  g:clearClipRect()  -- drawing (screen too) stays inside until cleared
 g:width()  g:height()            -- 172, 320
 g:flip()                         -- nothing changes on the glass until flip
 ```

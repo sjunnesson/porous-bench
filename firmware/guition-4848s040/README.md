@@ -3,7 +3,7 @@
 Firmware that puts the Guition ESP32-S3-4848S040 (a 4" 480×480 touch panel for an 86 mm wall box,
 with its own ESP32-S3) on Resident's relay, so porous.systems Bench can mirror apps onto it. One
 PlatformIO project per stage of Resident's start-building guide, each buildable on its own; Resident
-is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `4220083`, which adds the tick interval and the event drain), so nothing needs cloning.
+is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `59cd3cf`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, the panel's scan rate, a test card, I2C scan, touch crosshair, a flash-write test
@@ -49,6 +49,12 @@ scenes draw each changed 16 px cell as the backdrop and the sprites over it, pus
 palette and clipped to the cell. Measured on the board with a full-screen harbour scene (~115 cells
 a tick, its water cycling): 245 ms a tick when Lua composed the pixels and sent them as `fillRect`
 runs, 34 ms with this (25-26 frames a second), and Lua's heap 1.2 MB instead of 3-5.
+Since 2026-11-01 the black frame each app starts on is filled with the clip cleared: the screen
+driver's reset runs before lgfx's (the order of `cfg.extensions`), so an app that left a clip set
+had the next one start black only inside it. Flashed and checked 2026-11-01: after an app that filled
+white and left a 40×40 clip, the next app's first flip was all black. The S3-LCD-2's
+`device-apps/image-check.lua` draws as in Bench here too, and a 480×20 pushImage takes 0.77 ms
+(~25 KB a millisecond into the PSRAM frame; the S3-LCD-2's internal-RAM canvas takes ~44).
 
 Apps can be big: Plenum's are ~430 KB. ArduinoJson keeps a string's length in 2 bytes unless
 told otherwise, so anything over 65,535 characters was dropped ("NoMemory") before it reached

@@ -13,9 +13,10 @@ device-lvgl/              experiment: stage 3 + LVGL 9 (luavgl) + a heap probe (
 device-s3/                the same drivers + lvgl on an ESP32-S3 with PSRAM (see "Moving to an ESP32-S3")
 ```
 
-Each project pulls Resident from GitHub, pinned to the commit it was built and tested against
-(0.12.0, `5ca238c`), so nothing needs cloning. `device-lvgl/` and `device-s3/` share `device/`'s
-drivers.
+Each project pulls Resident from GitHub, pinned by commit, so nothing needs cloning: stage 2 0.12.0
+(`5ca238c`), the projects with drivers Bench's fork at `59cd3cf` (0.12.0 plus `lgfx`'s `pushImage`
+and clip rectangle, the tick interval and the event drain; since 2026-11-01). `device-lvgl/` and
+`device-s3/` share `device/`'s drivers, so they move together.
 
 ```bash
 cd firmware/epd213/device && pio run -t upload && pio device monitor
@@ -53,6 +54,20 @@ your network. The panel then shows the 8-character device ID.
   A synchronous 1.9 s full refresh inside a Lua dispatch would trip the sandbox's 1 s deadline.
 - **`lgfx` draws straight into the 1-bit frame** (a custom `LgfxTarget`), not into a 61 KB RGB565
   sprite, so `screen` and `lgfx` share one buffer and that heap stays free for apps.
+- **`lgfx` has `pushImage` and a clip rectangle** (since 2026-11-01, as on the colour boards):
+  `pushImage` plain (RGB565) or through a palette with a transparent index, and `setClipRect` /
+  `clearClipRect`, which keep everything drawn into the frame (`screen` included, LVGL's flushes
+  not) inside the rectangle until the app clears it or the next app starts. Resident has them only
+  on Bench's fork, so the drivers' three projects moved to it from upstream 0.12.0. The fork's other
+  two changes: `SandboxConfig::tickIntervalMs`, not set here (ticks stay at 100 ms), and a loop pass
+  that delivers every queued event rather than one, so taps arriving together aren't a tick apart.
+  An image's pixels go through the same rule as every colour: RGB565 widened as Bench widens it (the
+  top bits repeated below) and luminance >= 128 white. `ink565` used to widen by `* 255 / 31`, which
+  turns 214 of the 65,536 colours, all at the threshold, the other way from Bench; LVGL's flushes
+  (`device-s3/`, `device-lvgl/`) go through it too. A palette's colours are inked once a push (a
+  256-byte table on the stack), not a static one: this board's RAM is short. Flash 1,403,597 →
+  1,405,805 bytes, static RAM 71,444 → 71,476 (`device/`). **Built, not yet flashed or run on the
+  board.**
 - **Memory is the limit.** `ESP.getFreeHeap()` reports ~140 KB once connected, but that counts IRAM
   only reachable with 32-bit access; Lua gets byte-addressable heap, and there is ~70 KB of it after
   Wi-Fi + TLS (TLS alone takes ~40 KB). An incoming app costs about twice its size while it is parsed,

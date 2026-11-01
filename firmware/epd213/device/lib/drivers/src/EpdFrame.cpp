@@ -5,7 +5,7 @@ namespace EpdFrame {
 
 Epd213 epd({EPD_DIN, EPD_CLK, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY},
            EPD_PANEL == 4 ? Epd213::Panel::V4 : Epd213::Panel::V2);
-GFXcanvas1 canvas(Epd213::WIDTH, Epd213::HEIGHT);
+Canvas canvas;
 Panel panel;
 
 static uint8_t pendingFrame[Epd213::FRAME_BYTES];  // newest presented frame
@@ -50,12 +50,14 @@ void presentNow() {
 bool busy() { return epd.refreshing(); }
 bool pending() { return dirty; }
 
+// LVGL's flushes, past lgfx's clip (GFXcanvas1's own drawPixel), as the colour
+// boards write them straight into their canvas.
 void Panel::blit(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px) {
   if (!px) return;
   for (int32_t j = 0; j < h; j++) {
     for (int32_t i = 0; i < w; i++) {
       uint16_t be = px[j * w + i];
-      canvas.drawPixel(x + i, y + j, ink565((uint16_t)((be >> 8) | (be << 8))));
+      canvas.GFXcanvas1::drawPixel(x + i, y + j, ink565((uint16_t)((be >> 8) | (be << 8))));
     }
   }
 }

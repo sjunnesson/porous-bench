@@ -73,6 +73,23 @@ public:
     cv().setTextWrap(true);
   }
 
+  // Images and the clip go straight to the canvas, which clips everything drawn into it.
+  void pushImage(int32_t x, int32_t y, int32_t w, int32_t h, const uint8_t* rgb565be) override {
+    canvas().pushBE(x, y, w, h, rgb565be);
+  }
+  void pushIndexed(int32_t x, int32_t y, int32_t w, int32_t h, const uint8_t* idx, const uint8_t* palette,
+                   int32_t ncolors, int32_t transparent) override {
+    canvas().pushIndexed(x, y, w, h, idx, palette, ncolors, transparent);
+  }
+  void setClipRect(int32_t x, int32_t y, int32_t w, int32_t h) override {
+    LgfxTarget::setClipRect(x, y, w, h);
+    canvas().setClip(x, y, w, h);
+  }
+  void clearClipRect() override {
+    LgfxTarget::clearClipRect();
+    canvas().clearClip();
+  }
+
   int32_t width() override { return Lcd::WIDTH; }
   int32_t height() override { return Lcd::HEIGHT; }
 
@@ -80,6 +97,7 @@ public:
 
 private:
   static GFXcanvas16& cv() { return *Lcd::canvas; }
+  static Lcd::Canvas& canvas() { return static_cast<Lcd::Canvas&>(*Lcd::canvas); }
   uint8_t _size = 1;
   uint8_t _datum = 0;
 };

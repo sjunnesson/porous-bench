@@ -44,15 +44,33 @@ void Canvas::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c
   markRect(x0, y0, x1, y1);
   int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
   int err = dx + dy, x = x0, y = y0;
-  bool inside = (unsigned)x0 < (unsigned)W && (unsigned)x1 < (unsigned)W && (unsigned)y0 < (unsigned)H &&
-                (unsigned)y1 < (unsigned)H;
+  auto in = [this](int px, int py) { return px >= clipX0 && px < clipX1 && py >= clipY0 && py < clipY1; };
+  bool inside = in(x0, y0) && in(x1, y1);
   uint16_t* buf = buffer;
   for (;;) {
-    if (inside || ((unsigned)x < (unsigned)W && (unsigned)y < (unsigned)H)) buf[y * W + x] = c;
+    if (inside || in(x, y)) buf[y * W + x] = c;
     if (x == x1 && y == y1) break;
     int e2 = 2 * err;
     if (e2 >= dy) err += dy, x += sx;
     if (e2 <= dx) err += dx, y += sy;
+  }
+}
+
+// Each index is looked up in the palette's own bytes as it's drawn. The S3 boards keep the palette
+// made native in a table (1.5 KB of static RAM), which on the C6 would come out of the heap Wi-Fi,
+// TLS and the next app's message share.
+void Canvas::pushIndexed(int x, int y, int w, int h, const uint8_t* idx, const uint8_t* palette, int ncolors,
+                         int transparent) {
+  int x0 = max(x, clipX0), y0 = max(y, clipY0), x1 = min(x + w, clipX1), y1 = min(y + h, clipY1);
+  if (x1 <= x0 || y1 <= y0) return;
+  markRect(x0, y0, x1 - 1, y1 - 1);
+  for (int r = y0; r < y1; r++) {
+    const uint8_t* s = idx + (size_t)(r - y) * w + (x0 - x);
+    uint16_t* d = buffer + r * W + x0;
+    for (int n = x1 - x0; n > 0; n--, d++) {
+      int i = *s++;
+      if (i != transparent && i < ncolors) *d = (uint16_t)(palette[i * 2] << 8 | palette[i * 2 + 1]);
+    }
   }
 }
 

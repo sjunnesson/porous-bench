@@ -39,6 +39,10 @@ g:setTextSize(n)                 -- whole multiples of the 6x8 font: 1 = 6x8 px,
 g:setTextDatum(lgfx.MC_DATUM)    -- TL TC TR ML MC MR BL BC BR _DATUM, L/C/R_BASELINE (for drawString)
 g:setCursor(x, y)  g:print("text")   -- print wraps at the right edge
 g:drawString("text", x, y)       -- anchored by the datum, never wraps
+g:pushImage(x, y, w, h, data)    -- data: w*h*2 bytes, RGB565 big-endian, row by row
+g:pushImage(x, y, w, h, idx, pal[, t])  -- idx: w*h bytes, each a colour of pal (1-256 colours,
+                                 -- RGB565 big-endian); index t, or one past pal's end, isn't drawn
+g:setClipRect(x, y, w, h)  g:clearClipRect()  -- drawing (screen too) stays inside until cleared
 g:width()  g:height()            -- 480, 480
 g:flip()                         -- nothing changes on the glass until flip
 ```
@@ -231,7 +235,9 @@ end
   ~17 fps, while five fish of lines spread over the screen flip ~20% of it in ~6.5 ms. Redraw only
   what moves, and rather than clearing, wipe last frame's shapes: a `fillRect` over where each was
   (~0.05 us a pixel), or the same lines again in the background colour (a call is ~3 us, a line
-  ~0.2 us a pixel more).
+  ~0.2 us a pixel more). To redraw a region from layers (a backdrop and sprites over it), clip to
+  it and push each layer as an indexed image, rather than composing pixels in Lua: a full-screen
+  isometric scene went from 245 ms a tick to 34.
 - **LVGL cost**: each `obj:set{}` costs ~0.3-0.6 ms, and LVGL repaints everything under whatever
   changed, translucent layers included; on 480×480 a full-screen repaint is four times the work of a
   240×240 one. Keep big moving areas few.

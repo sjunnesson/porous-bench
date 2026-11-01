@@ -24,7 +24,10 @@ static int argi(lua_State* L, int idx) { return (int)luaL_checknumber(L, idx); }
 
 void ScreenDriver::onAppReset() {
   // Each app starts on a black frame at full brightness. The glass keeps the
-  // previous picture until the new app flips, as on Bench.
+  // previous picture until the new app flips, as on Bench. The last app's lgfx
+  // clip goes first, or the black would only fill it: lgfx's own reset, which
+  // clears it too, runs after this one.
+  static_cast<Lcd::Canvas*>(canvas)->clearClip();
   canvas->fillScreen(BLACK);
   Lcd::setBrightness(1.0f);
 }
