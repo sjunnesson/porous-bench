@@ -4,7 +4,13 @@
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
 #include <esp32s3/rom/cache.h>
+#include <esp_idf_version.h>
+// Stage 3 builds on Arduino core 3.x (ESP-IDF 5), stages 1-2 on core 2.x (IDF 4.4): both compile this.
+#if ESP_IDF_VERSION_MAJOR >= 5
+#include <esp_memory_utils.h>
+#else
 #include <soc/soc_memory_types.h>
+#endif
 
 namespace RgbPanel {
 
@@ -115,8 +121,12 @@ static void initSequence() {
   command(0x29);  // display on
 }
 
+#if ESP_IDF_VERSION_MAJOR >= 5
+static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
+#else
 static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, esp_lcd_rgb_panel_event_data_t*, void*) {
-  s_scans++;
+#endif
+  s_scans = s_scans + 1;  // not ++: C++20 (core 3.x) deprecates it on a volatile
   return false;
 }
 
@@ -133,6 +143,11 @@ static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, esp_lcd_rgb_panel_event_dat
 // writes it twice as fast, but takes so much of PSRAM that the scan runs dry
 // and the picture slips, again and again (2026-10-26, on the board).
 static uint16_t* findFrameBuffer() {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  // IDF 5 hands it out.
+  void* fb = nullptr;
+  return esp_lcd_rgb_panel_get_frame_buffer(s_panel, 1, &fb) == ESP_OK ? (uint16_t*)fb : nullptr;
+#else
   static const uint16_t marks[2][2] = {{0xA5C3, 0x3C5A}, {0x0FF0, 0xF00F}}, black = 0;
   const uint32_t* words = (const uint32_t*)s_panel;  // the base struct, then the driver's fields
   uint16_t* found = nullptr;
@@ -150,6 +165,7 @@ static uint16_t* findFrameBuffer() {
   esp_lcd_panel_draw_bitmap(s_panel, 0, 0, 1, 1, &black);
   esp_lcd_panel_draw_bitmap(s_panel, WIDTH - 1, HEIGHT - 1, WIDTH, HEIGHT, &black);
   return found;
+#endif
 }
 
 // Without the frame, a turned picture needs a strip to hand draw_bitmap.
@@ -198,20 +214,39 @@ static bool startScan() {
   cfg.timings.vsync_back_porch = 20;
   cfg.timings.vsync_front_porch = 10;
   cfg.data_width = 16;
+#if ESP_IDF_VERSION_MAJOR >= 5
+  cfg.dma_burst_size = 64;  // psram_trans_align's successor: 64-byte aligned frame, 64-byte bursts
+  // The scan reads two 10-row buffers in internal RAM, which an interrupt refills from the frame in
+  // PSRAM. Straight from PSRAM, as on IDF 4.4, the scan ran short whenever the app and the flips
+  // kept PSRAM busy, and IDF 5's driver (a looping DMA, restarted at each vertical sync) showed
+  // every such frame shifted: the picture jumped about (2026-11-02, on the board). 19 KB of
+  // internal RAM; 480 x 480 is 48 of them.
+  cfg.bounce_buffer_size_px = WIDTH * 10;
+#else
   cfg.psram_trans_align = 64;
-  cfg.hsync_gpio_num = PIN_HSYNC;
-  cfg.vsync_gpio_num = PIN_VSYNC;
-  cfg.de_gpio_num = PIN_DE;
-  cfg.pclk_gpio_num = PIN_PCLK;
-  for (int i = 0; i < 16; i++) cfg.data_gpio_nums[i] = PIN_DATA[i];
-  cfg.disp_gpio_num = -1;
+#endif
+  // gpio_num_t: IDF 6 types these fields (4.4 and 5 take an int either way).
+  cfg.hsync_gpio_num = (gpio_num_t)PIN_HSYNC;
+  cfg.vsync_gpio_num = (gpio_num_t)PIN_VSYNC;
+  cfg.de_gpio_num = (gpio_num_t)PIN_DE;
+  cfg.pclk_gpio_num = (gpio_num_t)PIN_PCLK;
+  for (int i = 0; i < 16; i++) cfg.data_gpio_nums[i] = (gpio_num_t)PIN_DATA[i];
+  cfg.disp_gpio_num = GPIO_NUM_NC;
+#if ESP_IDF_VERSION_MAJOR < 5
   cfg.on_frame_trans_done = onScan;
+#endif
   cfg.flags.fb_in_psram = 1;  // 480 x 480 x 2 = 450 KB
 
   if (esp_lcd_new_rgb_panel(&cfg, &s_panel) != ESP_OK) {
     s_panel = nullptr;
     return false;
   }
+#if ESP_IDF_VERSION_MAJOR >= 5
+  // A scan ends at each vertical sync (IDF 5 takes the callback here, not in the config).
+  esp_lcd_rgb_panel_event_callbacks_t cbs = {};
+  cbs.on_vsync = onScan;
+  esp_lcd_rgb_panel_register_event_callbacks(s_panel, &cbs, nullptr);
+#endif
   esp_lcd_panel_reset(s_panel);
   esp_lcd_panel_init(s_panel);  // starts the scan, which never stops on its own
   s_fb = findFrameBuffer();
@@ -219,11 +254,23 @@ static bool startScan() {
   return true;
 }
 
+static void setBacklightRaw(uint32_t duty) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(PIN_BL, duty);
+#else
+  ledcWrite(BL_CHANNEL, duty);
+#endif
+}
+
 bool begin() {
   // Backlight off while the panel starts, so the power-on garbage never shows.
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(PIN_BL, BL_HZ, BL_BITS);  // core 3.x: the pin is the channel's handle
+#else
   ledcSetup(BL_CHANNEL, BL_HZ, BL_BITS);
   ledcAttachPin(PIN_BL, BL_CHANNEL);
-  ledcWrite(BL_CHANNEL, 0);
+#endif
+  setBacklightRaw(0);
 
   initSequence();
   if (!startScan()) return false;
@@ -327,7 +374,7 @@ bool writesDirect() { return s_fb; }
 
 void setBacklight(float v) {
   s_backlight = constrain(v, 0.0f, 1.0f);
-  ledcWrite(BL_CHANNEL, (uint32_t)(s_backlight * ((1 << BL_BITS) - 1) + 0.5f));
+  setBacklightRaw((uint32_t)(s_backlight * ((1 << BL_BITS) - 1) + 0.5f));
 }
 
 float backlight() { return s_backlight; }

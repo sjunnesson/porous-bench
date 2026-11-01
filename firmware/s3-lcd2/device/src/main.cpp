@@ -104,6 +104,10 @@ static void keepConnecting() {
 
 void setup() {
   Serial.begin(115200);
+  // Never wait on the USB serial: with a computer plugged in but nothing reading the port, the
+  // core waits up to 2 s a print for room (20 x 100 ms), and the status lines alone froze apps
+  // for ~30 s at a time. Unread logs are dropped instead.
+  Serial.setTxTimeoutMs(0);
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 1500) delay(10);  // give a monitor time to attach
   Serial.println();

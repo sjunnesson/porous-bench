@@ -20,8 +20,14 @@ Serial/JTAG port (`/dev/cu.usbmodem…`); if it doesn't, hold B (BOOT) while pre
 `screen` (M5Stick verbs), `lgfx` (LovyanGFX-style), `lvgl` (LVGL 9 via luavgl), `button` (the XIAO's
 B key: `tap` / `hold`), `touchscreen` (CHSC6X: `read()`, `touch_*` events), `screens` (`"main"`:
 240×240 round, 16-bit, dark, brightness). Lua and LVGL live in the 8 MB PSRAM. Bench's board entry
-(`seeed-xiao-esp32s3-round-display`: screen, lgfx, lvgl, 8192 KB) matches: with LVGL bound and an app
-running, ~8.17 MB of PSRAM and ~163 KB of internal RAM stay free (measured).
+(`seeed-xiao-esp32s3-round-display`: screen, lgfx, lvgl, 8192 KB) matches: with an app running,
+~8.2 MB of PSRAM and ~142 KB of internal RAM stay free (measured on core 3.3.12; ~163 KB on 2.0.17).
+
+**Arduino core 3.3.12** (ESP-IDF 5.5, pioarduino `55.03.312`, pinned) since 2026-11-01, moved as
+the S3-Touch-LCD-2 was (see its README: the backlight's `ledcAttach`, `esp_websocket_client`,
+`lib_ignore = SD`, `../../core3.py`). Measured on the board against 2.0.17: LVGL's 48 px box 66 fps
+at 0.8 ms a push, a full-frame push 18.9 ms (~17.5), static RAM 65,624 → 71,116 bytes, flash
+2.48 → 2.71 MB; touch, B taps and holds and the backlight checked with `driver-check.lua`.
 
 `lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
 `setClipRect` / `clearClipRect` (Resident's fork at `59cd3cf`, branch `lgfx-pushimage`; since
@@ -39,8 +45,9 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
 ## What bring-up taught
 
 - **Chip:** ESP32-S3 (QFN56) rev v0.2, 8 MB embedded octal PSRAM (`qio_opi`), 8 MB flash, on
-  espressif32@6.12.0 (Arduino core 2.0.17). PlatformIO's `seeed_xiao_esp32s3` board already sets
-  the PSRAM and native-USB flags.
+  Arduino core 3.3.12 (2.0.17 until 2026-11-01). PlatformIO's `seeed_xiao_esp32s3` board already sets
+  the PSRAM and native-USB flags. `Serial.setTxTimeoutMs(0)`: plugged into a computer with no
+  monitor open, a print would otherwise wait for room (up to 2 s on core 3.x).
 - **The power switch cuts the display board's 3.3 V, USB or not.** With it off, the screen stays
   dark, and the I2C bus's pull-ups (on that 3.3 V) are unpowered: the first stage 1 hung in its I2C
   scan for over a minute. Every stage now gives Wire a 20 ms timeout, and stage 3's boot log says

@@ -11,7 +11,7 @@ device-minimal-resident/  stage 2: Wi-Fi (WiFiManager portal) + relay WebSocket 
 device/                   stage 3: drivers: screen, lgfx, button, screens (+ DEVICE-SKILL.md),
                           on a rebuilt Arduino core with more RAM for apps (84 KB)
 device-prebuilt-core/     the same firmware on the prebuilt core: quick to build, 59 KB for apps
-core3.py                  build fixes for Resident's libraries on Arduino core 3.x (stages 2-3),
+../core3.py               build fixes for Resident's libraries on Arduino core 3.x (stages 2-3),
                           and device/'s -O2
 ```
 
@@ -57,6 +57,13 @@ enter your network. The screen then shows the 8-character device ID.
 | BOOT key (to GND) | 9 |
 
 ## Quirks worth knowing
+
+- **Plugged into a computer with no monitor open, prints used to freeze the app** for ~30 s at a
+  time, now and then (2026-11-01): the USB serial (the C6's own, `ARDUINO_USB_MODE=1`) waits for room
+  in a print, up to 2 s each on core 3.x (20 × 100 ms), and Resident prints status lines every few
+  seconds. With a monitor reading, or on a charger, it never happened, so it looked like the app
+  (the flame) or its weather updates. `Serial.setTxTimeoutMs(0)` in `setup()` drops unread prints
+  instead (the S3-LCD-2 and XIAO have it too: their core 2.x waits up to 100 ms a print).
 
 - **`pio run -t upload` puts otadata's `boot_app0` at 0x19000**, where this partition table has it
   (`board_upload.arduino.boot_app0`, since 2026-10-27). Core 3.x writes it at 0xe000 unless told,

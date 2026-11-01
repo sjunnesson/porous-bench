@@ -30,8 +30,7 @@ bool begin() {
   tft.fillScreen(ST77XX_BLACK);
 
   // Backlight: plain PWM, dark until driven; 10 kHz, 10-bit, as Waveshare runs it.
-  ledcSetup(0, 10000, 10);
-  ledcAttachPin(PIN_BL, 0);
+  ledcAttach(PIN_BL, 10000, 10);  // core 3.x: the pin is the channel's handle
   setBrightness(1.0f);
 
   canvas = new Canvas(WIDTH, HEIGHT);  // 150 KB: Arduino puts big blocks in PSRAM
@@ -124,7 +123,7 @@ void presentDirty() {
 
 void setBrightness(float v) {
   _brightness = constrain(v, 0.0f, 1.0f);
-  ledcWrite(0, (uint32_t)(_brightness * 1023.0f + 0.5f));
+  ledcWrite(PIN_BL, (uint32_t)(_brightness * 1023.0f + 0.5f));
 }
 
 float brightness() { return _brightness; }

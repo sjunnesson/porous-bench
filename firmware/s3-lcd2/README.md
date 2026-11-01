@@ -18,8 +18,21 @@ Serial/JTAG port (`/dev/cu.usbmodem…`); if it doesn't, hold BOOT while pressin
 `screen` (M5Stick verbs), `lgfx` (LovyanGFX-style), `lvgl` (LVGL 9 via luavgl), `button` (BOOT:
 `tap` / `hold`), `touchscreen` (CST816D: `read()`, `touch_*` events), `imu` (QMI8658), `screens`
 (`"main"`: 240×320, 16-bit, dark, brightness). Lua and LVGL live in the 8 MB PSRAM. Bench's board
-entry (`waveshare-esp32-s3-touch-lcd-2`: screen, lgfx, lvgl, 8192 KB) matches: with LVGL bound and an
-app running, ~8.1 MB of PSRAM and ~204 KB of internal RAM stay free (measured).
+entry (`waveshare-esp32-s3-touch-lcd-2`: screen, lgfx, lvgl, 8192 KB) matches: with an app running,
+~7.9 MB of PSRAM and ~124-130 KB of internal RAM stay free (measured on core 3.3.12; ~204 KB on 2.0.17).
+
+**Arduino core 3.3.12** (ESP-IDF 5.5, pioarduino's platform `55.03.312`, pinned) since 2026-11-01,
+as the C6 builds, so the two no longer reinstall each other's packages in `~/.platformio`; it was
+espressif32@6.12.0 (core 2.0.17, the last 2.x, IDF 4.4). It took the backlight's PWM calls
+(`ledcAttach(pin, …)`, `ledcWrite(pin, …)`), Courier's WebSocket client as a library
+(`esp_websocket_client`, out of the prebuilt IDF since 5), `lib_ignore = SD` (Adafruit's ST7789
+library brings the registry's AVR SD, which deep LDF built for LVGL's disabled SD driver), and
+`../../core3.py`: Resident's library fixes from the C6, `-O2` per file, LVGL's comparator left a
+warning under GCC 14, and LVGL's `property_name_compare` declared `int` (IDF 5 made `int32_t` a
+`long` on the S3, so its `int32_t` declaration no longer matched its `int` definition). Measured
+against 2.0.17: the flame 29 fps (28), LVGL's 48 px box 62-64 fps at 0.8 ms a push (65.6, 0.8), a
+full-frame push 25.1 ms (23.4), static RAM 65,928 → 70,820 bytes, flash 2.54 → 2.78 MB; touch,
+the IMU, BOOT taps and holds and the backlight all checked with `driver-check.lua`.
 
 `lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
 `setClipRect` / `clearClipRect` (Resident's fork at `59cd3cf`, branch `lgfx-pushimage`; since
@@ -46,8 +59,9 @@ Brought up and tested on hardware 2026-10-12: device type `s3-lcd2`, firmware `s
   the board was online earlier. The `[heartbeat]` line prints the signal, channel and access point:
   read it first when the board drops off. Opening the serial port resets the board.
 - **Chip:** ESP32-S3 (QFN56) rev v0.2, 8 MB embedded octal PSRAM (`qio_opi`), 16 MB flash, on
-  espressif32@6.12.0 (Arduino core 2.0.17). Native USB only: `ARDUINO_USB_MODE=1` and
-  `ARDUINO_USB_CDC_ON_BOOT=1`, or Serial stays silent.
+  Arduino core 3.3.12 (2.0.17 until 2026-11-01). Native USB only: `ARDUINO_USB_MODE=1` and
+  `ARDUINO_USB_CDC_ON_BOOT=1`, or Serial stays silent. `Serial.setTxTimeoutMs(0)`: plugged into a
+  computer with no monitor open, a print would otherwise wait for room (up to 2 s on core 3.x).
 - **Panel:** Adafruit's ST7789 driver at `init(240, 320)` sends SWRESET (the LCD's reset isn't wired,
   so the pin is -1) and INVON, with no RAM offset. Rotation 2 (MADCTL 0x00) is the panel's native
   scan: USB-C at the bottom. Colours, edges and orientation checked on a test card.

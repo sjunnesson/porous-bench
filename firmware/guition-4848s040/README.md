@@ -71,6 +71,22 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
 
 ## How the panel works, and why the firmware is built this way
 
+- **Stage 3 runs Arduino core 4.0.0-RC1 (ESP-IDF 6.1), with bounce buffers** (since 2026-11-02;
+  2.0.17 before). The other colour boards moved to core 3.3.12 (IDF 5.5), and on it this panel didn't
+  hold: scanned straight from PSRAM, as on 2.0.17, the picture jumped about whenever PSRAM was busy
+  (IDF 5's driver loops the DMA and restarts it at each vertical sync, where 4.4's restarted it every
+  frame anyway); with bounce buffers (the scan reads two 10-row buffers in internal RAM, refilled by
+  an interrupt) the text at the top garbled and a white edge showed at the left and bottom now and
+  then. That is esp-idf#19070: in bounce-buffer mode with `CONFIG_LCD_RGB_RESTART_IN_VSYNC` (on in
+  Arduino's build) one late interrupt leaves the refill out of step with the scan. Fixed in IDF 6.0
+  and 6.1, not 5.5, so core 4.0.0-RC1, whose IDF build has the fix: no glitch in several minutes of
+  the full-screen `driver-check`. Bounce buffers cost 19 KB of internal RAM and the CPU that refills
+  them: `driver-check` 15 fps (34.5 ms a push), against 17.7 fps (30.5) on 2.0.17; 127 KB of internal
+  RAM free with it running. On 4.0 it also needed QRCode's C compiled as C17 (C23 makes `bool` a
+  keyword) and LVGL's ARM assembly left out (`../../core3.py`), and the panel's pins typed
+  `gpio_num_t`. The panel driver builds on 4.4, 5 and 6 (`ESP_IDF_VERSION_MAJOR`): stages 1-2 are on
+  2.0.17. Move to 4.0.0 when it's released.
+
 - **The ST7701S has no frame memory.** It takes an init sequence over 3-wire SPI (9-bit words,
   SCK 48, MOSI 47, CS 39; bit-banged, it's sent once), then shows whatever arrives on its 16-bit RGB
   bus (R 11 12 13 14 0, G 8 20 3 46 9 10, B 4 5 6 7 15; DE 18, HSYNC 16, VSYNC 17, PCLK 21). The
