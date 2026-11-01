@@ -66,6 +66,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         trigger: (name, opts) => declare(name, trigger(opts)),
         radar: (opts) => sensor<LD2410>('ld2410', (r) => opts.mode && r.setMode(opts.mode)),
         sensor: (kind) => sensor(kind),
+        present: (kind) => bench.first(kind),
         libraries,
         store: new AppStore(app.storeNs ?? 'app', true, (key) => {
           warn(`store: '${key}' rejected, over the 2048-byte budget`);

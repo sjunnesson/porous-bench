@@ -7,8 +7,9 @@ glanceable apps that change every few seconds or on a press (status boards, coun
 minute, QR codes, menus), not animation. Device type `epd213`.
 
 When porous.systems Bench mirrors an app onto this board, Bench's sensors and controls (dials,
-triggers, light, PIR, climate, touch, radar, IMU) reach the app as Bench defines them; the firmware
-itself has only the modules below.
+triggers, light, PIR, climate, touch, radar, switch, joystick, keypad, IR remote, RFID reader,
+microphone, distance, thermal camera, CO₂, pulse, IMU) reach the app as Bench defines them; the
+firmware itself has only the modules below.
 
 ## Hardware
 

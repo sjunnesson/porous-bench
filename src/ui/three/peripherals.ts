@@ -9,13 +9,23 @@ import * as THREE from 'three';
 import type { Button } from '../../sim/inputs/button';
 import type { Buzzer } from '../../sim/inputs/buzzer';
 import { type Climate, TEMP_RANGE } from '../../sim/inputs/climate';
+import { CHANNEL_PPM, type Co2 } from '../../sim/inputs/co2';
 import type { Imu } from '../../sim/inputs/imu';
+import { type IrReceiver, REMOTE_KEYS } from '../../sim/inputs/ir';
 import type { SimInput } from '../../sim/inputs/input';
+import type { Joystick } from '../../sim/inputs/joystick';
+import { KEYPAD_KEYS, type Keypad } from '../../sim/inputs/keypad';
 import type { Knob } from '../../sim/inputs/knob';
 import { FOV_DEG, type LD2410, MAX_RANGE_M } from '../../sim/inputs/ld2410';
 import type { LightSensor } from '../../sim/inputs/light';
+import type { Mic } from '../../sim/inputs/mic';
 import type { Pir } from '../../sim/inputs/pir';
 import type { Pot } from '../../sim/inputs/pot';
+import type { Pulse } from '../../sim/inputs/pulse';
+import { type RfidReader, TAGS } from '../../sim/inputs/rfid';
+import type { Switch } from '../../sim/inputs/switch';
+import { SIZE as THERMAL_SIZE, type Thermal } from '../../sim/inputs/thermal';
+import { CHANNEL_MM, type Tof } from '../../sim/inputs/tof';
 import type { Touch } from '../../sim/inputs/touch';
 
 const BLUE = 0x1b4b7a;
@@ -165,6 +175,13 @@ function setFill(m: THREE.Mesh, color: number, opacity: number) {
   mat.opacity = opacity;
 }
 
+/** Shift a part's content so it spans x0..x1 around its origin, as the layout centres parts; returns the shift. */
+function centreX(root: THREE.Group, x0: number, x1: number): number {
+  const dx = -(x0 + x1) / 2;
+  for (const c of root.children) c.position.x += dx;
+  return dx;
+}
+
 function withLabel(root: THREE.Group, text: string, y: number) {
   const l = label(text);
   l.position.set(0, y, 0.05);
@@ -204,6 +221,44 @@ function tactile(input: Button): Peripheral {
       const down = input.isPressed();
       cap.position.z = down ? capZ - 0.9 : capZ;
       setFill(fill, down ? NOW : BLUE, down ? 0.85 : 0.08);
+    },
+  };
+}
+
+/** A mini toggle switch on a small board: its lever leans one way off and the other on. Click to flip it. */
+function toggleSwitch(input: Switch): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(18, 14, 1.6));
+  root.add(xy(block(7, 12, 7, 1.6), 2, 0));
+  // COM, ON, OFF along the wire side.
+  for (const y of [-2.54, 0, 2.54]) root.add(place(block(1, 1, 2, 0, LINE_DIM), -7.5, y, 1.6 + 1));
+  const lever = new THREE.Group();
+  lever.position.set(2, 0, 8.6);
+  lever.add(cylinder(0.9, 9, 0, false, LINE));
+  const tip = disc(1.6, 9.05);
+  lever.add(tip);
+  root.add(lever);
+  // A generous pick target over the lever.
+  const pad = fillMesh(new THREE.PlaneGeometry(12, 14), BLUE, 0);
+  pad.position.set(2, 0, 18);
+  root.add(pad);
+  withLabel(root, input.label, -10);
+  return {
+    root,
+    w: 22,
+    h: 22,
+    anchor: new THREE.Vector3(-9, 0, 0.8),
+    targets: [tip, pad],
+    handles: [handleOf(root, 18, 14, 8.6)],
+    grab: () => {
+      input.flip();
+      return { move: () => {}, up: () => {} };
+    },
+    title: () => `${input.label}: click to flip · ${input.isOn() ? 'on (LOW)' : 'off (HIGH)'}`,
+    update() {
+      const on = input.isOn();
+      lever.rotation.y += ((on ? 0.45 : -0.45) - lever.rotation.y) * 0.4;
+      setFill(tip, on ? NOW : BLUE, on ? 0.85 : 0.1);
     },
   };
 }
@@ -315,6 +370,265 @@ function slidePot(input: Pot): Peripheral {
     title: () => `${input.label}: drag · analogRead ≈ ${Math.round(input.value * 4095)}`,
     update() {
       cap.position.x = (input.value - 0.5) * travel;
+    },
+  };
+}
+
+/**
+ * KY-023 thumb joystick: the stick's gimbal box on a small board, its dome, and the cap on its shaft,
+ * which tilts as the stick is pushed. Drag the cap to push it (it springs back when let go); press its
+ * centre to click it.
+ */
+function thumbstick(input: Joystick): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(34, 26, 1.6));
+  const cx = 3;
+  root.add(xy(block(16, 16, 9, 1.6), cx, 0));
+  // GND, +5V, VRx, VRy, SW along the wire side.
+  for (let i = 0; i < 5; i++) root.add(place(block(1, 1, 2, 0, LINE_DIM), -15.5, -5.08 + i * 2.54, 1.6 + 1));
+  const pivotZ = 10.6;
+  const dome = edges(new THREE.SphereGeometry(6, 12, 4, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2), LINE_DIM, 10);
+  root.add(place(dome, cx, 0, pivotZ));
+  const stick = new THREE.Group();
+  stick.position.set(cx, 0, pivotZ);
+  stick.add(cylinder(1.5, 7, 0, false, LINE_DIM)); // the shaft
+  const capZ = 7;
+  stick.add(cylinder(6.5, 3, capZ, true));
+  const cap = disc(6.5, capZ + 3.02);
+  setFill(cap, BLUE, 0.05);
+  stick.add(cap);
+  const push = disc(2.4, capZ + 3.06);
+  stick.add(push);
+  root.add(stick);
+  withLabel(root, input.label, -16);
+  const throwMm = 8; // the cap's travel from the middle to the gate
+  return {
+    root,
+    w: 38,
+    h: 34,
+    anchor: new THREE.Vector3(-17, 0, 0.8),
+    targets: [push, cap],
+    handles: [handleOf(root, 34, 26, 1.6)],
+    grab(hit, ray) {
+      if (hit === push) {
+        input.button.setDown(true);
+        return { move: () => {}, up: () => input.button.setDown(false) };
+      }
+      const z = pivotZ + capZ + 3;
+      const start = onPlane(root, ray, z);
+      return {
+        move(r) {
+          const p = onPlane(root, r, z);
+          if (start && p) input.set((p.x - start.x) / throwMm, (p.y - start.y) / throwMm);
+        },
+        up: () => input.set(0, 0),
+      };
+    },
+    title: (hit) => {
+      const { x, y } = input.position;
+      return hit === push ? `${input.label}: press the stick` : `${input.label}: drag to push the stick · ${x.toFixed(2)}, ${y.toFixed(2)}`;
+    },
+    update() {
+      const { x, y } = input.position;
+      stick.rotation.y = x * 0.45;
+      stick.rotation.x = -y * 0.45;
+      const down = input.isPressed();
+      stick.position.z = down ? pivotZ - 0.8 : pivotZ;
+      setFill(push, down ? NOW : BLUE, down ? 0.85 : 0.1);
+    },
+  };
+}
+
+/** The kit remote's keys, top to bottom: the arrows around OK, then the digits. */
+const REMOTE_LAYOUT = [['', 'up', ''], ['left', 'ok', 'right'], ['', 'down', ''], ['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9'], ['star', '0', 'hash']];
+
+/**
+ * A VS1838B receiver on its small board, standing with its dome up, and the kit's remote lying next to
+ * it. Press and hold a key on the remote to send it; its IR LED and the receiver light while it sends.
+ */
+function irRemote(input: IrReceiver): Peripheral {
+  const root = new THREE.Group();
+  // The receiver's board, on the wire side.
+  const rx = new THREE.Group();
+  rx.position.x = -20;
+  rx.add(block(15, 18, 1.6));
+  rx.add(xy(block(6, 5, 7, 1.6), 1.5, 0));
+  const dome = edges(new THREE.SphereGeometry(2.4, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2), LINE, 10);
+  rx.add(place(dome, 1.5, 0, 8.6));
+  const domeFill = fillMesh(new THREE.CircleGeometry(2.4, 16), BLUE, 0.06);
+  rx.add(place(domeFill, 1.5, 0, 8.65));
+  // OUT, GND, VCC.
+  for (const y of [-2.54, 0, 2.54]) rx.add(place(block(1, 1, 2, 0, LINE_DIM), -6, y, 1.6 + 1));
+  root.add(rx);
+  // The remote.
+  const remote = new THREE.Group();
+  remote.position.x = 12;
+  const RW = 34;
+  const RH = 78;
+  remote.add(block(RW, RH, 5));
+  const led = disc(1.6, 5.05);
+  led.position.y = RH / 2 - 5;
+  remote.add(led);
+  const keys: THREE.Mesh[] = [];
+  REMOTE_LAYOUT.forEach((row, r) =>
+    row.forEach((id, c) => {
+      if (!id) return;
+      // On the remote's face, above its body: under it, the body would take the click and move the part.
+      const k = xy(disc(3.4, 5.1), (c - 1) * 10, RH / 2 - 15 - r * 9.6);
+      k.userData.key = id;
+      remote.add(xy(ring(3.4, 5.1, LINE_DIM), k.position.x, k.position.y));
+      const l = label(REMOTE_KEYS.find((x) => x.id === id)?.label ?? id, 2.4, '#1b4b7a');
+      remote.add(place(l, k.position.x, k.position.y, 5.15));
+      remote.add(k);
+      keys.push(k);
+    }),
+  );
+  root.add(remote);
+  withLabel(root, input.label, -RH / 2 - 3.5);
+  const bodies = [handle(15, 18, 8.6, 0, -20), handle(RW, RH, 5, 0, 12)];
+  for (const b of bodies) root.add(b);
+  const keyLabel = (id: string) => REMOTE_KEYS.find((k) => k.id === id)?.label ?? id;
+  return {
+    root,
+    w: 66,
+    h: RH + 8,
+    anchor: new THREE.Vector3(-27.5, 0, 0.8),
+    targets: keys,
+    handles: bodies,
+    grab(hit) {
+      const id = hit.userData.key as string | undefined;
+      if (!id) return null;
+      input.press(id, true);
+      return { move: () => {}, up: () => input.press(id, false) };
+    },
+    title: (hit) => {
+      const { last } = input.read();
+      const id = hit.userData.key as string | undefined;
+      return `${input.label}: ${id ? `press ${keyLabel(id)} on the remote` : 'the remote'}${last ? ` · last ${keyLabel(last)}` : ''}`;
+    },
+    update() {
+      const sending = input.sending;
+      const { key } = input.read();
+      for (const k of keys) setFill(k, k.userData.key === sending ? NOW : BLUE, k.userData.key === sending ? 0.85 : 0.08);
+      setFill(led, sending ? NOW : BLUE, sending ? 0.9 : 0.15);
+      setFill(domeFill, key ? NOW : BLUE, key ? 0.6 : 0.06);
+    },
+  };
+}
+
+/**
+ * A 12-key capacitive keypad on its MPR121 board: round copper pads in a phone's layout, with the
+ * chip and header along the wire side. Press and hold a pad to touch it.
+ */
+function keypadPart(input: Keypad): Peripheral {
+  const root = new THREE.Group();
+  const W = 40;
+  const H = 52;
+  root.add(block(W, H, 1.6));
+  root.add(xy(block(4, 4, 0.9, 1.6, LINE_DIM), -W / 2 + 5, H / 2 - 6)); // the MPR121
+  // 3.3V, IRQ, SCL, SDA, GND.
+  for (let i = 0; i < 5; i++) root.add(place(block(1, 1, 2, 0, LINE_DIM), -W / 2 + 1.5, -5.08 + i * 2.54, 1.6 + 1));
+  const pads: THREE.Mesh[] = [];
+  KEYPAD_KEYS.forEach((k, i) => {
+    const x = ((i % 3) - 1) * 11 + 3;
+    const y = H / 2 - 9 - Math.floor(i / 3) * 11.5;
+    root.add(xy(ring(4.3, 1.65, LINE_DIM), x, y));
+    const pad = disc(4.3, 1.7);
+    pad.position.set(x, y, pad.position.z);
+    pad.userData.key = k.id;
+    root.add(pad);
+    root.add(place(label(k.label, 2.6, '#1b4b7a'), x, y, 1.75));
+    pads.push(pad);
+  });
+  withLabel(root, input.label, -H / 2 - 3.5);
+  return {
+    root,
+    w: W + 4,
+    h: H + 8,
+    anchor: new THREE.Vector3(-W / 2, 0, 0.8),
+    targets: pads,
+    handles: [handleOf(root, W, H, 1.6)],
+    grab(hit) {
+      const id = hit.userData.key as string | undefined;
+      if (!id) return null;
+      input.press(id, true);
+      return { move: () => {}, up: () => input.press(id, false) };
+    },
+    title: (hit) => `${input.label}: press and hold ${KEYPAD_KEYS.find((k) => k.id === hit.userData.key)?.label ?? 'a pad'}`,
+    update() {
+      for (const p of pads) {
+        const on = input.isTouched(p.userData.key);
+        setFill(p, on ? NOW : BLUE, on ? 0.85 : 0.08);
+      }
+    },
+  };
+}
+
+/**
+ * A PN532 board with its antenna's loops, and its tags lying beside it: two cards, a key fob and a
+ * sticker, drawn small. Click a tag to lay it on the antenna (it slides over), and again to take it off.
+ */
+function rfidReader(input: RfidReader): Peripheral {
+  const root = new THREE.Group();
+  const W = 42;
+  const H = 40;
+  root.add(block(W, H, 1.6));
+  // The antenna: a few loops round the board's far end, and the PN532 by the header.
+  const ax = 5;
+  for (const [w, h] of [[28, 30], [25, 27], [22, 24]] as const) root.add(place(block(w, h, 0.05, 0, LINE_DIM), ax, 0, 1.6));
+  root.add(xy(block(6, 6, 0.9, 1.6, LINE_DIM), -W / 2 + 7, 8));
+  // GND, VCC, SDA, SCL along the wire side.
+  for (let i = 0; i < 4; i++) root.add(place(block(1, 1, 2, 0, LINE_DIM), -W / 2 + 1.5, -3.81 + i * 2.54, 1.6 + 1));
+  const field = fillMesh(new THREE.PlaneGeometry(28, 30), BLUE, 0.03);
+  field.position.set(ax, 0, 1.7);
+  root.add(field);
+  // The tags, in a column beside the board; each slides over the antenna when laid on it.
+  const tags = TAGS.map((t, i) => {
+    const g = new THREE.Group();
+    const home = new THREE.Vector3(W / 2 + 14, H / 2 - 6 - i * 11, 0);
+    const round = t.id === 'fob' || t.id === 'sticker';
+    if (round) g.add(cylinder(t.id === 'fob' ? 5 : 4, 1, 0));
+    else g.add(block(17, 9.5, 0.8));
+    const face = round ? disc(t.id === 'fob' ? 5 : 4, 1.05) : fillMesh(new THREE.PlaneGeometry(17, 9.5));
+    if (!round) face.position.z = 0.85;
+    face.userData.tag = t.id;
+    g.add(face);
+    const l = label(t.label.replace(/ .*/, '').replace('NTAG215', 'NTAG'), 2, '#1b4b7a');
+    l.position.z = 1.2;
+    if (round) l.position.y = -(t.id === 'fob' ? 7 : 6);
+    g.add(l);
+    g.position.copy(home);
+    root.add(g);
+    return { id: t.id, g, face, home };
+  });
+  withLabel(root, input.label, -H / 2 - 3.5);
+  const body = handleOf(root, W, H, 1.6);
+  const dx = centreX(root, -W / 2, W / 2 + 14 + 8.5);
+  for (const t of tags) t.home.x += dx;
+  const onAntenna = new THREE.Vector3(ax + dx, 0, 2);
+  return {
+    root,
+    w: W + 34,
+    h: H + 8,
+    anchor: new THREE.Vector3(-W / 2 + dx, 0, 0.8),
+    targets: tags.map((t) => t.face),
+    handles: [body],
+    grab(hit) {
+      const id = hit.userData.tag as string | undefined;
+      if (!id) return null;
+      input.place(input.lying === id ? null : id);
+      return { move: () => {}, up: () => {} };
+    },
+    title: (hit) => {
+      const t = TAGS.find((x) => x.id === hit.userData.tag);
+      return t ? `${t.label} (UID ${input.uid(t.id)}): click to ${input.lying === t.id ? 'take it off' : 'lay it on the reader'}` : input.label;
+    },
+    update() {
+      const lying = input.lying;
+      const found = input.read().present;
+      for (const t of tags) t.g.position.lerp(t.id === lying ? onAntenna : t.home, 0.25);
+      setFill(field, found ? NOW : BLUE, found ? 0.12 : 0.03);
+      for (const t of tags) setFill(t.face, t.id === lying ? NOW : BLUE, t.id === lying ? 0.35 : 0.06);
     },
   };
 }
@@ -587,6 +901,197 @@ function ldr(input: LightSensor): Peripheral {
   };
 }
 
+/**
+ * INMP441 breakout: a round board with the MEMS mic's can in the middle and its 2×3 header. Rings
+ * spread from it as loud as the sound is. Click it to clap; scroll to turn the room up or down.
+ */
+function microphone(input: Mic): Peripheral {
+  const root = new THREE.Group();
+  root.add(cylinder(7, 1.6, 0));
+  root.add(block(4, 3, 1.1, 1.6));
+  const port = disc(0.7, 2.75);
+  setFill(port, BLUE, 0.6);
+  root.add(port);
+  // VDD, GND, L/R and WS, SCK, SD: two rows of three on the wire side.
+  for (const x of [-5, -2.5]) for (const y of [-2.54, 0, 2.54]) root.add(place(block(1, 1, 2, 0, LINE_DIM), x, y, 1.6 + 1));
+  const ringMat = new THREE.LineBasicMaterial({ color: NOW, transparent: true, opacity: 0, depthWrite: false });
+  const rings = [ring(9, 0, ringMat), ring(12, 0, ringMat), ring(15, 0, ringMat)];
+  for (const r of rings) {
+    r.position.z = 2.8;
+    root.add(r);
+  }
+  const pad = fillMesh(new THREE.CircleGeometry(8, 24), BLUE, 0);
+  pad.position.z = 3;
+  root.add(pad);
+  withLabel(root, input.label, -10.5);
+  const wheel = wheelClicks();
+  return {
+    root,
+    w: 22,
+    h: 24,
+    anchor: new THREE.Vector3(-7, 0, 0.8),
+    targets: [pad],
+    handles: [handleOf(root, 14, 14, 2.8)],
+    grab: () => {
+      input.clap();
+      return { move: () => {}, up: () => {} };
+    },
+    wheel: (_hit, dy) => {
+      const n = wheel(dy);
+      if (n) input.setRoom(input.roomLevel + n * 2);
+    },
+    title: () => `${input.label}: click to clap, scroll for the room · ${input.read().db.toFixed(0)} dB SPL`,
+    update() {
+      const l = input.level();
+      ringMat.opacity = Math.max(0, l - 0.15) * 1.1;
+      const k = performance.now() / 1000;
+      rings.forEach((r, i) => r.scale.setScalar(0.85 + l * 0.3 + Math.sin(k * 6 + i) * 0.02 * l));
+    },
+  };
+}
+
+/**
+ * A VL53L1X breakout and the hand it sees: the hand hovers over the sensor at its distance (drawn
+ * a twentieth of it, so a hand's reach fits on the desk), with its cone below. Drag the hand up or
+ * down, or scroll; click the sensor to take the hand away or bring it back.
+ */
+function tofSensor(input: Tof): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(13, 18, 1.6));
+  root.add(xy(block(4.9, 2.5, 1.6, 1.6), 1.5, 2));
+  const lens = xy(disc(0.9, 3.25), 1.5, 2);
+  setFill(lens, BLUE, 0.5);
+  root.add(lens);
+  // VIN, GND, SDA, SCL, XSHUT, GPIO1.
+  for (let i = 0; i < 6; i++) root.add(place(block(1, 1, 2, 0, LINE_DIM), -5.2, -6.35 + i * 2.54, 1.6 + 1));
+  const SCALE = 1 / 20;
+  const hand = new THREE.Group();
+  hand.position.set(1.5, 2, 0);
+  hand.add(place(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(new THREE.EllipseCurve(0, 0, 5, 7).getPoints(32)), LINE), 0, 0, 0));
+  for (const [x, y] of [[-3.6, 8], [-1.2, 9.6], [1.2, 9.6], [3.6, 8]]) hand.add(polyline([[x * 0.8, y - 3], [x, y]], 0)); // fingers
+  const palm = fillMesh(new THREE.CircleGeometry(6, 24), NOW, 0.08);
+  hand.add(palm);
+  const beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), LINE_DIM);
+  hand.add(beam);
+  root.add(hand);
+  const pad = fillMesh(new THREE.PlaneGeometry(13, 18), BLUE, 0);
+  pad.position.z = 3.3;
+  root.add(pad);
+  withLabel(root, input.label, -12.5);
+  const wheel = wheelClicks();
+  const height = () => 4 + (input.targetMm ?? 0) * SCALE;
+  return {
+    root,
+    w: 18,
+    h: 26,
+    anchor: new THREE.Vector3(-6.5, 0, 0.8),
+    targets: [palm, pad],
+    handles: [handleOf(root, 13, 18, 3.2)],
+    grab(hit, ray) {
+      if (hit === pad) {
+        input.setTarget(input.targetMm === null ? 250 : null);
+        return { move: () => {}, up: () => {} };
+      }
+      const start = input.targetMm ?? 250;
+      // Drag along the desk's y: away from you is farther.
+      return dragY(root, ray, 3.3, (dy) => input.setTarget(Math.max(0, Math.round(start + dy / SCALE / 4))));
+    },
+    wheel: (_hit, dy) => {
+      const n = wheel(dy);
+      if (n && input.targetMm !== null) input.setTarget(Math.max(0, input.targetMm + n * 20));
+    },
+    title: (hit) => {
+      const mm = input.mm();
+      const reading = mm === null ? 'out of range' : `${mm} mm`;
+      return hit === pad ? `${input.label}: click to ${input.targetMm === null ? 'hold a hand over it' : 'take the hand away'} · ${reading}` : `${input.label}: drag or scroll · ${reading}`;
+    },
+    update() {
+      const t = input.targetMm;
+      hand.visible = t !== null;
+      hand.position.z = height();
+      beam.scale.z = height() - 3.3;
+      setFill(palm, NOW, t !== null && t < CHANNEL_MM ? 0.15 : 0.05);
+      setFill(lens, input.near() ? NOW : BLUE, input.near() ? 0.9 : 0.5);
+    },
+  };
+}
+
+/**
+ * An AMG8833 breakout with its round sensor can, and beside it the frame it sees: 8×8 pixels lying on
+ * the desk, pale at the room's temperature and rust where it's warm. Drag over the frame to move the
+ * warm figure; scroll over it to bring the figure nearer or send it farther off.
+ */
+function amg8833(input: Thermal): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(18, 16, 1.6));
+  root.add(xy(cylinder(3.3, 3.4, 1.6), 2, 0));
+  const can = xy(disc(1.6, 5.05), 2, 0);
+  setFill(can, BLUE, 0.4);
+  root.add(can);
+  // VIN, 3Vo, GND, SDA, SCL, INT.
+  for (let i = 0; i < 6; i++) root.add(place(block(1, 1, 2, 0, LINE_DIM), -7.5, -6.35 + i * 2.54, 1.6 + 1));
+  const N = THERMAL_SIZE;
+  const cell = 3;
+  const view = new THREE.Group();
+  view.position.set(9 + 4 + (N * cell) / 2, 0, 0.2);
+  view.add(block(N * cell + 1, N * cell + 1, 0.2, 0, LINE_DIM));
+  const cells: THREE.Mesh[] = [];
+  for (let i = 0; i < N * N; i++) {
+    const m = fillMesh(new THREE.PlaneGeometry(cell - 0.4, cell - 0.4), MUTED, 0.1);
+    // Row 0 at the far edge, as the frame reads top to bottom.
+    m.position.set(((i % N) - (N - 1) / 2) * cell, ((N - 1) / 2 - Math.floor(i / N)) * cell, 0.25);
+    view.add(m);
+    cells.push(m);
+  }
+  const pad = fillMesh(new THREE.PlaneGeometry(N * cell, N * cell), BLUE, 0);
+  pad.position.z = 0.3;
+  view.add(pad);
+  root.add(view);
+  withLabel(root, input.label, -N * cell / 2 - 4);
+  const body = handleOf(root, 18, 16, 5);
+  const dx = centreX(root, -9, 9 + 4 + N * cell + 0.5);
+  const wheel = wheelClicks();
+  const pale = new THREE.Color(0xdfe6ea);
+  const hot = new THREE.Color(NOW);
+  const moveTo = (ray: THREE.Ray) => {
+    const p = onPlane(view, ray, 0.3);
+    if (!p) return;
+    const f = input.target ?? { x: 0.5, y: 0.5, r: 1.2 };
+    input.setFigure({ ...f, x: p.x / (N * cell) + 0.5, y: 0.5 - p.y / (N * cell) });
+  };
+  return {
+    root,
+    w: 18 + 4 + N * cell + 4,
+    h: N * cell + 10,
+    anchor: new THREE.Vector3(-9 + dx, 0, 0.8),
+    targets: [pad],
+    handles: [body],
+    grab(_hit, ray) {
+      moveTo(ray);
+      return { move: moveTo, up() {} };
+    },
+    wheel: (_hit, dy) => {
+      const n = wheel(dy);
+      const f = input.target;
+      if (n && f) input.setFigure({ ...f, r: f.r + n * 0.2 });
+    },
+    title: () => {
+      const h = input.hotspot();
+      return `${input.label}: drag over the frame to move the warm figure, scroll for how near · max ${h.max.toFixed(1)} °C`;
+    },
+    update() {
+      const px = input.pixels();
+      const room = input.room;
+      cells.forEach((m, i) => {
+        const f = Math.min(1, Math.max(0, (px[i] - room + 1) / 12));
+        const mat = m.material as THREE.MeshBasicMaterial;
+        mat.color.copy(pale).lerp(hot, f);
+        mat.opacity = 0.15 + f * 0.75;
+      });
+    },
+  };
+}
+
 /** HC-SR501 PIR: a board with a faceted Fresnel dome. Press and hold the dome to move in front of it. */
 function pirSensor(input: Pir): Peripheral {
   const root = new THREE.Group();
@@ -705,6 +1210,106 @@ function dht(input: Climate): Peripheral {
       mat.color.copy(tint.setHex(BLUE).lerp(new THREE.Color(NOW), f));
       mat.opacity = 0.06 + Math.abs(f - 0.5) * 0.5;
       setFill(band, BLUE, 0.03 + (input.humidity / 100) * 0.3);
+    },
+  };
+}
+
+/**
+ * A Sensirion SCD41 on its breakout: the square sensor with its round optical window, which tints from
+ * blue to rust as the CO₂ it read rises. Drag or scroll over it for the room's CO₂; click to breathe on it.
+ */
+function scd41(input: Co2): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(20, 22, 1.6));
+  root.add(xy(block(10.1, 10.1, 6.5, 1.6), 2, 0));
+  root.add(xy(ring(3, 8.15), 2, 0));
+  const face = xy(disc(3, 8.2), 2, 0);
+  root.add(face);
+  // VDD, GND, SCL, SDA.
+  for (let i = 0; i < 4; i++) root.add(place(block(1, 1, 2, 0, LINE_DIM), -8.5, -3.81 + i * 2.54, 1.6 + 1));
+  const pad = fillMesh(new THREE.PlaneGeometry(12, 12), BLUE, 0);
+  pad.position.set(2, 0, 8.3);
+  root.add(pad);
+  withLabel(root, input.label, -14);
+  const wheel = wheelClicks();
+  const tint = new THREE.Color();
+  let moved = false;
+  return {
+    root,
+    w: 24,
+    h: 30,
+    anchor: new THREE.Vector3(-10, 0, 0.8),
+    targets: [face, pad],
+    handles: [handleOf(root, 20, 22, 8.1)],
+    grab(_hit, ray) {
+      const start = input.roomPpm;
+      moved = false;
+      const drag = dragY(root, ray, 8.3, (dy) => {
+        if (Math.abs(dy) > 1) moved = true;
+        if (moved) input.setRoom(Math.round((start + dy * 40) / 10) * 10);
+      });
+      return { move: drag.move, up: () => !moved && input.breathe() };
+    },
+    wheel: (_hit, dy) => {
+      const n = wheel(dy);
+      if (n) input.setRoom(input.roomPpm + n * 50);
+    },
+    title: () => {
+      const r = input.read();
+      return `${input.label}: ${r ? `${r.co2} ppm` : 'starting'} · drag or scroll for the room, click to breathe on it`;
+    },
+    update() {
+      const r = input.read();
+      const f = r ? Math.min(1, Math.max(0, (r.co2 - CHANNEL_PPM[0]) / (CHANNEL_PPM[1] - CHANNEL_PPM[0]))) : 0;
+      const mat = face.material as THREE.MeshBasicMaterial;
+      mat.color.copy(tint.setHex(BLUE).lerp(new THREE.Color(NOW), f));
+      mat.opacity = 0.08 + f * 0.6;
+    },
+  };
+}
+
+/**
+ * A MAX30102 breakout: the sensor's window with its two LEDs, glowing red with each heartbeat the
+ * driver finds. Click it to rest a fingertip on it (drawn over it), and again to lift it.
+ */
+function max30102(input: Pulse): Peripheral {
+  const root = new THREE.Group();
+  root.add(block(14, 16, 1.6));
+  root.add(xy(block(5.6, 3.3, 1.55, 1.6), 1.5, 0));
+  const lens = xy(fillMesh(new THREE.PlaneGeometry(5, 2.8), BLUE, 0.2), 1.5, 0);
+  lens.position.z = 3.2;
+  root.add(lens);
+  // VIN, SDA, SCL, INT, GND.
+  for (let i = 0; i < 5; i++) root.add(place(block(1, 1, 2, 0, LINE_DIM), -5.6, -5.08 + i * 2.54, 1.6 + 1));
+  const tip = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(new THREE.EllipseCurve(0, 0, 6, 8).getPoints(32)), LINE);
+  const fingertip = new THREE.Group();
+  fingertip.add(tip);
+  fingertip.add(fillMesh(new THREE.CircleGeometry(6, 24).scale(1, 8 / 6, 1), NOW, 0.06));
+  fingertip.position.set(1.5, -2, 5);
+  root.add(fingertip);
+  const pad = fillMesh(new THREE.PlaneGeometry(14, 16), BLUE, 0);
+  pad.position.z = 3.3;
+  root.add(pad);
+  withLabel(root, input.label, -11.5);
+  return {
+    root,
+    w: 18,
+    h: 26,
+    anchor: new THREE.Vector3(-7, 0, 0.8),
+    targets: [pad],
+    handles: [handleOf(root, 14, 16, 3.2)],
+    grab: () => {
+      input.setFinger(!input.finger);
+      return { move: () => {}, up: () => {} };
+    },
+    title: () => {
+      const r = input.read();
+      return `${input.label}: click to ${input.finger ? 'lift the finger' : 'rest a finger on it'} · ${r.bpm !== null ? `${r.bpm} bpm` : r.finger ? 'finding the pulse' : 'no finger'}`;
+    },
+    update() {
+      fingertip.visible = input.finger;
+      const beat = input.keys.get('beat')!.isPressed();
+      setFill(lens, beat ? NOW : BLUE, beat ? 0.85 : input.read().finger ? 0.35 : 0.2);
     },
   };
 }
@@ -1128,11 +1733,17 @@ export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>, 
       case 'button':
         if (!onDevice.has(input)) add(tactile(input as Button), input);
         break;
+      case 'switch':
+        add(toggleSwitch(input as Switch), input);
+        break;
       case 'knob':
         add(encoder(input as Knob), input);
         break;
       case 'pot':
         add(slidePot(input as Pot), input);
+        break;
+      case 'joystick':
+        add(thumbstick(input as Joystick), input);
         break;
       case 'buzzer':
         add(piezo(input as Buzzer), input);
@@ -1143,17 +1754,41 @@ export function buildPeripherals(hardware: SimInput[], onDevice: Set<SimInput>, 
       case 'light':
         add(ldr(input as LightSensor), input);
         break;
+      case 'tof':
+        add(tofSensor(input as Tof), input);
+        break;
+      case 'thermal':
+        add(amg8833(input as Thermal), input);
+        break;
       case 'pir':
         add(pirSensor(input as Pir), input);
         break;
       case 'climate':
         add(dht(input as Climate), input);
         break;
+      case 'co2':
+        add(scd41(input as Co2), input);
+        break;
+      case 'pulse':
+        add(max30102(input as Pulse), input);
+        break;
       case 'touch':
         add(touchPad(input as Touch, ttp223), input);
         break;
+      case 'keypad':
+        add(keypadPart(input as Keypad), input);
+        break;
+      case 'ir':
+        add(irRemote(input as IrReceiver), input);
+        break;
+      case 'rfid':
+        add(rfidReader(input as RfidReader), input);
+        break;
       case 'imu':
         if (!onDevice.has(input)) add(gy521(input as Imu), input);
+        break;
+      case 'mic':
+        if (!onDevice.has(input)) add(microphone(input as Mic), input);
         break;
     }
   }

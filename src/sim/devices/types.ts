@@ -66,7 +66,7 @@ export interface DeviceProfile {
   /** The boards (ids in src/sim/boards.ts) that can drive it, the default first. Unset: any generic board. */
   boards?: string[];
   /** Hardware built into the board besides its buttons (those come from the enclosure). */
-  builtins?: ('imu' | 'buzzer')[];
+  builtins?: ('imu' | 'buzzer' | 'mic')[];
   /** Function → GPIO on boards with a built-in display. */
   wiring?: Record<string, number>;
   /** Things a driver must get right on real hardware. */

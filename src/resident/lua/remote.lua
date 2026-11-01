@@ -1,8 +1,8 @@
 -- porous.systems Bench remote: this app's inputs come from Bench (bench.porous.systems), which sends
 -- their state over the relay as "bench" events. Bench's drivers (dial, trigger, light, pir,
 -- climate, touch, ld2410, imu, and a silent buzzer) are defined here only where this firmware has
--- none. Each sits between "@@part <module>" and "@@end" lines: Bench sends only the parts the app
--- names, since every line here costs compile memory on the device. Bench's buttons A and B arrive
+-- none. Each sits between "@@part <module> [<module> …]" and "@@end" lines: Bench sends only the
+-- parts the app names, since every line here costs compile memory on the device. Bench's buttons A and B arrive
 -- as the taps and holds Bench recognised, and touches on Bench's screen as touch_* events. The
 -- board's own keys and touch panel still reach the app: a press on the real board always counts.
 local __bench = { d = {}, t = {}, s = {}, g = {}, taps = 0 }
@@ -57,6 +57,12 @@ if not trigger then
     local v = get(self)
     return v ~= nil and v[3] == 1 and __bench.since[self.name] ~= nil and __now() - __bench.since[self.name] >= ms
   end
+  -- v[4..] are the codes of the presses the board hasn't had, the last for the newest.
+  function T:code()
+    local v = get(self)
+    local c = v and #v > 3 and v[#v]
+    if c and c ~= "" then return c end
+  end
   trigger = {
     new = function(name)
       local v = __bench.t[name]
@@ -73,6 +79,19 @@ if button then pcall(function() button.press_count = function() return __bench.t
 local function sensor(key, default)
   return function() return __bench.s[key] or default end
 end
+-- @@part thermal pulse
+-- Arrays Bench packs two characters a number (base64url, 12 bits): lo + n * step each.
+local __b64 = {}
+for i = 1, 64 do __b64[("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"):byte(i)] = i - 1 end
+local function __unpack(s, lo, step)
+  local out = {}
+  for i = 1, #s - 1, 2 do
+    local v = lo + (__b64[s:byte(i)] * 64 + __b64[s:byte(i + 1)]) * step
+    out[#out + 1] = math.tointeger(v) or v -- 22, not 22.0, as Bench gives it
+  end
+  return out
+end
+-- @@end
 -- @@part light
 if not light then
   light = { read = sensor("light", { level = 0.5, lux = 300, raw = 2048 }) }
@@ -92,10 +111,98 @@ if not climate then
   function climate.humidity() return climate.read().humidity end
 end
 -- @@end
+-- @@part pulse
+if not pulse then
+  local seen
+  pulse = { read = sensor("pulse", { finger = false, ir = 0, red = 0 }) }
+  function pulse.bpm() return pulse.read().bpm end
+  -- The samples Bench sent that this app hasn't had: each update carries the newest, numbered.
+  function pulse.samples()
+    local r, out = pulse.read(), {}
+    if r.w then
+      local w = __unpack(r.w, r.b, r.st or 4)
+      for i, v in ipairs(w) do
+        if seen == nil or r.n - #w + i > seen then out[#out + 1] = v end
+      end
+      seen = r.n
+    end
+    return out
+  end
+end
+-- @@end
+-- @@part co2
+if not co2 then
+  co2 = { read = sensor("co2", {}) }
+  function co2.ppm() return co2.read().co2 end
+end
+-- @@end
 -- @@part touch
 if not touch then
   touch = { read = sensor("touch", { touched = false, raw = 0 }) }
   function touch.touched() return touch.read().touched end
+end
+-- @@end
+-- @@part keypad
+if not keypad then
+  keypad = { read = sensor("keypad", { keys = {}, mask = 0 }) }
+  function keypad.pressed(key)
+    for _, k in ipairs(keypad.read().keys) do if k == key then return true end end
+    return false
+  end
+end
+-- @@end
+-- @@part rfid
+if not rfid then
+  rfid = { read = sensor("rfid", { present = false }) }
+  function rfid.uid() return rfid.read().uid end
+end
+-- @@end
+-- @@part ir
+if not ir then
+  ir = { read = sensor("ir", { address = 0 }) }
+  function ir.key() return ir.read().key end
+end
+-- @@end
+-- @@part mic
+if not mic then
+  mic = { read = sensor("mic", { level = 0.14, db = 40, bands = { 0, 0, 0, 0, 0, 0, 0, 0 } }) }
+  function mic.level() return mic.read().level end
+  function mic.db() return mic.read().db end
+end
+-- @@end
+-- @@part switch
+if not switch then
+  switch = { read = sensor("switch", { on = false }) }
+  function switch.on() return switch.read().on end
+end
+-- @@end
+-- @@part joystick
+if not joystick then
+  joystick = { read = sensor("joystick", { x = 0, y = 0, pressed = false, raw_x = 2026, raw_y = 2026 }) }
+  function joystick.x() return joystick.read().x end
+  function joystick.y() return joystick.read().y end
+  function joystick.pressed() return joystick.read().pressed end
+end
+-- @@end
+-- @@part thermal
+if not thermal then
+  local packed, pixels = nil, {}
+  for i = 1, 64 do pixels[i] = 22 end -- a room, until Bench's first frame
+  thermal = {
+    read = function()
+      local r = __bench.s.thermal or { thermistor = 22, max = 22, warm = false, hot_x = 3.5, hot_y = 3.5 }
+      if r.p and r.p ~= packed then packed, pixels = r.p, __unpack(r.p, -20, 0.25) end
+      r.pixels = table.move(pixels, 1, 64, 1, {}) -- the app's own copy, as Bench gives it
+      return r
+    end,
+  }
+  function thermal.pixels() return thermal.read().pixels end
+end
+-- @@end
+-- @@part tof
+if not tof then
+  tof = { read = sensor("tof", { status = "out of range" }) }
+  function tof.mm() return tof.read().mm end
 end
 -- @@end
 -- @@part ld2410
@@ -135,15 +242,28 @@ local function __bench_apply(ctx, data, deliver)
     __bench.d[name] = v
     if was and was[1] ~= v[1] then deliver(ctx, "dial", { name = name, value = v[1], delta = v[3] - was[3] }) end
   end
+-- @@part trigger
   for name, v in pairs(data.t or {}) do
     local was = __bench.t[name]
     __bench.t[name] = v
     if v[3] == 1 and not (was and was[3] == 1) then __bench.since[name] = __now() end
     if was then
-      for _ = was[1] + 1, v[1] do deliver(ctx, "trigger", { name = name, pressed = true }) end
-      for _ = was[2] + 1, v[2] do deliver(ctx, "trigger", { name = name, pressed = false }) end
+      -- Each edge in the order it came (presses and releases take turns), each press with its own code.
+      local p, r = was[1], was[2]
+      while p < v[1] or r < v[2] do
+        if r < v[2] and (r < p or p >= v[1]) then
+          r = r + 1
+          deliver(ctx, "trigger", { name = name, pressed = false })
+        else
+          p = p + 1
+          local i = p - v[1] + #v
+          local c = i > 3 and v[i] or ""
+          deliver(ctx, "trigger", { name = name, pressed = true, code = c ~= "" and c or nil })
+        end
+      end
     end
   end
+-- @@end
   -- Bench's buttons A and B: the taps and holds Bench recognised, replayed as they are, so both
   -- screens see the same gestures.
   for i, v in ipairs(data.g or {}) do
@@ -179,13 +299,22 @@ local function __bench_apply(ctx, data, deliver)
   -- A reading an update left out (to stay under the relay's size limit) keeps its last value.
   for k, v in pairs(before) do if s[k] == nil then s[k] = v end end
   __bench.s = s
-  -- Changes only: the first reading of a sensor is where it starts, not an event.
--- @@part pir
-  if s.pir and before.pir and before.pir.motion ~= s.pir.motion then deliver(ctx, "motion", { moving = s.pir.motion }) end
+-- @@part on_event
+  -- The sensors' driver events as Bench raised them, in order: [seq, name, data]. Sent to every app
+  -- that takes events: one can handle "key" through a table of handlers without naming it.
+  local ev = data.ev or {}
+  if __bench.ev_seq == nil then
+    __bench.ev_seq = #ev > 0 and ev[#ev][1] or 0 -- the first update is a baseline
+  else
+    for _, e in ipairs(ev) do
+      if e[1] > __bench.ev_seq then
+        __bench.ev_seq = e[1]
+        deliver(ctx, e[2], e[3])
+      end
+    end
+  end
 -- @@end
--- @@part touch
-  if s.touch and before.touch and before.touch.touched ~= s.touch.touched then deliver(ctx, "touch", { touched = s.touch.touched }) end
--- @@end
+  -- The radar's changes only: its first reading is where it starts, not an event.
 -- @@part ld2410
   local r, was = s.radar, before.radar
   if r and was and (r.moving ~= was.moving or r.still ~= was.still) then

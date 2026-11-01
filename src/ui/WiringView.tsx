@@ -2,7 +2,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import type { Board } from '../sim/boards';
 import { CHANNELS, type PartKind, parseConnection } from '../sim/controls/bench';
 import type { SketchRun } from '../sim/runner';
-import { gpioName, type Rail, type WiredPart, type Wiring, wiring } from '../sim/wiring';
+import { gpioName, hex, type Rail, type WiredPart, type Wiring, wiring } from '../sim/wiring';
 
 // The bench as a wiring diagram, to build it on a desk: the board on the left with the GPIOs in use,
 // the supply rails down the gutter, and each part on the right, every signal wire running straight
@@ -155,6 +155,7 @@ export function WiringView({ run, board, onSvg }: { run: SketchRun; board: Board
               </text>
               <text className="small" x={partL + 12} y={l.y + 34}>
                 {l.part.module.toUpperCase()}
+                {l.part.i2c && ` · I2C ${hex(l.part.i2c.address)}${l.part.i2c.how ? ` (${l.part.i2c.how})` : ''}`}
               </text>
               {l.drives.map((d, i) => (
                 <text key={d} className="drives" x={partL + 12} y={l.y + 52 + i * 14}>

@@ -27,20 +27,30 @@ function controlsFor(p: PartSpec, many: boolean): Control[] {
   const tilt = { min: -100, max: 100, step: 1, start: 0, unit: '' };
   const kinds: Record<PartKind, Control[]> = {
     button: [moment(p.label, 'press')],
+    switch: [moment(p.label, 'on')],
     touch: [moment(p.label, 'touch')],
+    ir: [moment(`${p.label} OK`, 'ok'), moment(`${p.label} any key`, 'any')],
+    keypad: [moment(`${p.label} any key`, 'any')],
+    rfid: [moment(named('Tag'), 'tag')],
     knob: [value(p.label, 'rotate', { min: 0, max: 100, step: 5, start: 50, unit: '' }), moment(`${p.label} push`, 'push')],
     pot: [value(p.label, 'position', pct)],
+    joystick: [value(named('Stick x'), 'x', tilt), value(named('Stick y'), 'y', tilt), moment(`${p.label} push`, 'press')],
     imu: [value(named('Tilt x'), 'tilt-x', tilt), value(named('Tilt y'), 'tilt-y', tilt), moment(named('Shake'), 'shake')],
     ld2410: [
       value(named('Distance'), 'distance', { min: 0, max: MAX_RANGE_M * 100, step: 1, start: 0, unit: ' cm' }),
       moment(named('Presence'), 'presence'),
     ],
+    tof: [value(named('Distance'), 'distance', { min: 0, max: 120, step: 1, start: 25, unit: ' cm' }), moment(named('Near'), 'near')],
+    thermal: [value(named('Warm x'), 'hot-x', tilt), value(named('Warm y'), 'hot-y', tilt), moment(named('Warm'), 'warm')],
     pir: [moment(named('Motion'), 'motion')],
+    mic: [value(named('Sound'), 'level', { ...pct, start: 0 }), moment(named('Clap'), 'clap')],
     light: [value(named('Light'), 'level', { ...pct, start: 0 }), moment(named('Dark'), 'dark')],
     climate: [
       value(named('Temp'), 'temperature', { min: TEMP_RANGE[0], max: TEMP_RANGE[1], step: 1, start: 21, unit: ' C' }),
       value(named('Humidity'), 'humidity', { ...pct, start: 40 }),
     ],
+    co2: [value(named('CO₂'), 'co2', { min: 400, max: 2000, step: 10, start: 600, unit: ' ppm' }), moment(named('Stuffy'), 'stuffy')],
+    pulse: [value(named('Heart rate'), 'bpm', { min: 40, max: 180, step: 1, start: 70, unit: ' bpm' }), moment(named('Heartbeat'), 'beat')],
     buzzer: [],
   };
   return kinds[p.kind] ?? [];

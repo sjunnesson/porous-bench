@@ -293,6 +293,8 @@ function TRIGGER:is_pressed() return H.trig_is_pressed(self.name) end
 function TRIGGER:was_pressed() return H.trig_was_pressed(self.name) end
 function TRIGGER:was_released() return H.trig_was_released(self.name) end
 function TRIGGER:pressed_for(ms) return H.trig_pressed_for(self.name, ck_num(ms, 1, "pressed_for", select("#", ms))) end
+-- What the latest press carried: a remote's or keypad's key, an RFID card's UID (nil for a plain press).
+function TRIGGER:code() return H.trig_code(self.name) end
 trigger = {
   new = function(name, opts)
     name = ck_str(name, 1, "new", select("#", name, opts))
@@ -371,8 +373,10 @@ leds = {
   end,
 }
 
--- light, pir, climate, touch: Bench drivers for the sensors on the desk. The first read puts the
--- part on the bench if it isn't there. PIR and touch also send `motion` / `touch` driver events.
+-- light, pir, climate, touch …: Bench drivers for the sensors on the desk (src/resident/drivers.ts).
+-- The first use puts the part on the bench if it isn't there. Their driver events (PIR's `motion`,
+-- the remote's `ir` …) come from the part on the bench whether or not the app reads it, as a real
+-- board's drivers' do.
 local function sensor(kind)
   return function()
     local r = H.sensor_read(kind)
@@ -380,15 +384,49 @@ local function sensor(kind)
     return r
   end
 end
+-- A sensor module's other functions: fname(arg) through the driver.
+local function sensor_call(kind, fname)
+  return function(arg)
+    -- The part on the bench, as a read would put it there.
+    if H.sensor_read(kind) == nil then error(kind .. ": this board has no " .. kind .. " driver", 2) end
+    return H.sensor_call(kind, fname, arg)
+  end
+end
 light = { read = sensor("light") }
 function light.level() return light.read().level end
 pir = { read = sensor("pir") }
 function pir.motion() return pir.read().motion end
+thermal = { read = sensor("thermal") }
+function thermal.pixels() return thermal.read().pixels end
+tof = { read = sensor("tof") }
+function tof.mm() return tof.read().mm end
+pulse = { read = sensor("pulse"), samples = sensor_call("pulse", "samples") }
+function pulse.bpm() return pulse.read().bpm end
+co2 = { read = sensor("co2") }
+function co2.ppm() return co2.read().co2 end
 climate = { read = sensor("climate") }
 function climate.temperature() return climate.read().temperature end
 function climate.humidity() return climate.read().humidity end
 touch = { read = sensor("touch") }
 function touch.touched() return touch.read().touched end
+keypad = { read = sensor("keypad") }
+function keypad.pressed(key)
+  for _, k in ipairs(keypad.read().keys) do if k == key then return true end end
+  return false
+end
+rfid = { read = sensor("rfid") }
+function rfid.uid() return rfid.read().uid end
+ir = { read = sensor("ir") }
+function ir.key() return ir.read().key end
+mic = { read = sensor("mic") }
+function mic.level() return mic.read().level end
+function mic.db() return mic.read().db end
+switch = { read = sensor("switch") }
+function switch.on() return switch.read().on end
+joystick = { read = sensor("joystick") }
+function joystick.x() return joystick.read().x end
+function joystick.y() return joystick.read().y end
+function joystick.pressed() return joystick.read().pressed end
 
 -- touchscreen: Bench driver for a touch panel over the display. Defined only on a display that has
 -- one, so apps can check `if touchscreen then`. Gestures arrive as driver events: touch_down,

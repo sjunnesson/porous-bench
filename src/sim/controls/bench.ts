@@ -8,33 +8,53 @@ import type { DeviceProfile } from '../devices/types';
 import { Button } from '../inputs/button';
 import { Buzzer } from '../inputs/buzzer';
 import { Climate } from '../inputs/climate';
+import { Co2 } from '../inputs/co2';
 import { Imu } from '../inputs/imu';
 import type { SimInput } from '../inputs/input';
+import { IrReceiver, REMOTE_KEYS } from '../inputs/ir';
+import { Joystick } from '../inputs/joystick';
+import { Keypad, KEYPAD_KEYS } from '../inputs/keypad';
 import { Knob } from '../inputs/knob';
 import { LD2410 } from '../inputs/ld2410';
 import { LightSensor } from '../inputs/light';
+import { Mic } from '../inputs/mic';
 import { Pir } from '../inputs/pir';
 import { Pot } from '../inputs/pot';
+import { Pulse } from '../inputs/pulse';
+import { RfidReader, TAGS } from '../inputs/rfid';
+import { Switch } from '../inputs/switch';
+import { Thermal } from '../inputs/thermal';
+import { Tof } from '../inputs/tof';
 import { Touch } from '../inputs/touch';
 
-export type PartKind = 'button' | 'knob' | 'pot' | 'imu' | 'ld2410' | 'light' | 'pir' | 'climate' | 'touch' | 'buzzer';
+export type PartKind = 'button' | 'switch' | 'knob' | 'pot' | 'joystick' | 'keypad' | 'ir' | 'rfid' | 'imu' | 'mic' | 'ld2410' | 'tof' | 'thermal' | 'light' | 'pir' | 'climate' | 'co2' | 'pulse' | 'touch' | 'buzzer';
 
 /** What you can add, in menu order. */
 export const PART_KINDS: { kind: PartKind; label: string }[] = [
   { kind: 'button', label: 'Push button' },
+  { kind: 'switch', label: 'Switch (toggle / reed)' },
   { kind: 'knob', label: 'Rotary encoder' },
   { kind: 'pot', label: 'Slide pot' },
+  { kind: 'joystick', label: 'Joystick' },
   { kind: 'touch', label: 'Touch pad' },
+  { kind: 'keypad', label: 'Keypad (12 keys)' },
+  { kind: 'ir', label: 'IR receiver + remote' },
+  { kind: 'rfid', label: 'RFID / NFC reader' },
   { kind: 'imu', label: 'IMU' },
+  { kind: 'mic', label: 'Microphone' },
   { kind: 'ld2410', label: 'LD2410 radar' },
+  { kind: 'tof', label: 'Distance (time of flight)' },
+  { kind: 'thermal', label: 'Thermal camera (8×8)' },
   { kind: 'pir', label: 'PIR motion' },
   { kind: 'light', label: 'Light sensor' },
   { kind: 'climate', label: 'Temp / humidity' },
+  { kind: 'co2', label: 'CO₂ (SCD41)' },
+  { kind: 'pulse', label: 'Pulse (MAX30102)' },
   { kind: 'buzzer', label: 'Buzzer' },
 ];
 const SHORT: Record<PartKind, string> = {
-  button: 'Button', knob: 'Encoder', pot: 'Slide pot', touch: 'Touch pad', imu: 'IMU', ld2410: 'Radar',
-  pir: 'PIR', light: 'Light', climate: 'Climate', buzzer: 'Buzzer',
+  button: 'Button', switch: 'Switch', knob: 'Encoder', pot: 'Slide pot', joystick: 'Joystick', touch: 'Touch pad', keypad: 'Keypad', ir: 'IR', rfid: 'RFID', imu: 'IMU', mic: 'Mic', ld2410: 'Radar', tof: 'Distance', thermal: 'Thermal',
+  pir: 'PIR', light: 'Light', climate: 'Climate', co2: 'CO₂', pulse: 'Pulse', buzzer: 'Buzzer',
 };
 
 /**
@@ -49,20 +69,44 @@ export interface Channel {
 }
 export const CHANNELS: Record<PartKind, Channel[]> = {
   button: [{ id: 'press', label: 'press', kind: 'momentary' }],
+  switch: [{ id: 'on', label: 'on', kind: 'momentary' }],
   knob: [
     { id: 'rotate', label: 'turn', kind: 'relative' },
     { id: 'push', label: 'push', kind: 'momentary' },
   ],
   pot: [{ id: 'position', label: 'position', kind: 'absolute' }],
+  joystick: [
+    { id: 'x', label: 'stick ←→', kind: 'absolute' },
+    { id: 'y', label: 'stick ↓↑', kind: 'absolute' },
+    { id: 'press', label: 'press', kind: 'momentary' },
+  ],
   touch: [{ id: 'touch', label: 'touch', kind: 'momentary' }],
+  // Any key, then each key; a trigger's `code` picks one ("5", or the remote's "ok").
+  keypad: [{ id: 'any', label: 'any key', kind: 'momentary' }, ...KEYPAD_KEYS.map((k): Channel => ({ id: k.id, label: `key ${k.label}`, kind: 'momentary' }))],
+  ir: [{ id: 'any', label: 'any key', kind: 'momentary' }, ...REMOTE_KEYS.map((k): Channel => ({ id: k.id, label: `key ${k.label}`, kind: 'momentary' }))],
+  // Any tag, then each one, held while it lies on the reader.
+  rfid: [{ id: 'tag', label: 'any tag', kind: 'momentary' }, ...TAGS.map((t): Channel => ({ id: t.id, label: t.label, kind: 'momentary' }))],
   imu: [
     { id: 'tilt-x', label: 'tilt ←→', kind: 'absolute' },
     { id: 'tilt-y', label: 'tilt ↑↓', kind: 'absolute' },
     { id: 'shake', label: 'shake', kind: 'momentary' },
   ],
+  mic: [
+    { id: 'level', label: 'sound level', kind: 'absolute' },
+    { id: 'clap', label: 'clap', kind: 'momentary' },
+  ],
   ld2410: [
     { id: 'distance', label: 'distance', kind: 'absolute' },
     { id: 'presence', label: 'presence', kind: 'momentary' },
+  ],
+  tof: [
+    { id: 'distance', label: 'distance', kind: 'absolute' },
+    { id: 'near', label: 'something near', kind: 'momentary' },
+  ],
+  thermal: [
+    { id: 'hot-x', label: 'warm spot ←→', kind: 'absolute' },
+    { id: 'hot-y', label: 'warm spot ↑↓', kind: 'absolute' },
+    { id: 'warm', label: 'someone warm in view', kind: 'momentary' },
   ],
   pir: [{ id: 'motion', label: 'motion', kind: 'momentary' }],
   light: [
@@ -72,6 +116,15 @@ export const CHANNELS: Record<PartKind, Channel[]> = {
   climate: [
     { id: 'temperature', label: 'temperature', kind: 'absolute' },
     { id: 'humidity', label: 'humidity', kind: 'absolute' },
+  ],
+  co2: [
+    { id: 'co2', label: 'CO₂', kind: 'absolute' },
+    { id: 'stuffy', label: 'stuffy (1000 ppm)', kind: 'momentary' },
+  ],
+  pulse: [
+    { id: 'bpm', label: 'heart rate', kind: 'absolute' },
+    { id: 'beat', label: 'heartbeat', kind: 'momentary' },
+    { id: 'finger', label: 'finger on it', kind: 'momentary' },
   ],
   buzzer: [],
 };
@@ -97,22 +150,42 @@ export function createPart(kind: PartKind, label: string, clock: SimClock): SimI
   switch (kind) {
     case 'button':
       return new Button({ label }, clock);
+    case 'switch':
+      return new Switch({ label }, clock);
     case 'knob':
       return new Knob({ label }, clock);
     case 'pot':
       return new Pot({ label, noise: 0 });
+    case 'joystick':
+      return new Joystick({ label }, clock);
     case 'touch':
       return new Touch({ label }, clock);
+    case 'keypad':
+      return new Keypad({ label }, clock);
+    case 'ir':
+      return new IrReceiver({ label }, clock);
+    case 'rfid':
+      return new RfidReader({ label }, clock);
     case 'imu':
       return new Imu({ label }, clock);
+    case 'mic':
+      return new Mic({ label }, clock);
     case 'ld2410':
       return new LD2410({ label, mode: 'wander' }, clock);
+    case 'tof':
+      return new Tof({ label }, clock);
+    case 'thermal':
+      return new Thermal({ label }, clock);
     case 'pir':
       return new Pir({ label }, clock);
     case 'light':
       return new LightSensor({ label });
     case 'climate':
       return new Climate({ label });
+    case 'co2':
+      return new Co2({ label }, clock);
+    case 'pulse':
+      return new Pulse({ label }, clock);
     case 'buzzer':
       return new Buzzer({ label }, clock);
   }
@@ -126,7 +199,7 @@ export function boardBench(device: DeviceProfile, clock: SimClock, saved: PartSp
     const name = p.label ?? `Button ${'AB'[p.input] ?? p.input}`;
     b.addBuiltin(`builtin-button-${p.input}`, new Button({ label: name.replace(/\s*\(.*\)$/, '') }, clock), p.input);
   }
-  for (const k of device.builtins ?? []) b.addBuiltin(`builtin-${k}`, createPart(k, k === 'imu' ? 'IMU' : 'Buzzer', clock));
+  for (const k of device.builtins ?? []) b.addBuiltin(`builtin-${k}`, createPart(k, { imu: 'IMU', buzzer: 'Buzzer', mic: 'Microphone' }[k], clock));
   b.load(saved);
   return b;
 }

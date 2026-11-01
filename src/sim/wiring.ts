@@ -31,6 +31,8 @@ export interface ModulePin {
   name: string;
   /** Where it goes; null: leave it unconnected. */
   to: Need | Rail | null;
+  /** What the GPIO it goes to does for it, when that isn't plain ("UART RX", "I2S clock"). */
+  role?: string;
   note?: string;
 }
 
@@ -40,6 +42,11 @@ export interface Module {
   pins: ModulePin[];
   /** What to know before powering it up. */
   notes?: string[];
+  /**
+   * On the I2C bus: its address, and the others it can be set to (`how`) when another chip on the bus
+   * has that one. A module with no other address can't share the bus with one that has it.
+   */
+  i2c?: { address: number; alts?: { address: number; how: string }[] };
 }
 
 export const MODULES: Record<PartKind, Module> = {
@@ -50,6 +57,18 @@ export const MODULES: Record<PartKind, Module> = {
       { name: '2', to: 'GND' },
     ],
     notes: ['Reads LOW while pressed (INPUT_PULLUP). On a four-legged switch, use two legs diagonally across.'],
+  },
+  switch: {
+    name: 'SPDT toggle switch (or a reed switch)',
+    pins: [
+      { name: 'COM', to: 'pullup' },
+      { name: 'ON', to: 'GND' },
+      { name: 'OFF', to: null },
+    ],
+    notes: [
+      'Reads LOW while on (INPUT_PULLUP). A reed switch wires the same way, one leg to the pin and one to GND: it closes while a magnet is near, so a magnet on a door or lid tells you it\'s shut.',
+      'Contacts bounce for a few milliseconds as they close: debounce in the driver, or one flip counts as several.',
+    ],
   },
   knob: {
     name: 'KY-040 rotary encoder',
@@ -71,6 +90,68 @@ export const MODULES: Record<PartKind, Module> = {
     ],
     notes: ['From 3V3, so the wiper stays within what the ADC reads.'],
   },
+  joystick: {
+    name: 'KY-023 joystick',
+    pins: [
+      { name: 'GND', to: 'GND' },
+      { name: '+5V', to: '3V3' },
+      { name: 'VRx', to: 'adc' },
+      { name: 'VRy', to: 'adc' },
+      { name: 'SW', to: 'pullup' },
+    ],
+    notes: [
+      'Power it from 3V3, not 5V, whatever its pin is called: VRx and VRy swing all the way to its supply, and an ESP32 pin takes 3.3 V at most.',
+      'The stick rests near the middle of the range, not at exactly 2048, and the ADC flattens near both ends: read where it rests at start and count from there, with a small dead zone.',
+      'SW has no pull-up of its own: the pin\'s (INPUT_PULLUP) holds it high until the stick is pressed.',
+    ],
+  },
+  keypad: {
+    name: 'MPR121 12-key capacitive keypad',
+    pins: [
+      { name: '3.3V', to: '3V3' },
+      { name: 'IRQ', to: null, note: 'not needed: the driver reads the chip' },
+      { name: 'SCL', to: 'scl' },
+      { name: 'SDA', to: 'sda' },
+      { name: 'GND', to: 'GND' },
+    ],
+    notes: ['3V3 only: the MPR121 takes 3.6 V at most. Touch a pad only once it\'s powered: it learns each pad\'s untouched level as it starts.'],
+    i2c: {
+      address: 0x5a,
+      alts: [
+        { address: 0x5b, how: 'ADDR to 3V3' },
+        { address: 0x5c, how: 'ADDR to SDA' },
+        { address: 0x5d, how: 'ADDR to SCL' },
+      ],
+    },
+  },
+  rfid: {
+    name: 'PN532 NFC / RFID reader',
+    pins: [
+      { name: 'GND', to: 'GND' },
+      { name: 'VCC', to: '3V3' },
+      { name: 'SDA', to: 'sda' },
+      { name: 'SCL', to: 'scl' },
+      { name: 'IRQ', to: null, note: 'not needed: the driver polls' },
+      { name: 'RSTO', to: null },
+    ],
+    notes: [
+      'Set its switches to I2C before powering it: on the red PN532 V3 board, switch 1 on and 2 off.',
+      'It reads a tag lying on its antenna, a few centimetres at most: MIFARE Classic cards and fobs (4-byte UIDs) and NTAG stickers (7 bytes).',
+    ],
+    i2c: { address: 0x24 },
+  },
+  ir: {
+    name: 'VS1838B IR receiver',
+    pins: [
+      { name: 'OUT', to: 'in', role: 'IR in' },
+      { name: 'GND', to: 'GND' },
+      { name: 'VCC', to: '3V3' },
+    ],
+    notes: [
+      'OUT goes LOW while it sees a 38 kHz burst: let a decoder time the pulses (the IRremote library, or the ESP32\'s RMT peripheral).',
+      'The kit\'s remote speaks NEC: address 0x00 and a command per key (OK is 0x1C). Other remotes work too, with codes of their own: log what each key sends.',
+    ],
+  },
   touch: {
     name: 'Touch pad',
     pins: [{ name: 'PAD', to: 'touch' }],
@@ -84,18 +165,65 @@ export const MODULES: Record<PartKind, Module> = {
       { name: 'SCL', to: 'scl' },
       { name: 'SDA', to: 'sda' },
     ],
-    notes: ['I2C address 0x68 (AD0 low).'],
+    i2c: { address: 0x68, alts: [{ address: 0x69, how: 'AD0 to 3V3' }] },
+  },
+  mic: {
+    name: 'INMP441 I2S microphone',
+    pins: [
+      { name: 'VDD', to: '3V3' },
+      { name: 'GND', to: 'GND' },
+      { name: 'L/R', to: 'GND', note: 'the left channel' },
+      { name: 'WS', to: 'out', role: 'I2S word select' },
+      { name: 'SCK', to: 'out', role: 'I2S clock' },
+      { name: 'SD', to: 'in', role: 'I2S data' },
+    ],
+    notes: [
+      'I2S, which an ESP32 routes to any free pins: read it at 16 kHz, 32-bit samples, left channel (L/R to GND), and keep the top 24 bits.',
+      'It reads -26 dBFS at 94 dB SPL, so add 120 to a level in dBFS for dB SPL.',
+    ],
   },
   ld2410: {
     name: 'HLK-LD2410C radar',
     pins: [
       { name: 'VCC', to: '5V' },
       { name: 'GND', to: 'GND' },
-      { name: 'TX', to: 'in', note: 'the board\'s UART RX' },
-      { name: 'RX', to: 'out', note: 'the board\'s UART TX' },
+      { name: 'TX', to: 'in', role: 'UART RX', note: 'the board\'s UART RX' },
+      { name: 'RX', to: 'out', role: 'UART TX', note: 'the board\'s UART TX' },
       { name: 'OUT', to: 'in' },
     ],
     notes: ['5 V supply, 3.3 V serial at 256 000 baud: TX goes to the board\'s RX and RX to its TX. An ESP32 routes a second UART to any free pins.'],
+  },
+  tof: {
+    name: 'VL53L1X time-of-flight sensor',
+    pins: [
+      { name: 'VIN', to: '3V3' },
+      { name: 'GND', to: 'GND' },
+      { name: 'SDA', to: 'sda' },
+      { name: 'SCL', to: 'scl' },
+      { name: 'XSHUT', to: null, note: 'pulled up on the board: on' },
+      { name: 'GPIO1', to: null, note: 'data ready: not needed' },
+    ],
+    notes: [
+      'It measures within a 27° cone: aim it at the hand or the thing, with nothing else in the way. Its window\'s protective film comes off first.',
+      'Long mode reaches 4 m in the dark and less in daylight; nearer than 4 cm it can\'t read.',
+    ],
+    i2c: { address: 0x29, alts: [{ address: 0x30, how: 'set in software at start, the other sensor held off by its XSHUT meanwhile' }] },
+  },
+  thermal: {
+    name: 'AMG8833 thermal camera (Grid-EYE)',
+    pins: [
+      { name: 'VIN', to: '3V3' },
+      { name: '3Vo', to: null },
+      { name: 'GND', to: 'GND' },
+      { name: 'SDA', to: 'sda' },
+      { name: 'SCL', to: 'scl' },
+      { name: 'INT', to: null, note: 'not needed: the driver reads each frame' },
+    ],
+    notes: [
+      '8×8 pixels over a 60° view, 0 to 80 °C, ±2.5 °C: a face fills it at arm\'s length; a person a few metres off is a pixel or two, only a little warmer than the room.',
+      'Ten frames a second at most. The board warms itself a little, so its thermistor reads above the room.',
+    ],
+    i2c: { address: 0x69, alts: [{ address: 0x68, how: 'AD_SELECT to GND' }] },
   },
   pir: {
     name: 'HC-SR501 PIR',
@@ -125,6 +253,36 @@ export const MODULES: Record<PartKind, Module> = {
       { name: 'GND', to: 'GND' },
     ],
     notes: ['A bare DHT22 needs 10 kΩ from DATA to VCC; on a three-pin module it\'s already there.'],
+  },
+  co2: {
+    name: 'Sensirion SCD41 CO₂ sensor',
+    pins: [
+      { name: 'VDD', to: '3V3' },
+      { name: 'GND', to: 'GND' },
+      { name: 'SCL', to: 'scl' },
+      { name: 'SDA', to: 'sda' },
+    ],
+    notes: [
+      'A new reading every 5 s, the first 5 s after it starts measuring. It takes a few minutes to settle, and keeps its baseline right by seeing fresh air (about 400 ppm) now and then.',
+      'Keep it out of a draught and away from your breath unless you mean to test it: breathing on it reads thousands of ppm for a minute.',
+    ],
+    i2c: { address: 0x62 },
+  },
+  pulse: {
+    name: 'MAX30102 pulse sensor',
+    pins: [
+      { name: 'VIN', to: '3V3' },
+      { name: 'SDA', to: 'sda' },
+      { name: 'SCL', to: 'scl' },
+      { name: 'INT', to: null, note: 'not needed: the driver reads the FIFO' },
+      { name: 'GND', to: 'GND' },
+    ],
+    notes: [
+      'A fingertip resting on it, lightly and still: pressing hard or moving loses the pulse, and it takes a few seconds of steady beats before there\'s a rate.',
+      'Some cheap boards pull SDA and SCL up to 1.8 V, which an ESP32 doesn\'t read as high: if it isn\'t found on the bus, check that its pull-ups go to 3.3 V.',
+      'For showing a pulse, not for anything medical.',
+    ],
+    i2c: { address: 0x57 },
   },
   buzzer: {
     name: 'Passive piezo buzzer',
@@ -166,9 +324,10 @@ export interface Pinout {
   pins: Gpio[];
   /**
    * The I2C bus for sensors (and an I2C display). `own`: what the board itself has on it; its pins
-   * then carry only I2C (a button there would pull the touch panel's bus low).
+   * then carry only I2C (a button there would pull the touch panel's bus low). `addresses`: the
+   * board's own chips on it, which a part can't share an address with.
    */
-  i2c: { sda: number; scl: number; own?: string };
+  i2c: { sda: number; scl: number; own?: string; addresses?: Record<number, string> };
   /** A bare display module or an LED chain's pins on a dev board; `bl`: an LCD's backlight, dimmed by PWM. */
   display?: { sclk: number; mosi: number; cs?: number; dc: number; rst: number; busy?: number; bl?: number; leds: number };
   /**
@@ -287,7 +446,7 @@ export const PINOUTS: Record<string, Pinout> = {
       { gpio: 5, adc: 4, touch: 5 },
       { gpio: 6, adc: 5, touch: 6 },
     ]),
-    i2c: { sda: 5, scl: 6, own: 'the touch panel and the RTC' },
+    i2c: { sda: 5, scl: 6, own: 'the touch panel and the RTC', addresses: { 0x2e: 'the touch panel (CHSC6X)', 0x51: 'the RTC (PCF8563)' } },
     keys: [{ gpio: 0, onBoard: "the XIAO's B (BOOT) key" }],
     fiveVolt: '5V',
     printed: (g) => `D${XIAO_D.indexOf(g)} (GPIO ${g})`,
@@ -377,7 +536,7 @@ export const PINOUTS: Record<string, Pinout> = {
       { gpio: 14, touch: 14 },
       { gpio: 9, adc: 8, touch: 9 },
     ]),
-    i2c: { sda: 48, scl: 47, own: 'the touch panel and the IMU' },
+    i2c: { sda: 48, scl: 47, own: 'the touch panel and the IMU', addresses: { 0x15: 'the touch panel (CST816D)', 0x6b: 'the IMU (QMI8658)' } },
     fiveVolt: '5V',
     notes: ['The header shares its pins with the camera connector: with a camera fitted, only GPIO 18 is free for parts.'],
     source: 'Waveshare ESP32-S3-Touch-LCD-2 pinout and schematic',
@@ -438,7 +597,7 @@ export const PINOUTS: Record<string, Pinout> = {
   'waveshare-esp32-s3-touch-amoled-1.32': {
     // The SH1.0 12-pin connector: GP1, GP2 and the board's own I2C bus (touch, codec). GP0 is BOOT.
     pins: pins([{ gpio: 1, adc: 0, touch: 1 }, { gpio: 2, adc: 1, touch: 2 }, 47, 48]),
-    i2c: { sda: 47, scl: 48, own: 'the touch panel and the audio codec' },
+    i2c: { sda: 47, scl: 48, own: 'the touch panel and the audio codec', addresses: { 0x15: 'the touch panel (CST820)' } },
     notes: ['Everything goes through the 12-pin SH1.0 connector: two GPIOs and the I2C bus, so this board takes few parts.'],
     source: 'Waveshare ESP32-S3-Touch-AMOLED-1.32 schematic',
   },
@@ -460,7 +619,7 @@ export const PINOUTS: Record<string, Pinout> = {
       39,
       38,
     ]),
-    i2c: { sda: 40, scl: 39, own: 'the IMU (and the touch panel, on the touch version)' },
+    i2c: { sda: 40, scl: 39, own: 'the IMU (and the touch panel, on the touch version)', addresses: { 0x38: 'the touch version\'s touch panel (FT3168)' } },
     fiveVolt: 'VBUS',
     notes: ['GPIO 26 and 33–37 are printed on the headers, but the PSRAM inside the chip uses them: never wire to them.'],
     source: 'Waveshare ESP32-S3-AMOLED-1.91 pinout and schematic',
@@ -492,7 +651,12 @@ export interface WiredPart {
   module: string;
   wires: Wire[];
   notes: string[];
+  /** On the I2C bus: the address it answers at, and how to set it when that isn't the module's own. */
+  i2c?: { address: number; how?: string };
 }
+
+/** 0x68 */
+export const hex = (address: number) => `0x${address.toString(16).toUpperCase().padStart(2, '0')}`;
 
 export interface Wiring {
   board: Board;
@@ -632,6 +796,9 @@ export function wiring(device: DeviceProfile, board: Board, hardware: (PartSpec 
   const taken = new Map<number, string>();
   if (pinout?.i2c.own) for (const g of [pinout.i2c.sda, pinout.i2c.scl]) taken.set(g, 'I2C');
   for (const w of output?.wires ?? []) if (w.gpio !== undefined) taken.set(w.gpio, w.role?.startsWith('I2C') ? 'I2C' : output!.label);
+  // I2C address → who answers at it: the board's own chips, an I2C display, then each part.
+  const onBus = new Map<number, string>(Object.entries(pinout?.i2c.addresses ?? {}).map(([a, who]) => [Number(a), who]));
+  if (output && device.bus.kind === 'i2c') onBus.set(device.bus.i2cAddress ?? 0x3c, 'the display');
 
   // The plainest free pin that fits; among equals, the next one along the header from this part's
   // last pin, so a part's wires sit side by side.
@@ -691,14 +858,28 @@ export function wiring(device: DeviceProfile, board: Board, hardware: (PartSpec 
       const g = take(p.to, h.label, last);
       if (!g) return { pin: p.name, missing: true, note: p.note };
       if (p.to !== 'sda' && p.to !== 'scl') last = pinout!.pins.indexOf(g);
-      const role =
-        p.to === 'adc' ? `ADC1 ch ${g.adc}` : p.to === 'touch' ? `touch T${g.touch}` : p.to === 'sda' ? 'I2C SDA' : p.to === 'scl' ? 'I2C SCL' : h.kind === 'ld2410' && p.name !== 'OUT' ? `UART ${p.name === 'TX' ? 'RX' : 'TX'}` : undefined;
+      const role = p.to === 'adc' ? `ADC1 ch ${g.adc}` : p.to === 'touch' ? `touch T${g.touch}` : p.to === 'sda' ? 'I2C SDA' : p.to === 'scl' ? 'I2C SCL' : p.role;
       return { pin: p.name, gpio: g.gpio, role, note: p.note };
     });
     const short = wires.filter((w) => w.missing);
     if (pinout && short.length) problems.push(`${h.label}: no free ${needWords(module, short)} left on this board.`);
     if (wires.some((w) => w.rail === '5V') && pinout && !pinout.fiveVolt) problems.push(`${h.label} needs 5 V, and this board's headers have no 5 V pin.`);
-    parts.push({ id: h.id, label: h.label, kind: h.kind, module: module.name, wires, notes: module.notes ?? [] });
+    // Its I2C address: the module's own, or the first of its others no one on the bus has.
+    let i2c: WiredPart['i2c'];
+    if (module.i2c && !short.length) {
+      const choices = [{ address: module.i2c.address, how: undefined as string | undefined }, ...(module.i2c.alts ?? [])];
+      const free = choices.find((c) => !onBus.has(c.address));
+      if (free) {
+        onBus.set(free.address, h.label);
+        i2c = free.how ? { address: free.address, how: free.how } : { address: free.address };
+      } else {
+        const who = onBus.get(module.i2c.address)!;
+        problems.push(
+          `${h.label}: ${choices.length > 1 ? `its I2C addresses (${choices.map((c) => hex(c.address)).join(', ')}) are all taken` : `its I2C address, ${hex(module.i2c.address)}, is ${who}'s`}, so it can't share the bus: give it a bus of its own through a TCA9548A multiplexer.`,
+        );
+      }
+    }
+    parts.push({ id: h.id, label: h.label, kind: h.kind, module: module.name, wires, notes: module.notes ?? [], ...(i2c ? { i2c } : {}) });
   }
   if (!pinout) problems.push("Bench doesn't know which GPIOs this board's headers reach yet, so it can't pick pins: wire each to a free GPIO from the board's pinout.");
   return { board, pinout, output, parts, builtins, problems };
@@ -715,7 +896,7 @@ function needWords(module: Module, short: Wire[]): string {
 /** The wiring as plain lines, for a prompt or a printout: "Encoder 1 (KY-040 …): CLK → GPIO 4, …". */
 export function wiringLines(w: Wiring): string[] {
   const one = (p: WiredPart) =>
-    `${p.label} (${p.module}): ${p.wires
+    `${p.label} (${p.module}${p.i2c ? `, I2C ${hex(p.i2c.address)}${p.i2c.how ? `: ${p.i2c.how}` : ''}` : ''}): ${p.wires
       .filter((x) => !x.note?.startsWith('not connected'))
       .map((x) => `${x.pin} → ${x.supply ? `its own supply (${x.supply})` : (x.rail ?? (x.gpio !== undefined ? gpioName(w, x.gpio) : '?'))}${x.role ? ` (${x.role})` : ''}`)
       .join(', ')}`;

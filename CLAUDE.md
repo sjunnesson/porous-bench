@@ -9,7 +9,8 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   that drive them: libraries, app memory), `display.ts` + `panels/` (bus and refresh timing),
   `controls/` (the bench: parts, dials, triggers), `inputs/`, `wiring.ts` (which board pin each part
   goes to: the Wiring view).
-- `src/resident/`: the Resident runtime in the browser (`host.ts`), matching apps to hardware
+- `src/resident/`: the Resident runtime in the browser (`host.ts`), each sensor's driver (`drivers.ts`:
+  its Lua reading, its events, what the mirror sends), matching apps to hardware
   (`needs.ts`), the mirror to a real board (`remote.ts` + `lua/remote.lua`, the shim it wraps apps
   in), and the prompts Bench copies for Claude (`prompt.ts` for apps, `firmware.ts` for firmware).
 - `src/resident-apps/`: bundled Lua apps. `docs/resident/DEVICE-SKILL.md`: Bench's device skill.
@@ -49,6 +50,14 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   `src/ui/three/peripherals.ts`) unless it has a display of its own. Keep the Boards table and the share-link ids in
   DEVICE-SKILL.md in step (`tests/device-skill.test.ts` checks its displays, boards, share-link ids
   and part channels, Lua modules and Mirror stand-ins).
+- **A new part** (an input on the bench): its model in `src/sim/inputs/` (several keys or tags:
+  `keys.ts`, so each press carries a code; discrete events: an `EventLog`), its kind, channels and
+  `createPart` in `controls/bench.ts`, how its channels read in `IO` and any `via` names in
+  `controls.ts`, its driver in `drivers.ts`, its Lua module in `lua/prelude.lua` and stand-in in
+  `lua/remote.lua` (with its events in the replay section), its module in `wiring.ts` (with its I2C
+  address and any others), a widget in `src/ui/widgets/`, a desk part in `peripherals.ts`, its
+  starter controls in `generate.ts`, and `prompt.ts`, DEVICE-SKILL.md and the guide. Model it from
+  the datasheet, say so, and measure once one is on the desk.
 - **The mirror shim is compiled on the device**, often in ~70 KB: keep `lua/remote.lua` small, put
   each stand-in between `-- @@part <module>` / `-- @@end` (sent only to apps that name it). While
   Bench mirrors, buttons A/B arrive as the taps and holds Bench's host recognised

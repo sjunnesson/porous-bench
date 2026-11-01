@@ -65,10 +65,11 @@ describe('remote mirror', () => {
       end
       function on_event(ctx, e) log.info("event", e.name, e.channel, tostring(e.data.name or e.data.index or e.data.moving)) end`);
     expect(t.error).toBeUndefined();
-    send(t.host, { d: { speed: [3, 0.3, 0] }, t: { go: [0, 0, 0] }, s: { pir: { motion: false } }, g: [[0, 0, 0], [0, 0, 0]] });
+    // A motion event Bench raised before the first update is the baseline's, not the device's.
+    send(t.host, { d: { speed: [3, 0.3, 0] }, t: { go: [0, 0, 0] }, s: { pir: { motion: false } }, g: [[0, 0, 0], [0, 0, 0]], ev: [[1, 'motion', { moving: false }]] });
     await t.run(150);
     expect(t.logs).toEqual([]); // the first update is a baseline: nothing fires
-    send(t.host, { d: { speed: [5, 0.5, 2] }, t: { go: [1, 1, 0] }, s: { pir: { motion: true } }, g: [[0, 0, 0], [0, 0, 0]] });
+    send(t.host, { d: { speed: [5, 0.5, 2] }, t: { go: [1, 1, 0] }, s: { pir: { motion: true } }, g: [[0, 0, 0], [0, 0, 0]], ev: [[2, 'motion', { moving: true }]] });
     await t.run(150);
     expect(t.logs).toContain('event\tdial\tdriver\tspeed');
     expect(t.logs).toContain('event\ttrigger\tdriver\tgo');

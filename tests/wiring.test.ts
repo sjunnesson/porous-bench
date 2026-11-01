@@ -24,9 +24,20 @@ const pinOf = (w: Wiring, id: string, pin: string) => w.parts.find((p) => p.id =
 describe('wiring', () => {
   const every: PartKind[] = PART_KINDS.map((k) => k.kind);
 
-  it('wires every kind of part on an ESP32 DevKitC, each GPIO once but the shared I2C bus', () => {
+  it('wires each kind of part on an ESP32 DevKitC next to a display, with nothing it needs missing', () => {
+    for (const kind of every) {
+      const w = wiring(st7789, devkitc, hw([part(kind)]));
+      expect(w.problems, kind).toEqual([]);
+      const p = w.parts[0];
+      expect(p.wires.filter((x) => x.missing), kind).toEqual([]);
+      for (const [gpio, who] of uses(w)) expect(who, `${kind}: GPIO ${gpio}`).toHaveLength(1);
+    }
+  });
+
+  it('wires a bench of one of each of the first parts on an ESP32 DevKitC, each GPIO once but the shared I2C bus', () => {
     // An I2C display, so every part gets a pin: an ST7789's five leave one short.
-    const w = wiring(findDevice('ssd1306-128x64')!, devkitc, hw(every.map((k) => part(k))));
+    const first: PartKind[] = ['button', 'knob', 'pot', 'touch', 'imu', 'ld2410', 'pir', 'light', 'climate', 'buzzer'];
+    const w = wiring(findDevice('ssd1306-128x64')!, devkitc, hw(first.map((k) => part(k))));
     expect(w.problems).toEqual([]);
     for (const [gpio, who] of uses(w)) {
       if (gpio === 21 || gpio === 22) continue;

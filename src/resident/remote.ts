@@ -3,22 +3,23 @@
 // events, so the real display is driven by the virtual sensors. Everything goes through the relay,
 // via Bench's own /relay path (a same-origin proxy: the relay itself doesn't allow browser calls).
 
-import type { Bench } from '../sim/controls/bench';
+import type { Bench, PartKind } from '../sim/controls/bench';
 import type { Control, Dial, Trigger } from '../sim/controls/controls';
-import type { Climate } from '../sim/inputs/climate';
 import type { Imu } from '../sim/inputs/imu';
 import type { LD2410 } from '../sim/inputs/ld2410';
-import type { LightSensor } from '../sim/inputs/light';
-import type { Pir } from '../sim/inputs/pir';
-import type { Touch } from '../sim/inputs/touch';
+import { DRIVERS, modulesNamed } from './drivers';
 import { minifyLua } from './minify';
 import remoteSrc from './lua/remote.lua?raw';
 
-/** The shim with only the stand-ins `code` names: an app that never mentions `pir` doesn't pay for it. */
-function shimFor(code: string): string {
-  return remoteSrc.replace(/^-- @@part (\w+)\n([\s\S]*?)^-- @@end\n/gm, (_, name: string, body: string) =>
-    new RegExp(`\\b${name}\\b`).test(code) ? body : '',
-  );
+/**
+ * The shim with only the stand-ins `code` names: an app that never mentions `pir` doesn't pay for it,
+ * and a word in a comment doesn't count. A section for several (`-- @@part thermal pulse`) goes to an
+ * app that names any of them.
+ */
+function shimFor(app: string): string {
+  const code = minifyLua(app);
+  const names = (name: string) => new RegExp(`\\b${name}\\b`).test(code);
+  return remoteSrc.replace(/^-- @@part ([\w ]+)\n([\s\S]*?)^-- @@end\n/gm, (_, list: string, body: string) => (list.split(' ').some(names) ? body : ''));
 }
 
 /**
@@ -34,15 +35,19 @@ export function remoteApp(code: string, spaced = false): string {
 export interface Snapshot {
   /** Dials: [value, fraction, steps so far]. */
   d: Record<string, [number, number, number]>;
-  /** The app's triggers: [presses, releases, down]. */
-  t: Record<string, [number, number, 0 | 1]>;
+  /** The app's triggers: [presses, releases, down], then what each press the board hasn't had carried
+   *  (a key, a card's UID; "" for nothing), the last for the newest press: at least that one. */
+  t: Record<string, [number, number, 0 | 1, ...string[]]>;
   /** Bench's buttons A and B: [taps, holds started, holds ended] as Bench itself recognised them, so
    *  the device replays the same gestures rather than judging press lengths again. */
   g?: [number, number, number][];
   /** The newest touch-panel events Bench raised, numbered: [seq, "d" | "m" | "u" | "t", x, y]. The
    *  device replays the ones it hasn't seen, in order, with their points. */
   te?: [number, string, number, number][];
-  /** Sensor readings, as their Lua modules return them. */
+  /** The newest sensor driver events Bench raised (a key pressed, a card arriving), numbered:
+   *  [seq, name, data]. The device delivers the ones it hasn't seen, in order. */
+  ev?: [number, string, Record<string, unknown>][];
+  /** Sensor readings, as their Lua modules return them (or packed smaller: drivers.ts). */
   s: Record<string, unknown>;
 }
 
@@ -51,6 +56,12 @@ const round = (v: number, places = 3) => Math.round(v * 10 ** places) / 10 ** pl
 /** Reads the app's controls and the bench's sensors into an update, counting dial steps as it goes. */
 export class SnapshotReader {
   private steps = new Map<Dial, { last: number; total: number }>();
+  /** Per trigger, the presses the board has had (from updates it got), and as far as the last read went. */
+  private had = new Map<Trigger, number>();
+  private reading = new Map<Trigger, number>();
+
+  /** `modules`: the sensor modules the app names (unset: every sensor on the bench is sent). */
+  constructor(private modules?: Set<PartKind>) {}
 
   read(
     controls: Control[],
@@ -58,10 +69,12 @@ export class SnapshotReader {
     buttons: { a?: unknown; b?: unknown },
     gestures?: [number, number, number][],
     touches?: [number, string, number, number][],
+    events?: [number, string, Record<string, unknown>][],
   ): Snapshot {
     const snap: Snapshot = { d: {}, t: {}, s: {} };
     if (gestures) snap.g = gestures;
     if (touches?.length) snap.te = touches;
+    if (events?.length) snap.ev = events;
     for (const c of controls) {
       if (c.kind === 'dial') {
         const d = c as Dial;
@@ -79,17 +92,21 @@ export class SnapshotReader {
         if (c === buttons.a || c === buttons.b) continue; // A and B travel as gestures (g)
         const t = c as Trigger;
         const down = t.isPressed() ? 1 : 0; // also brings the edge counts up to date
-        snap.t[c.name] = [t.presses, t.releases, down];
+        // Each new press's own code (two keys between updates are two keys), the newest 4 at most.
+        const from = Math.max(Math.min((this.had.get(t) ?? 0) + 1, t.presses), t.presses - 3, 1);
+        const codes: string[] = [];
+        for (let n = from; n <= t.presses; n++) codes.push(t.codeOf(n) ?? '');
+        this.reading.set(t, t.presses);
+        snap.t[c.name] = codes.some((x) => x) ? [t.presses, t.releases, down, ...codes] : [t.presses, t.releases, down];
       }
     }
-    const light = bench.first<LightSensor>('light');
-    if (light) snap.s.light = { level: round(light.level), lux: Math.round(light.lux()), raw: light.read() };
-    const pir = bench.first<Pir>('pir');
-    if (pir) snap.s.pir = { motion: pir.motion() };
-    const climate = bench.first<Climate>('climate');
-    if (climate) snap.s.climate = { temperature: round(climate.readTemperature(), 1), humidity: round(climate.readHumidity(), 1) };
-    const touch = bench.first<Touch>('touch');
-    if (touch) snap.s.touch = { touched: touch.isPressed(), raw: touch.touchRead() };
+    // The sensors the app can read, as their drivers send them to a real board.
+    for (const kind of Object.keys(DRIVERS) as PartKind[]) {
+      if (this.modules && !this.modules.has(kind)) continue;
+      const part = bench.first(kind);
+      const driver = DRIVERS[kind]!;
+      if (part) snap.s[kind] = driver.mirror ? driver.mirror(part) : driver.read(part);
+    }
     const imu = bench.first<Imu>('imu');
     // Acceleration in g, then the rotation rate in °/s.
     if (imu) snap.s.imu = [...imu.accel().map((x) => round(x)), ...imu.gyro().map((x) => round(x, 1))];
@@ -110,6 +127,37 @@ export class SnapshotReader {
     }
     return snap;
   }
+
+  /** The board got the last update read: its presses' codes needn't go again. */
+  confirm(): void {
+    for (const [t, n] of this.reading) this.had.set(t, n);
+  }
+}
+
+/**
+ * An update as JSON, under the 1 KB the device takes. Too big and the device drops the whole update,
+ * so shed what matters least first: older touches (the newest 4 stay; the board has had most), then
+ * sensor readings one by one (the device keeps the last reading it had of each), the biggest first
+ * but those left out of the last update (`waiting`) last, so none is left out for good; then older
+ * sensor events, and at the last every touch and event. Dials, triggers and A/B gestures always go.
+ */
+export function shed(snap: Snapshot, waiting: ReadonlySet<string> = new Set()): string {
+  let json = JSON.stringify(snap);
+  const size = (k: string) => bytes(JSON.stringify(snap.s[k]));
+  const readings = Object.keys(snap.s).sort((a, b) => Number(waiting.has(a)) - Number(waiting.has(b)) || size(b) - size(a));
+  const steps = [
+    () => snap.te && (snap.te = snap.te.slice(-4)),
+    ...readings.map((k) => () => delete snap.s[k]),
+    () => snap.ev && (snap.ev = snap.ev.slice(-4)),
+    () => delete snap.te,
+    () => delete snap.ev,
+  ];
+  for (const step of steps) {
+    if (bytes(json) <= MAX_BYTES) break;
+    step();
+    json = JSON.stringify(snap);
+  }
+  return json;
 }
 
 /** What a mirror reads on every update. */
@@ -121,6 +169,8 @@ export interface MirrorSource {
   gestures?: [number, number, number][];
   /** The touch-panel events the app's host raised. */
   touches?: [number, string, number, number][];
+  /** The sensor driver events the app's host raised. */
+  events?: [number, string, Record<string, unknown>][];
 }
 
 export type RemoteStatus = 'off' | 'pushing' | 'live' | 'offline' | 'error';
@@ -171,6 +221,10 @@ export class RemoteMirror {
   private reader = new SnapshotReader();
   private last = '';
   private lastAt = 0;
+  /** The newest sensor event the device has had: later updates carry only the ones after it. */
+  private eventsSent = 0;
+  /** The readings the last update left out, to go first in the next. */
+  private waiting = new Set<string>();
   private inFlight = false;
   /** Bumped by start and stop: an await that comes back to an older run leaves the status alone. */
   private run = 0;
@@ -236,8 +290,10 @@ export class RemoteMirror {
     if (!this.deviceId) return;
     const run = ++this.run;
     this.source = source;
-    this.reader = new SnapshotReader();
+    this.reader = new SnapshotReader(modulesNamed(app.code));
     this.last = '';
+    this.eventsSent = 0;
+    this.waiting = new Set();
     this.set('pushing', `Sending ${app.name}…`);
     try {
       if (opts.tz) await send(this.deviceId, { channel: 'bench', type: 'timezone', data: { tz: opts.tz } }).catch(() => 0);
@@ -268,22 +324,12 @@ export class RemoteMirror {
 
   private async tick(): Promise<void> {
     if (!this.source || this.inFlight) return;
-    const { controls, bench, buttons, gestures, touches } = this.source();
-    const snap = this.reader.read(controls, bench, buttons, gestures, touches);
-    let json = JSON.stringify(snap);
-    // Too big and the device drops the whole update. Shed what matters least first: the radar (the
-    // biggest sensor), then older touch events, then all sensors; the device keeps the last reading
-    // it had of each. Dials, triggers and A/B gestures always go.
-    const shed = [
-      () => delete snap.s.radar,
-      () => snap.te && (snap.te = snap.te.slice(-4)),
-      () => (snap.s = {}),
-    ];
-    for (const step of shed) {
-      if (bytes(json) <= MAX_BYTES) break;
-      step();
-      json = JSON.stringify(snap);
-    }
+    const { controls, bench, buttons, gestures, touches, events } = this.source();
+    const sent = this.eventsSent;
+    const fresh = events?.filter((e) => e[0] > sent) ?? [];
+    const snap = this.reader.read(controls, bench, buttons, gestures, touches, fresh);
+    const offered = Object.keys(snap.s);
+    const json = shed(snap, this.waiting);
     if (bytes(json) > MAX_BYTES) {
       if (this.status !== 'error') this.set('error', 'This app has too many controls to mirror: an update is over the 1 KB the device takes.');
       return;
@@ -298,6 +344,10 @@ export class RemoteMirror {
       if (this.result(status)) {
         this.last = json;
         this.lastAt = now;
+        // Those shed to fit are gone: they'd only crowd out the next ones.
+        if (fresh.length) this.eventsSent = fresh[fresh.length - 1][0];
+        this.waiting = new Set(offered.filter((k) => !(k in snap.s)));
+        this.reader.confirm();
         this.sent++;
         if (this.status !== 'live') this.set('live', 'Back in touch with the device.');
         else this.notify();

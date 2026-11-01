@@ -15,7 +15,7 @@ export default {
   bus: { kind: 'qspi', hz: 40_000_000 },
   ram: { width: 480, height: 480, offsetX: 0, offsetY: 0 },
   boards: ['espressif-esp-mosaico'],
-  builtins: ['imu'], // BMI270
+  builtins: ['imu', 'mic'], // BMI270, and a microphone on the ES8311 codec
   wiring: {
     'QSPI CS': 50,
     'QSPI CLK': 42,

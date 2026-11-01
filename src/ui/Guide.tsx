@@ -116,8 +116,9 @@ export function Guide() {
               <dd>What your app shows things on: a display (LCD, OLED, AMOLED or e-paper) or a strip, ring or grid of colour LEDs.</dd>
               <dt>Inputs</dt>
               <dd>
-                The parts you touch, or that sense the room: buttons, a knob (a <em>rotary encoder</em>), a slider (a{' '}
-                <em>slide pot</em>), sensors for motion, light, temperature or someone standing nearby, and a buzzer that
+                The parts you touch, or that sense the room: buttons and switches, a knob (a <em>rotary encoder</em>), a
+                slider (a <em>slide pot</em>), a joystick, a keypad, a TV-style remote, a reader for cards and tags, sensors
+                for motion, sound, light, distance, warmth, air, temperature or someone standing nearby, and a buzzer that
                 beeps.
               </dd>
               <dt>App</dt>
@@ -392,11 +393,15 @@ export function Guide() {
 
             <h3>The inputs</h3>
             <p>
-              In <Ui>Inputs</Ui>, <Ui>+ Add an input…</Ui> puts a part on the desk: a push button, a rotary encoder, a slide
-              pot, a touch pad, an IMU (senses tilt and shaking), an LD2410 radar (senses someone standing still nearby), a
-              PIR (senses movement), a light sensor, a temperature and humidity sensor, or a buzzer. Each one gets a control in
-              the panel and a model on the desk, wired to the board. <Ui>remove</Ui> takes one away. Parts marked{' '}
-              <Ui>built-in</Ui> are part of the board itself.
+              In <Ui>Inputs</Ui>, <Ui>+ Add an input…</Ui> puts a part on the desk: a push button, a switch (a toggle, or a
+              reed switch that a magnet on a door closes), a rotary encoder, a slide pot, a joystick, a touch pad, a 12-key
+              keypad, an IR receiver with its remote, an RFID reader with its cards, an IMU (senses tilt and shaking), a
+              microphone (hears how loud it is, and claps), an LD2410 radar (senses someone standing still nearby), a distance
+              sensor (how far a hand is), a thermal camera (sees warm things, 8×8 pixels), a PIR (senses movement), a light
+              sensor, a temperature and humidity sensor, a CO₂ sensor (how stale the air is), a pulse sensor (a fingertip's
+              heartbeat), or a buzzer. Each one gets a control in the panel and a model on the desk, wired to the board.{' '}
+              <Ui>remove</Ui> takes one away. Parts marked <Ui>built-in</Ui> are part of the board itself. The microphone can
+              listen to this computer's own mic, and a gamepad plugged in moves the joystick.
             </p>
 
             <h3>The connections</h3>
@@ -415,11 +420,18 @@ export function Guide() {
               <tbody>
                 <tr>
                   <td>a dial: a number in a range</td>
-                  <td>turning an encoder, a slide pot, tilting the IMU, the radar's distance, light level, temperature, humidity</td>
+                  <td>
+                    turning an encoder, a slide pot, the joystick, tilting the IMU, the radar's or the distance sensor's
+                    distance, where something warm is, light level, how loud it is, temperature, humidity, CO₂, heart rate
+                  </td>
                 </tr>
                 <tr>
                   <td>a trigger: a moment</td>
-                  <td>a button press, pushing the encoder, a touch, shaking the IMU, the radar seeing someone, PIR motion, the room going dark</td>
+                  <td>
+                    a button press, a switch turned on, pushing the encoder or the joystick, a touch, a key on the keypad or
+                    the remote, a card on the reader, shaking the IMU, the radar seeing someone, a hand coming near, PIR motion,
+                    the room going dark, a clap, the air getting stuffy, a heartbeat
+                  </td>
                 </tr>
               </tbody>
             </table>

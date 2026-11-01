@@ -5,7 +5,8 @@ ESP32S3 plugged in behind it, and one key. With 8 MB of PSRAM, apps can be large
 faces, gauges, dials, touch UIs and smooth animations all fit. Device type `xiao-round`.
 
 When porous.systems Bench mirrors an app onto this board, Bench's sensors and controls (dials,
-triggers, light, PIR, climate, radar, IMU, a silent buzzer) reach the app as Bench defines them; the
+triggers, light, PIR, climate, radar, switch, joystick, keypad, IR remote, RFID reader, microphone,
+distance, thermal camera, CO₂, pulse, IMU, a silent buzzer) reach the app as Bench defines them; the
 firmware itself has only the modules below.
 
 ## Hardware

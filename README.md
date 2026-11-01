@@ -79,10 +79,13 @@ counts page views with Vercel Web Analytics: no cookies, and nothing about your 
   `lgfx`. Resident apps run unmodified, and Bench adds drivers for the hardware on its desk.
 - **Outputs.** Display modules, or addressable LEDs: a WS2812B strip (8–144 LEDs), a ring (12, 16,
   24) or a matrix (8×8, 16×16, 32×8), glowing in both views and timed on the real 800 kHz one-wire bus.
-- **Your bench.** Add and remove inputs: push buttons, a rotary encoder, a slide pot, a touch pad, an
-  IMU you tilt and shake, an HLK-LD2410 radar, a PIR motion sensor, a light sensor, a temperature /
-  humidity sensor and a buzzer you can hear. The board brings its own (the M5StickC's buttons, IMU and
-  buzzer). Each part has a widget and a 3D model on the desk.
+- **Your bench.** Add and remove inputs: push buttons, a toggle or reed switch, a rotary encoder, a
+  slide pot, a joystick (or a gamepad), a touch pad, a 12-key keypad, an IR receiver and its remote, an
+  RFID reader and its tags, an IMU you tilt and shake, a microphone (or this computer's), an
+  HLK-LD2410 radar, a time-of-flight distance sensor, an 8×8 thermal camera, a PIR motion sensor, a
+  light sensor, a temperature / humidity sensor, a CO₂ sensor, a pulse sensor and a buzzer you can
+  hear. The board brings its own (the M5StickC's buttons, IMU, buzzer and microphone). Each part has a
+  widget and a 3D model on the desk.
 - **Connections.** An app declares the controls it needs ("speed", "next"); you connect each one to a
   part on the bench, and can rewire it while the app runs.
 - **An app from your bench.** **Start from my bench** writes a Lua app for the output and parts
@@ -223,8 +226,11 @@ A `dial` or `trigger` describes what an app needs, not which part provides it:
 
 | Declare | Read | Channels it can connect to |
 |---|---|---|
-| `dial.new(name, { min, max, step, start, wrap, via, connect, label, keys })` | `d:value()`, `d:delta()` (steps since last read), `d:fraction()` | encoder turn · slide pot position · IMU tilt ←→ / ↑↓ · radar distance · light level · temperature · humidity |
-| `trigger.new(name, { key, via, connect, label })` | `t:is_pressed()`, `t:was_pressed()`, `t:was_released()`, `t:pressed_for(ms)` | button press · encoder push · touch · IMU shake · radar presence · PIR motion · light goes dark |
+| `dial.new(name, { min, max, step, start, wrap, via, connect, label, keys })` | `d:value()`, `d:delta()` (steps since last read), `d:fraction()` | encoder turn · slide pot position · joystick ←→ / ↑↓ · IMU tilt ←→ / ↑↓ · radar distance · distance · warm spot ←→ / ↑↓ · light level · sound level · temperature · humidity · CO₂ · heart rate |
+| `trigger.new(name, { key, via, connect, code, label })` | `t:is_pressed()`, `t:was_pressed()`, `t:was_released()`, `t:pressed_for(ms)`, `t:code()` | button press · switch on · encoder or joystick push · touch · a keypad or remote key · an RFID tag · IMU shake · radar presence · something near · someone warm · PIR motion · light goes dark · clap · stuffy air · heartbeat · finger on |
+
+On a part with several keys or tags, `code` picks one (`{ via = "ir", code = "ok" }`), and
+`t:code()` says what the latest press carried: the key, or the tag's UID.
 
 `via` says what to connect to first (`"encoder"`, `"pot"`, `"light"`, `"temperature"`, `"motion"` …);
 the first time an app runs, each control connects to a free part that fits, preferring that one (the
@@ -276,12 +282,22 @@ Resident boards add hardware through drivers: a Lua module plus events into `on_
 | Module | Events |
 |---|---|
 | `dial`: as above | `dial` `{ name, value, delta }` when a dial moves |
-| `trigger`: as above | `trigger` `{ name, pressed }` on each press and release |
+| `trigger`: as above | `trigger` `{ name, pressed, code }` on each press and release |
 | `ld2410.begin({ mode })`, `ld2410.read()` → `{ connected, moving, still, distance_cm, moving_cm, moving_energy, still_cm, still_energy, out }` | `presence` `{ moving, still, distance_cm }` when the state changes |
 | `light.read()` → `{ level, lux, raw }`, `light.level()` | |
 | `pir.read()` → `{ motion }`, `pir.motion()` | `motion` `{ moving }` on each change |
 | `climate.read()` → `{ temperature, humidity }`, `climate.temperature()`, `climate.humidity()` | |
 | `touch.read()` → `{ touched, raw }`, `touch.touched()` | `touch` `{ touched }` on each change |
+| `switch.read()` → `{ on }`, `switch.on()` | `switch` `{ on }` on each flip |
+| `joystick.read()` → `{ x, y, pressed, raw_x, raw_y }`, `joystick.x()`, `.y()`, `.pressed()` | `stick` `{ dir }` pushed past halfway, as a d-pad |
+| `keypad.read()` → `{ keys, last, mask }`, `keypad.pressed(key)` | `key` `{ key, pressed }` for every pad |
+| `ir.read()` → `{ key, last, code, address }`, `ir.key()` | `ir` `{ key, code, address, held }` for every frame (`held`: a repeat code) |
+| `rfid.read()` → `{ present, uid, type }`, `rfid.uid()` | `tag` `{ present, uid, type }` as one comes and goes |
+| `mic.read()` → `{ level, db, bands }`, `mic.level()`, `mic.db()` | `clap` `{ db }` |
+| `tof.read()` → `{ mm, status }`, `tof.mm()` | `near` `{ near, mm }` within 30 cm |
+| `thermal.read()` → `{ pixels, thermistor, max, warm, hot_x, hot_y }`, `thermal.pixels()` | `warm` `{ warm, x, y }` |
+| `co2.read()` → `{ co2, temperature, humidity }`, `co2.ppm()` | `co2` `{ co2, temperature, humidity }` every 5 s |
+| `pulse.read()` → `{ finger, bpm, ir, red }`, `pulse.bpm()`, `pulse.samples()` | `finger` `{ on }`, `beat` `{ bpm }` |
 | `leds`: see [LED outputs](#led-outputs) | |
 
 The LD2410 is simulated at the UART level: the virtual sensor sends real 23-byte report frames at
@@ -482,10 +498,14 @@ something changed. Switching apps or restarting sends the new run. **Stop** leav
 the app with the last values it got.
 
 The app reaches the device wrapped in a small shim (`src/resident/lua/remote.lua`). Where the firmware
-has none of Bench's drivers, the shim defines `dial`, `trigger`, `light`, `pir`, `climate`, `touch`,
+has none of Bench's drivers, the shim defines `dial`, `trigger`, the sensors (`light`, `pir`, `climate`,
+`touch`, `switch`, `joystick`, `keypad`, `ir`, `rfid`, `mic`, `tof`, `thermal`, `co2`, `pulse`),
 `ld2410`, `imu` and a silent `buzzer`, and feeds them from those events; it carries only the ones
 the app names, minified, since a board without PSRAM compiles it in ~70 KB. It also raises the
-driver events the app would get on Bench (`dial`, `trigger`, `motion`, `touch`). Buttons A and B
+driver events the app would get on Bench: `dial` and `trigger` (with its `code`), and each sensor's
+events replayed in the order Bench raised them. An update stays under the relay's 1 KB: arrays
+travel packed two characters a number (the thermal camera's 64 pixels, the pulse sensor's samples),
+and the biggest readings are left out first, in turns, when it's too big. Buttons A and B
 arrive as the taps and holds Bench recognised, and touches on Bench's screen are replayed too. The
 board's own keys and touch panel still reach the app, its taps counted with Bench's: a press on the
 real board always counts, even though Bench doesn't see it and the two screens can then differ.
@@ -565,13 +585,14 @@ src/sim/            simulator core, framework-free
   clock.ts            simulated time: pause, step, speed
   gfx.ts              drawing API          framebuffer.ts   MCU-side buffer + dirty rect
   display.ts          show(): bus timing   panels/          LCD, OLED, e-paper physics
-  devices/            one file per display inputs/          button, knob, pot, touch, IMU, LD2410,
-                                                            PIR, light, climate, buzzer
+  devices/            one file per display inputs/          one file per part, and keys.ts: parts
+                                                            with several keys, whose presses carry a code
   runner.ts           runs a program       renderer.ts      flat canvas view
   controls/           the bench, dials and triggers          leds.ts   LED strips, rings, matrices
   generate.ts         writes a Lua app for the bench
   wiring.ts           which board pin each part goes to (the wiring view, the firmware prompt)
-src/resident/       Lua runtime: wasmoon host, Resident sandbox prelude, Bench drivers, relay, datetime
+src/resident/       Lua runtime: wasmoon host, Resident sandbox prelude, Bench drivers (drivers.ts: each
+                    sensor's Lua reading, events and what the mirror sends), relay, datetime
 src/resident-apps/  bundled Lua apps (Bench's examples and Resident's)
 src/ui/             React UI; ui/three/ builds the wireframe models from each enclosure
   Guide.tsx           the walkthrough at /guide, a page of its own (guide.html, src/guide.tsx)

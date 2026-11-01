@@ -5,7 +5,8 @@ driven by its own ESP32-S3. No keys: everything is touch. With 8 MB of PSRAM, ap
 use LVGL: dashboards, wall controls, clocks, touch UIs. Device type `guition-4848`.
 
 When porous.systems Bench mirrors an app onto this board, Bench's sensors and controls (dials,
-triggers, light, PIR, climate, radar, IMU, a silent buzzer, buttons A and B) reach the app as Bench
+triggers, light, PIR, climate, radar, switch, joystick, keypad, IR remote, RFID reader, microphone,
+distance, thermal camera, CO₂, pulse, IMU, a silent buzzer, buttons A and B) reach the app as Bench
 defines them; the firmware itself has only the modules below.
 
 ## Hardware

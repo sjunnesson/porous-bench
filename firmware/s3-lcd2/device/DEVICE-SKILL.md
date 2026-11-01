@@ -5,7 +5,8 @@ key. With 8 MB of PSRAM, apps can be large and use LVGL: dashboards, games, gaug
 smooth animations all fit. Device type `s3-lcd2`.
 
 When porous.systems Bench mirrors an app onto this board, Bench's sensors and controls (dials,
-triggers, light, PIR, climate, radar, a silent buzzer) reach the app as Bench defines them; the
+triggers, light, PIR, climate, radar, switch, joystick, keypad, IR remote, RFID reader, microphone,
+distance, thermal camera, CO₂, pulse, a silent buzzer) reach the app as Bench defines them; the
 firmware itself has only the modules below.
 
 ## Hardware

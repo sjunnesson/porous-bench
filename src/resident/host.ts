@@ -13,11 +13,9 @@ import type { Display } from '../sim/display';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
 import { chainIndex, chainPoint } from '../sim/leds';
-import type { Climate } from '../sim/inputs/climate';
+import { CHANNELS, type PartKind } from '../sim/controls/bench';
 import type { SimInput } from '../sim/inputs/input';
-import type { LightSensor } from '../sim/inputs/light';
-import type { Pir } from '../sim/inputs/pir';
-import type { Touch } from '../sim/inputs/touch';
+import { DRIVERS, type DriverEvent, type Memo } from './drivers';
 import datetimeSrc from './lua/datetime.lua?raw';
 import lvglSrc from './lua/lvgl.lua?raw';
 import preludeSrc from './lua/prelude.lua?raw';
@@ -69,8 +67,11 @@ export interface ResidentBoard {
   dial?(name: string, opts: DialOptions): Dial;
   trigger?(name: string, opts: TriggerOptions): Trigger;
   radar?(opts: LD2410Options): LD2410;
-  /** Bench drivers for the other sensors: the part of that kind on the bench (added if missing). */
-  sensor?(kind: 'light' | 'pir' | 'climate' | 'touch'): SimInput;
+  /** Bench drivers for the other sensors (drivers.ts): the part of that kind on the bench (added if missing). */
+  sensor?(kind: PartKind): SimInput;
+  /** The part of that kind on the bench now, if there is one (none is added). Its driver's events
+   *  reach the app whether or not the app reads it, as a real board's drivers' do. */
+  present?(kind: PartKind): SimInput | undefined;
   log(level: 'info' | 'warn' | 'error', text: string): void;
   telemetry(name: string, data?: Record<string, unknown>): void;
   publish(name: string, dataJson: string, keep: boolean): SendResult;
@@ -104,6 +105,9 @@ const EVENT_JSON_MAX = 1024;
  */
 const LUA_HEAP_MAX = 32 * 1024 * 1024;
 const ORDINAL_OFFSET = 719163;
+/** Numbers for the touch and sensor events a mirror replays, counting up across every app run in the
+ *  page: a new run's first events then come after the last run's, never under the board's baseline. */
+let raisedSeq = 0;
 const I32 = (v: number) => v >= -2147483648 && v <= 2147483647;
 
 /** 0xRRGGBB → RGB565 (LovyanGFX reads uint32 colours as RGB888). */
@@ -126,15 +130,16 @@ export class ResidentHost {
   private touchSeq = 0;
   private touchDown: { x: number; y: number; t: number; far: boolean } | null = null;
   private touchRaised: [number, 'd' | 'm' | 'u' | 't', number, number][] = [];
-  private touchRaisedSeq = 0;
   /** Per button: when it went down, whether it became a hold, and the edges taken so far. */
   private gestures: { downAt: number; held: boolean; presses: number; releases: number }[] = [];
   // Bench drivers the app declared, with what their events last reported.
   private dials = new Map<string, { dial: Dial; last: number }>();
   private triggers = new Map<string, { trigger: Trigger; presses: number; releases: number }>();
   private radar: { r: LD2410; state: number } | null = null;
-  /** Sensors the app has read, with what their events last reported. */
-  private sensors = new Map<string, { part: SimInput; last: boolean }>();
+  /** The sensors on the bench (and those the app has read), with what their driver has reported of each. */
+  private sensors = new Map<PartKind, { part: SimInput; memo: Memo }>();
+  /** The sensors' driver events raised so far, numbered: what a mirror replays. */
+  private sensorRaised: [number, string, Record<string, unknown>][] = [];
   // One panel, one library: whoever bound last presents; the other's frames are dropped.
   private owner: 'lgfx' | 'lvgl' | null = null;
   private lv: LvglScreen | null = null;
@@ -363,13 +368,46 @@ export class ResidentHost {
   private raiseTouch(kind: 'd' | 'm' | 'u' | 't', x: number, y: number) {
     const name = { d: 'touch_down', m: 'touch_move', u: 'touch_up', t: 'touch_tap' }[kind];
     this.queue({ name, channel: 'driver', data: { x, y } });
-    this.touchRaised.push([++this.touchRaisedSeq, kind, x, y]);
+    this.touchRaised.push([++raisedSeq, kind, x, y]);
     if (this.touchRaised.length > 16) this.touchRaised.shift();
   }
 
   /** The newest touch events raised, oldest first, numbered: [seq, kind, x, y] (what a mirror replays). */
   touchEvents(): [number, string, number, number][] {
     return this.touchRaised.map((e) => [...e]);
+  }
+
+  private raiseSensor(e: DriverEvent) {
+    this.queue({ name: e.name, channel: 'driver', data: e.data });
+    this.sensorRaised.push([++raisedSeq, e.name, e.data]);
+    if (this.sensorRaised.length > 16) this.sensorRaised.shift();
+  }
+
+  /** The newest sensor events raised, oldest first, numbered: [seq, name, data] (what a mirror replays). */
+  sensorEvents(): [number, string, Record<string, unknown>][] {
+    return this.sensorRaised.map(([seq, name, data]) => [seq, name, data]);
+  }
+
+  /**
+   * The part of `kind` the driver reads: the one on the bench, or (`add`, as a read does) one put
+   * there for the app. A part the driver hasn't seen before starts its events from now: what
+   * happened before isn't the app's. Undefined: no such part, or no such driver.
+   */
+  private sensorOf(kind: PartKind, add: boolean): { part: SimInput; memo: Memo } | undefined {
+    const b = this.board;
+    const driver = DRIVERS[kind];
+    if (!b.sensor || !driver) return undefined;
+    // The part on the bench; one taken off while the app runs reads as it last did (an unplugged
+    // sensor doesn't put itself back); only a kind the app has never had is added for it.
+    const part = b.present?.(kind) ?? this.sensors.get(kind)?.part ?? (add ? b.sensor(kind) : undefined);
+    if (!part) return undefined;
+    let s = this.sensors.get(kind);
+    if (s?.part !== part) {
+      s = { part, memo: {} };
+      driver.events?.(part, s.memo);
+      this.sensors.set(kind, s);
+    }
+    return s;
   }
 
   /** Taps, holds started and holds ended on each button so far: [A, B]. */
@@ -405,16 +443,16 @@ export class ResidentHost {
         const press = t.presses <= t.releases && t.presses < t.trigger.presses;
         if (press) t.presses++;
         else t.releases++;
-        this.queue({ name: 'trigger', channel: 'driver', data: { name, pressed: press } });
+        // A press that carried something (a remote's key, a card's UID) says what.
+        const code = press ? t.trigger.codeOf(t.presses) : null;
+        this.queue({ name: 'trigger', channel: 'driver', data: code === null ? { name, pressed: press } : { name, pressed: press, code } });
       }
     }
-    // PIR and touch report their edges as driver events too.
-    for (const [kind, s] of this.sensors) {
-      const on = kind === 'pir' ? (s.part as Pir).motion() : kind === 'touch' ? (s.part as Touch).isPressed() : false;
-      if (on !== s.last && (kind === 'pir' || kind === 'touch')) {
-        s.last = on;
-        this.queue({ name: kind === 'pir' ? 'motion' : 'touch', channel: 'driver', data: kind === 'pir' ? { moving: on } : { touched: on } });
-      }
+    // The sensors report what happened as driver events (drivers.ts), whether the app reads them or not.
+    for (const kind of Object.keys(DRIVERS) as PartKind[]) {
+      if (!DRIVERS[kind]!.events) continue;
+      const s = this.sensorOf(kind, false);
+      if (s) for (const e of DRIVERS[kind]!.events!(s.part, s.memo)) this.raiseSensor(e);
     }
     if (this.radar) {
       const r = this.radar.r;
@@ -607,9 +645,17 @@ export class ResidentHost {
       trig_new: (name: string, opts: Record<string, unknown>) => {
         if (!b.trigger) return 'trigger: this board has no trigger driver';
         if (this.triggers.has(name)) return undefined;
-        const o = checkOpts('trigger.new', opts, { label: 'string', key: 'string', via: 'string', connect: 'string' });
+        const o = checkOpts('trigger.new', opts, { label: 'string', key: 'string', via: 'string', connect: 'string', code: 'string' });
         if (typeof o === 'string') return o;
         if (o.via !== undefined && !(String(o.via) in TRIGGER_VIA)) return `trigger.new: via must be one of ${Object.keys(TRIGGER_VIA).map((v) => `"${v}"`).join(', ')}`;
+        if (o.code !== undefined) {
+          // A key or tag by its id ("ok", "star", "card-a"), not its label: a wrong one would quietly be any key.
+          const via = String(o.via ?? 'button');
+          const kind = TRIGGER_VIA[via]?.kind as PartKind | undefined;
+          const ids = (kind ? CHANNELS[kind] : []).filter((c) => c.kind === 'momentary').map((c) => c.id);
+          if (ids.length < 2) return `trigger.new: code picks one of a part's keys or tags, and via "${via}" has none`;
+          if (!ids.includes(String(o.code))) return `trigger.new: code must be one of ${ids.map((v) => `"${v}"`).join(', ')} for via "${via}"`;
+        }
         try {
           const trigger = b.trigger(name, { label: titleCase(name), ...o } as TriggerOptions);
           this.triggers.set(name, { trigger, presses: trigger.presses, releases: trigger.releases });
@@ -622,6 +668,7 @@ export class ResidentHost {
       trig_was_pressed: (name: string) => !!this.triggers.get(name)?.trigger.wasPressed(),
       trig_was_released: (name: string) => !!this.triggers.get(name)?.trigger.wasReleased(),
       trig_pressed_for: (name: string, ms: number) => !!this.triggers.get(name)?.trigger.pressedFor(ms),
+      trig_code: (name: string) => this.triggers.get(name)?.trigger.code() ?? undefined,
       ld_begin: (opts: Record<string, unknown>) => {
         if (!b.radar) return 'ld2410: this board has no radar driver';
         if (this.radar) return undefined;
@@ -715,27 +762,16 @@ export class ResidentHost {
         return { pressed: t.isPressed(), x, y };
       },
 
-      // light, pir, climate, touch: the part on the bench (put there if missing), read as a table.
-      sensor_read: (kind: 'light' | 'pir' | 'climate' | 'touch') => {
-        if (!b.sensor) return undefined;
-        let s = this.sensors.get(kind);
-        if (!s) {
-          const part = b.sensor(kind);
-          s = { part, last: kind === 'pir' ? (part as Pir).motion() : kind === 'touch' ? (part as Touch).isPressed() : false };
-          this.sensors.set(kind, s);
-        }
-        const p = s.part;
-        switch (kind) {
-          case 'light':
-            return { level: (p as LightSensor).level, lux: (p as LightSensor).lux(), raw: (p as LightSensor).read() };
-          case 'pir':
-            return { motion: (p as Pir).motion() };
-          case 'climate':
-            return { temperature: (p as Climate).readTemperature(), humidity: (p as Climate).readHumidity() };
-          case 'touch':
-            return { touched: (p as Touch).isPressed(), raw: (p as Touch).touchRead() };
-        }
-        return undefined;
+      // The sensors (drivers.ts): the part on the bench (put there if missing), read as a table.
+      sensor_read: (kind: PartKind) => {
+        const s = this.sensorOf(kind, true);
+        return s ? DRIVERS[kind]!.read(s.part) : undefined;
+      },
+      // A sensor module's other functions; undefined (nil) if the board has no such driver.
+      sensor_call: (kind: PartKind, name: string, arg?: unknown) => {
+        const s = this.sensorOf(kind, true);
+        const call = s && DRIVERS[kind]!.calls?.[name];
+        return call ? (call(s.part, arg ?? undefined, s.memo) ?? undefined) : undefined;
       },
 
       // screens

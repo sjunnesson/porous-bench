@@ -37,6 +37,16 @@ const MODULE: Partial<Record<PartKind, string>> = {
   climate: '`climate.temperature()` (°C) and `climate.humidity()` (%)',
   touch: '`touch.touched()`, plus a `touch` driver event on each change',
   buzzer: '`buzzer.beep(hz, ms)`, `buzzer.tone(hz)`, `buzzer.stop()`',
+  switch: '`switch.on()`, plus a `switch` driver event on each flip',
+  joystick: '`joystick.x()`, `joystick.y()` (-1..1), `joystick.pressed()`, plus a `stick` event (`dir`) as it\'s pushed past halfway, like a d-pad',
+  keypad: '`keypad.read().keys` (touched now), `keypad.pressed("5")`, plus a `key` event (`key`, `pressed`) for every pad',
+  ir: '`ir.key()` (held now), plus an `ir` event (`key`, `code`, `held`) for every frame the remote sends',
+  rfid: '`rfid.read()` (`present`, `uid`), plus a `tag` event as a tag comes and goes',
+  mic: '`mic.level()` (0..1), `mic.db()`, `mic.read().bands` (8 octave bands, 0..1), plus a `clap` event',
+  tof: '`tof.mm()` (nil out of range), plus a `near` event as something comes within 30 cm',
+  thermal: '`thermal.pixels()` (64 temperatures, row by row), `thermal.read()` for `warm`, `hot_x`, `hot_y`, plus a `warm` event',
+  co2: '`co2.ppm()` (nil in its first 5 s), plus a `co2` event with each measurement (every 5 s)',
+  pulse: '`pulse.bpm()` (nil until it has a rate), `pulse.samples()`, plus `finger` and `beat` events',
 };
 
 /** The board driving the output, and what that means for the app. */
@@ -114,7 +124,11 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
 function benchSection(parts: PromptInput['parts']): string[] {
   const lines: string[] = [];
   for (const p of parts) {
-    const channels = (CHANNELS[p.kind] ?? []).map((c) => `${c.label} → ${c.kind === 'momentary' ? 'trigger' : 'dial'} \`connect = "${p.id}:${c.id}"\``);
+    const all = CHANNELS[p.kind] ?? [];
+    // A part with many keys or tags: its `any` channel, then the rest by the `code` that picks each.
+    const many = all.length > 6;
+    const channels = (many ? all.slice(0, 1) : all).map((c) => `${c.label} → ${c.kind === 'momentary' ? 'trigger' : 'dial'} \`connect = "${p.id}:${c.id}"\``);
+    if (many) channels.push(`each one → trigger \`via = "${p.kind}", code = "<${p.kind === 'rfid' ? 'tag' : 'key'}>"\` (${all.slice(1).map((c) => `\`${c.id}\``).join(', ')})`);
     const own = p.builtin ? ' (built into the board)' : '';
     const ab = p.id.endsWith('-0') ? 'A (index 0)' : p.id.endsWith('-1') ? 'B (index 1)' : null;
     const button = p.builtin && p.kind === 'button' && ab ? `; by default it's button ${ab}, which arrives as \`tap\` / \`hold\` events in \`on_event\`` : '';

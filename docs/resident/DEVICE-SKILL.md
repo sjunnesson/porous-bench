@@ -3,8 +3,9 @@
 Bench is a browser simulator that runs Resident apps on a choice of virtual displays. Its board
 surface is the M5StickC Plus2's (`screen`, `imu`, `buzzer`, `button`, two buttons) plus `lgfx`, on
 whichever display the user has selected, plus Bench drivers for the hardware on its desk (`dial`,
-`trigger`, `ld2410`, `light`, `pir`, `climate`, `touch`), `touchscreen` on a display with a touch
-panel, and `leds` when the output is an LED chain. Apps written for the M5Stick run unchanged; apps that read
+`trigger`, `ld2410`, `light`, `pir`, `climate`, `touch`, `switch`, `joystick`, `keypad`, `ir`, `rfid`,
+`mic`, `tof`, `thermal`, `co2`, `pulse`), `touchscreen` on a display with a touch panel, and `leds`
+when the output is an LED chain. Apps written for the M5Stick run unchanged; apps that read
 `screens.get("main")` adapt to every display.
 
 Pass this file to the Resident plugin: `/resident:create-app --device-skill docs/resident/DEVICE-SKILL.md …`
@@ -131,10 +132,15 @@ flip the same way, so drawing less is faster on both.
 Bench's Real device panel pushes the open app to a Resident device and drives it from the bench:
 
 - The app travels wrapped in a small shim (only the stand-ins it uses, minified) that defines
-  `dial`, `trigger`, `light`, `pir`, `climate`, `touch`, `ld2410`, `imu`, `touchscreen` and a silent
-  `buzzer` where the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
-  unchanged: the readings (the IMU's rotation rate included) and the `dial`, `trigger`, `motion`,
-  `touch` and `presence` events arrive as they do in Bench.
+  `dial`, `trigger`, `light`, `pir`, `climate`, `touch`, `switch`, `joystick`, `keypad`, `ir`, `rfid`,
+  `mic`, `tof`, `thermal`, `co2`, `pulse`, `ld2410`, `imu`, `touchscreen` and a silent `buzzer` where
+  the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
+  unchanged: the readings (the IMU's rotation rate included) and the driver events arrive as they do
+  in Bench. A sensor's events (a key, a tag, a clap, a beat, `motion`, `touch` …) reach an app with
+  an `on_event` in the order Bench raised them, each once, and each trigger press carries its own `code`.
+- An update is at most 1 KB, so arrays travel packed (the thermal camera's 64 pixels in 128
+  characters, the pulse sensor's 32-sample FIFO) and only the readings of modules the app names go.
+  Past 1 KB the biggest readings are left out first, taking turns; the board keeps the last of each.
 - Buttons A and B: the taps and holds Bench recognises are replayed on the board. Touches on Bench's
   screen are replayed the same way, in order with their points. The board's own keys and touch
   panel still work while Bench mirrors: a press on the real board always reaches the app. Bench
@@ -196,11 +202,12 @@ everything after `#share=` (`1.` and the rest).
   `{ kind: "matrix", w, h }` at 8×8, 16×16 or 32×8.
 - `board`: one that drives that output (below). Modules with their own chip have just the one.
 - `parts`: what the user puts on the bench, `{ id, kind, label }`, with ids `<kind>-<n>` (`knob-1`,
-  `button-2`). Leave out the board's own buttons, IMU and buzzer: they come with the board.
+  `button-2`). Leave out the board's own buttons, IMU, buzzer and microphone: they come with the board.
 - `connections`: each of the app's dials and triggers, by the name given to `dial.new` or
   `trigger.new`, to `"part:channel"` or `"none"`. `{}` leaves it to the app's `connect` and `via`
   options, as when the app is opened any other way. The board's own parts are `builtin-button-0`
-  (A), `builtin-button-1` (B), `builtin-imu` and `builtin-buzzer`, on boards that have them.
+  (A), `builtin-button-1` (B), `builtin-imu`, `builtin-buzzer` and `builtin-mic` (the M5StickC Plus2
+  and the ESP-Mosaico), on boards that have them.
 - `app`: `{ name, code, description? }` for an app you wrote; `{ bundled: "<id>" }` for one of
   Bench's own (its file name in `src/resident-apps`, less `.lua`).
 
@@ -229,14 +236,24 @@ A dial connects to a channel that turns or measures, a trigger to one that fires
 | Part `kind` | Dial channels | Trigger channels |
 |---|---|---|
 | `button` | | `press` |
+| `switch` (toggle or reed switch: held while on) | | `on` |
 | `knob` (rotary encoder) | `rotate` | `push` |
 | `pot` (slide pot) | `position` | |
+| `joystick` | `x`, `y` | `press` |
 | `touch` (touch pad) | | `touch` |
+| `keypad` (12 keys) | | `any`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `star`, `0`, `hash` |
+| `ir` (receiver and the kit's remote) | | `any`, `up`, `left`, `ok`, `right`, `down`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `star`, `0`, `hash` |
+| `rfid` (reader and its tags: held while one lies on it) | | `tag`, `card-a`, `card-b`, `fob`, `sticker` |
 | `imu` | `tilt-x`, `tilt-y` | `shake` |
+| `mic` | `level` | `clap` |
 | `ld2410` (radar) | `distance` | `presence` |
-| `pir` | | `motion` |
+| `tof` (distance, 0–1.2 m) | `distance` | `near` |
+| `thermal` (8×8 thermal camera) | `hot-x`, `hot-y` | `warm` |
 | `light` | `level` | `dark` |
+| `pir` | | `motion` |
 | `climate` | `temperature`, `humidity` | |
+| `co2` (400–2000 ppm) | `co2` | `stuffy` |
+| `pulse` (40–180 bpm) | `bpm` | `beat`, `finger` |
 | `buzzer` | | |
 
 Opening a link replaces the setup in that browser, and Bench offers **Back to my bench** until the
@@ -291,23 +308,29 @@ app is written for one particular bench.
 ```lua
 local speed = dial.new("speed", { min = 1, max = 10, step = 1, start = 3 })
 --   options: label, min, max, step, start, wrap,
---            via = "encoder" | "pot" | "imu-x" | "imu-y" | "radar" | "light" | "temperature" | "humidity",
+--            via = "encoder" | "pot" | "joystick-x" | "joystick-y" | "imu-x" | "imu-y" | "radar" | "distance"
+--                | "heat-x" | "heat-y" | "light" | "sound" | "temperature" | "humidity" | "co2" | "pulse",
 --            connect = "pot-1:position" (one specific part and channel, as Connections names them),
 --            keys = { down = "ArrowLeft", up = "ArrowRight" }
 speed:value()   speed:delta()   -- steps since the last call   speed:fraction()   -- 0..1 in the range
 
 local fire = trigger.new("fire", { key = "Space" })
 --   options: label, key (a KeyboardEvent.code), connect = "button-1:press",
---            via = "button" | "external-button" | "encoder-push" | "touch" | "shake" | "presence" | "motion" | "dark"
+--            via = "button" | "external-button" | "switch" | "encoder-push" | "joystick-press" | "touch"
+--                | "keypad" | "ir" | "rfid" | "shake" | "presence" | "near" | "warm" | "motion" | "dark"
+--                | "clap" | "stuffy" | "heartbeat" | "finger",
+--            code = "ok" (on a part with several keys or tags, the one to ask for by its id: "5", "ok", "star", "card-a"; any other is an error)
 fire:is_pressed()   fire:was_pressed()   fire:was_released()   fire:pressed_for(ms)
+fire:code()         -- what the latest press carried: the key ("5", "ok") or the tag's UID; nil for a plain press
 
 ld2410.begin({ mode = "wander" })   -- "wander" | "approach" | "empty" | "manual"
 local r = ld2410.read()  -- { connected, moving, still, distance_cm, moving_cm, moving_energy, still_cm, still_energy, out }
 ```
 
 Driver events arrive in `on_event` with `e.channel == "driver"`: `dial` `{ name, value, delta }` when a
-dial moves, `trigger` `{ name, pressed }` on each edge, `presence` `{ moving, still, distance_cm }` when
-the radar's state changes. Poll in `on_tick` or react to events, whichever reads better. These
+dial moves, `trigger` `{ name, pressed, code }` on each edge (`code` on a press from a keypad, the
+remote or a tag), `presence` `{ moving, still, distance_cm }` when the radar's state changes. A switch
+reads `is_pressed()` for as long as it's on. Poll in `on_tick` or react to events, whichever reads better. These
 modules exist only on Bench (or a board whose firmware provides them); guard with `if dial then`
 for apps that should also run on a plain M5Stick.
 
@@ -321,9 +344,69 @@ touch.read()    -- { touched = bool, raw = touchRead() }              touch.touc
 ```
 
 The first read puts the sensor on the user's bench if it isn't there. PIR and touch also send driver
-events: `motion` `{ moving }` and `touch` `{ touched }` on each change. Prefer a `dial`/`trigger`
+events, whether or not the app reads them: `motion` `{ moving }` and `touch` `{ touched }` on each change. Prefer a `dial`/`trigger`
 (`via = "light"`, `"temperature"`, `"motion"`, `"touch"` …) when the app only needs "a value" or "a
 press": the user can then connect any part to it.
+
+### switch, joystick, keypad, ir, rfid (Bench drivers: things you flip, push, press and lay down)
+
+```lua
+switch.read()     -- { on = bool }                                        switch.on()
+joystick.read()   -- { x, y = -1..1 (right, away: +), pressed, raw_x, raw_y = 0..4095 }   joystick.x(), .y(), .pressed()
+keypad.read()     -- { keys = { "1", "5" } (touched now), last, mask = 12 bits: 1-9, star, 0, hash from bit 0 }   keypad.pressed("5")
+ir.read()         -- { key (held now, or nil), last, code (its NEC command), address }   ir.key()
+rfid.read()       -- { present = bool, uid = "04A3B2C1", type = "mifare-classic" | "ntag" }   rfid.uid()
+```
+
+- **switch**: a toggle or a reed switch (a magnet on a door or lid). Event `switch` `{ on }`.
+- **joystick** (KY-023): centred where it rests, with a small dead zone. Event `stick` `{ dir }` each
+  time it's pushed past halfway another way: `"left"`, `"right"`, `"up"`, `"down"`, `"center"`, as a d-pad.
+- **keypad** (MPR121, 12 capacitive pads in a phone's layout: `1`–`9`, `star`, `0`, `hash`): several at
+  once. Event `key` `{ key, pressed }` for every pad touched and let go.
+- **ir** (VS1838B and the kit's 17-key remote, NEC address 0x00): a key goes down 67 ms after it's
+  pressed (its frame), stays down while the remote repeats, and comes up 120 ms after the last
+  repeat (up to ~130 ms after it's let go). One key at a time. Event `ir` `{ key, code, address, held }` for every frame, the repeat codes too
+  (`held = true`: the key is still down), so a held key can step a volume. Keys: `up`, `down`, `left`, `right`, `ok`,
+  `1`–`9`, `star`, `0`, `hash`.
+- **rfid** (PN532): a tag lying on the reader, found at its next poll (every 100 ms). Event `tag`
+  `{ present, uid, type }` as one comes and goes. Bench's tags are two cards, a key fob and an NTAG
+  sticker; a real reader reads any card's UID, so learn them (store the ones you've seen) rather than
+  writing Bench's into the app.
+
+A trigger on one of these is the simplest way in: `trigger.new("next", { via = "ir", code = "right" })`,
+or `{ via = "keypad" }` for any key with `next:code()` saying which.
+
+### mic, tof, thermal, co2, pulse (Bench drivers: sensing)
+
+```lua
+mic.read()      -- { level = 0..1 (30–100 dB), db = dB SPL, bands = { 8 × 0..1 } }   mic.level(), mic.db()
+tof.read()      -- { mm = 40..4000 (nil out of range), status = "ok" | "out of range" }   tof.mm()
+thermal.read()  -- { pixels = { 64 × °C }, thermistor, max, warm = bool, hot_x, hot_y = 0..7 }   thermal.pixels()
+co2.read()      -- { co2 = ppm, temperature, humidity } (empty in its first 5 s)   co2.ppm()
+pulse.read()    -- { finger = bool, bpm (nil until it has a rate), ir, red }   pulse.bpm()
+pulse.samples() -- the IR samples since the app last asked (100 a second, at most 32)
+```
+
+- **mic** (INMP441, or the board's own on the M5StickC Plus2 and the ESP-Mosaico): the level from
+  512-sample blocks at 16 kHz (32 ms each), and 8 octave bands from 63 Hz to 8 kHz, each 0..1 over
+  20–90 dB. Event `clap` `{ db }`: a sharp sound over 1 kHz, 15 dB above the background. For an LED
+  visualiser, map `bands` across the strip in `leds.on_frame`.
+- **tof** (VL53L1X): a new reading every 50 ms, a few mm of noise. Event `near` `{ near, mm }` as
+  something comes within 30 cm and goes.
+- **thermal** (AMG8833): 8×8 pixels, row by row as the sensor sees the scene, 0.25 °C steps, 10
+  frames a second over a 60° view. `warm` when something is 3 °C over the room (a hand, a face); `hot_x`,
+  `hot_y` are where it is. Event `warm` `{ warm, x, y }`. On an 8×8 matrix, one LED a pixel.
+- **co2** (SCD41): a measurement every 5 s, the first 5 s after it starts; ~420 ppm is outdoor air,
+  over 1000 a room to air. Event `co2` `{ co2, temperature, humidity }` with each measurement: redraw
+  an e-paper display then, not every tick.
+- **pulse** (MAX30102): a fingertip resting on it. It needs a few seconds of steady beats before
+  `bpm` is set. Events `finger` `{ on }` and `beat` `{ bpm }` with each heartbeat once it has a rate.
+  Read `pulse.samples()` at least every 300 ms or the FIFO loses some. For showing a pulse, not for
+  anything medical.
+
+Their events reach `on_event` whether or not the app reads the module, as a real board's drivers'
+do: an app that only handles `ir` or `key` events needs no read. Reading one that isn't on the bench
+puts it there.
 
 ### touchscreen (Bench driver, displays with a touch panel)
 
@@ -430,6 +513,21 @@ climate = { read = function() return { temperature = 21, humidity = 40 } end,
   temperature = function() return 21 end, humidity = function() return 40 end }
 touch = { read = function() return { touched = false, raw = 0 } end, touched = function() return false end }
 touchscreen = { read = function() return { pressed = false, x = 0, y = 0 } end, pressed = function() return false end }
+switch = { read = function() return { on = false } end, on = function() return false end }
+joystick = { read = function() return { x = 0, y = 0, pressed = false, raw_x = 2026, raw_y = 2026 } end,
+  x = function() return 0 end, y = function() return 0 end, pressed = function() return false end }
+keypad = { read = function() return { keys = {}, mask = 0 } end, pressed = function() return false end }
+ir = { read = function() return { address = 0 } end, key = function() return nil end }
+rfid = { read = function() return { present = false } end, uid = function() return nil end }
+mic = { read = function() return { level = 0.14, db = 40, bands = { 0, 0, 0, 0, 0, 0, 0, 0 } } end,
+  level = function() return 0.14 end, db = function() return 40 end }
+tof = { read = function() return { mm = 250, status = "ok" } end, mm = function() return 250 end }
+local px = {} for i = 1, 64 do px[i] = 22 end
+thermal = { read = function() return { pixels = px, thermistor = 23.5, max = 22, warm = false, hot_x = 3.5, hot_y = 3.5 } end,
+  pixels = function() return px end }
+co2 = { read = function() return { co2 = 650, temperature = 22, humidity = 45 } end, ppm = function() return 650 end }
+pulse = { read = function() return { finger = false, ir = 2000, red = 1500 } end, bpm = function() return nil end,
+  samples = function() return {} end }
 screens = { get = function()
   return { name = "main", w = 240, h = 135, shape = "rect", depth = 16, scheme = "dark", brightness = 1,
            model = "M5StickC Plus2", controller = "ST7789V2", tech = "lcd" }

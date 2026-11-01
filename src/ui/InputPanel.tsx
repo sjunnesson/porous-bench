@@ -4,13 +4,23 @@ import type { Control, Dial, Trigger } from '../sim/controls/controls';
 import type { Button } from '../sim/inputs/button';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Climate } from '../sim/inputs/climate';
+import type { Co2 } from '../sim/inputs/co2';
 import type { Imu } from '../sim/inputs/imu';
+import type { IrReceiver } from '../sim/inputs/ir';
 import type { SimInput } from '../sim/inputs/input';
+import type { Joystick } from '../sim/inputs/joystick';
+import type { Keypad } from '../sim/inputs/keypad';
 import type { Knob } from '../sim/inputs/knob';
 import type { LD2410 } from '../sim/inputs/ld2410';
 import type { LightSensor } from '../sim/inputs/light';
+import type { Mic } from '../sim/inputs/mic';
 import type { Pir } from '../sim/inputs/pir';
 import type { Pot } from '../sim/inputs/pot';
+import type { Pulse } from '../sim/inputs/pulse';
+import type { RfidReader } from '../sim/inputs/rfid';
+import type { Switch } from '../sim/inputs/switch';
+import type { Thermal } from '../sim/inputs/thermal';
+import type { Tof } from '../sim/inputs/tof';
 import type { Touch } from '../sim/inputs/touch';
 import type { SketchRun } from '../sim/runner';
 import { useAnimationFrame, useInput } from './hooks';
@@ -18,13 +28,23 @@ import { Panel } from './Panel';
 import { ButtonWidget } from './widgets/ButtonWidget';
 import { BuzzerWidget } from './widgets/BuzzerWidget';
 import { ClimateWidget } from './widgets/ClimateWidget';
+import { Co2Widget } from './widgets/Co2Widget';
 import { ImuWidget } from './widgets/ImuWidget';
+import { IrWidget } from './widgets/IrWidget';
+import { JoystickWidget } from './widgets/JoystickWidget';
+import { KeypadWidget } from './widgets/KeypadWidget';
 import { keyLabel } from './widgets/keys';
 import { KnobWidget } from './widgets/KnobWidget';
 import { LightWidget } from './widgets/LightWidget';
+import { MicWidget } from './widgets/MicWidget';
 import { PirWidget } from './widgets/PirWidget';
 import { PotWidget } from './widgets/PotWidget';
+import { PulseWidget } from './widgets/PulseWidget';
 import { RadarWidget } from './widgets/RadarWidget';
+import { RfidWidget } from './widgets/RfidWidget';
+import { SwitchWidget } from './widgets/SwitchWidget';
+import { ThermalWidget } from './widgets/ThermalWidget';
+import { TofWidget } from './widgets/TofWidget';
 import { TouchWidget } from './widgets/TouchWidget';
 
 interface Props {
@@ -118,24 +138,44 @@ function Widget({ input }: { input: SimInput }) {
   switch (input.kind) {
     case 'button':
       return <ButtonWidget input={input as Button} />;
+    case 'switch':
+      return <SwitchWidget input={input as Switch} />;
     case 'knob':
       return <KnobWidget input={input as Knob} />;
     case 'pot':
       return <PotWidget input={input as Pot} />;
+    case 'joystick':
+      return <JoystickWidget input={input as Joystick} />;
     case 'ld2410':
       return <RadarWidget input={input as LD2410} />;
     case 'imu':
       return <ImuWidget input={input as Imu} />;
+    case 'mic':
+      return <MicWidget input={input as Mic} />;
     case 'buzzer':
       return <BuzzerWidget input={input as Buzzer} />;
     case 'light':
       return <LightWidget input={input as LightSensor} />;
+    case 'tof':
+      return <TofWidget input={input as Tof} />;
+    case 'thermal':
+      return <ThermalWidget input={input as Thermal} />;
     case 'pir':
       return <PirWidget input={input as Pir} />;
     case 'climate':
       return <ClimateWidget input={input as Climate} />;
+    case 'co2':
+      return <Co2Widget input={input as Co2} />;
+    case 'pulse':
+      return <PulseWidget input={input as Pulse} />;
     case 'touch':
       return <TouchWidget input={input as Touch} />;
+    case 'keypad':
+      return <KeypadWidget input={input as Keypad} />;
+    case 'ir':
+      return <IrWidget input={input as IrReceiver} />;
+    case 'rfid':
+      return <RfidWidget input={input as RfidReader} />;
     default:
       return null;
   }
@@ -191,11 +231,24 @@ function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench
         }}
         aria-label={`What drives ${control.label}`}
       >
-        {options.map((o) => (
-          <option key={`${o.connection.part}:${o.connection.channel}`} value={`${o.connection.part}:${o.connection.channel}`}>
-            {o.part.label} · {o.channel.label}
-          </option>
-        ))}
+        {groupByPart(options).map((g) =>
+          // A part with many keys (a remote, a keypad) gets a group of its own, so the list stays short.
+          g.length > 3 ? (
+            <optgroup key={g[0].connection.part} label={g[0].part.label}>
+              {g.map((o) => (
+                <option key={o.connection.channel} value={`${o.connection.part}:${o.connection.channel}`}>
+                  {o.channel.label}
+                </option>
+              ))}
+            </optgroup>
+          ) : (
+            g.map((o) => (
+              <option key={`${o.connection.part}:${o.connection.channel}`} value={`${o.connection.part}:${o.connection.channel}`}>
+                {o.part.label} · {o.channel.label}
+              </option>
+            ))
+          ),
+        )}
         <option value="none">Keyboard only{keys.length ? ` (${keys.map(keyLabel).join(' ')})` : ''}</option>
         {addable.length > 0 && (
           <optgroup label="Add to the bench">
@@ -209,6 +262,13 @@ function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench
       </select>
     </div>
   );
+}
+
+/** The bench's options, a list per part, in bench order. */
+function groupByPart<T extends { connection: { part: string } }>(options: T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const o of options) groups.set(o.connection.part, [...(groups.get(o.connection.part) ?? []), o]);
+  return [...groups.values()];
 }
 
 function formatValue(d: Dial): string {
