@@ -8,8 +8,9 @@ import type { DeviceProfile } from '../sim/devices/types';
 import { chainWords } from '../sim/leds';
 
 const REPO = 'https://github.com/sjunnesson/porous-bench';
-const DEVICE_SKILL = 'https://raw.githubusercontent.com/sjunnesson/porous-bench/main/docs/resident/DEVICE-SKILL.md';
 const SITE = 'https://bench.porous.systems';
+// Served by Bench (api/device-skill.js) from GitHub's main, so each fetch is counted.
+const DEVICE_SKILL = `${SITE}/device-skill.md?from=app`;
 
 export interface PromptInput {
   device: DeviceProfile;

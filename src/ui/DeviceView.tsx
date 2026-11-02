@@ -1,4 +1,5 @@
 import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { errorKind, track } from '../analytics';
 import type { Board } from '../sim/boards';
 import type { SimClock } from '../sim/clock';
 import { canvasToNative, fitZoom, PanelRenderer, type ViewOptions } from '../sim/renderer';
@@ -175,6 +176,7 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, onViewFa
             key={`${device.id}|${board.id}`}
             onError={(err) => {
               setViewNote(`The wiring diagram didn't draw (${err instanceof Error ? err.message : String(err)}): showing the flat view. Pick Wiring to try again.`);
+              track('crash', { where: 'wiring', kind: errorKind(err) });
               onViewFailed?.();
             }}
           >
@@ -184,6 +186,7 @@ export function DeviceView({ run, clock, board, view, error, onDropApp, onViewFa
           <ErrorBoundary
             onError={(err) => {
               setViewNote(/webgl/i.test(String(err)) ? "3D needs WebGL, which this browser didn't give Bench: showing the flat view." : "The 3D view stopped: showing the flat view. Pick 3D to try again.");
+              track('crash', { where: '3d', kind: /webgl/i.test(String(err)) ? 'webgl' : errorKind(err) });
               onViewFailed?.();
             }}
           >

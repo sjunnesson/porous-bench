@@ -35,7 +35,8 @@ describe('app prompt', () => {
     expect(p).toContain('`--device-id sim-abc12345`');
     expect(p).toContain('./DEVICE-SKILL.md');
     expect(p).toContain("don't look for another way");
-    expect(p).toContain('docs/resident/DEVICE-SKILL.md');
+    // From Bench, which counts the fetch (api/device-skill.js), not from GitHub directly.
+    expect(p).toContain('https://bench.porous.systems/device-skill.md?from=app');
     expect(p).toContain('/plugin install resident@inanimate');
   });
 
@@ -66,7 +67,7 @@ describe('app prompt', () => {
     expect(appPrompt(base)).toContain('replacing any copy already there');
     const p = appPrompt({ ...base, watching: 'my-apps', skillInFolder: true });
     expect(p).toContain("use that copy and don't download one");
-    expect(p).not.toContain('raw.githubusercontent.com');
+    expect(p).not.toContain('device-skill.md?from=');
   });
 
   it('delivers into the watched folder, with no push, when Bench is watching one', () => {

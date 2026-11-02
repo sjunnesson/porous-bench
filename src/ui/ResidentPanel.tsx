@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { track } from '../analytics';
 import { DEFAULT_RELAY } from '../resident/relay';
 import { session } from '../resident/session';
 import { Copy } from './Copy';
@@ -41,7 +42,7 @@ export function ResidentPanel() {
           {id}
         </code>
         {session.status === 'off' || session.status === 'blocked' ? (
-          <button onClick={() => session.connect()}>Connect</button>
+          <button onClick={() => (track('relay_connected'), session.connect())}>Connect</button>
         ) : (
           <button onClick={() => session.disconnect()}>Disconnect</button>
         )}

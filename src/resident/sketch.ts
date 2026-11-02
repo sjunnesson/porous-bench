@@ -9,6 +9,7 @@ import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
 import type { SimInput } from '../sim/inputs/input';
 import type { LD2410 } from '../sim/inputs/ld2410';
+import { appBooted, appFailed, errorStage, track } from '../analytics';
 import { defineSketch, type Sketch } from '../sim/sketch';
 import { type ResidentBoard, ResidentHost, resetScreen } from './host';
 import { luaFactory } from './lua';
@@ -16,6 +17,8 @@ import { type LiveApp, session } from './session';
 import { AppStore } from './store';
 
 export interface ResidentAppSource {
+  /** A bundled app's id (src/resident-apps); the visitor's own apps have none. */
+  id?: string;
   name: string;
   code: string;
   description?: string;
@@ -28,6 +31,7 @@ export interface ResidentAppSource {
 const hosts = new WeakMap<Display, ResidentHost>();
 
 export function residentSketch(app: ResidentAppSource): Sketch {
+  const counted = app.id ?? 'own'; // how analytics names it
   return defineSketch({
     name: app.name,
     description: app.description ?? 'Resident Lua app. Buttons: A / B keys (tap, or hold ½ s). Drag a .lua file onto the device to load another.',
@@ -43,6 +47,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
       const sensor = <T extends SimInput>(kind: PartKind, setup?: (part: T) => void): T => {
         const { part, added } = bench.ensure<T>(kind);
         if (added) {
+          track('part_added', { kind, by: 'app' });
           setup?.(part);
           log(`added ${part.label} to the bench for this app`);
         }
@@ -71,9 +76,14 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         store: new AppStore(app.storeNs || 'app', true, (key) => { // no namespace, or an empty one: the shared slot, as on the board
           warn(`store: '${key}' rejected, over the 2048-byte budget`);
           session.telemetry('store_full', { error: key });
+          appFailed(counted, 'store_full');
         }),
         log: (level, text) => (level === 'error' ? error(text) : level === 'warn' ? warn(text) : log(text)),
-        telemetry: (name, data) => session.telemetry(name, data, app.generationId),
+        telemetry: (name, data) => {
+          session.telemetry(name, data, app.generationId);
+          if (name === 'compile_error') appFailed(counted, 'compile');
+          if (name === 'runtime_error') appFailed(counted, errorStage(String(data?.error ?? '')));
+        },
         publish: (name, json, keep) => {
           const r = session.relay.publish(name, json, keep);
           log(`events.send("${name}", ${json}) → ${r}${r === 'dropped' && session.status === 'off' ? ' (connect to the relay to send)' : ''}`);
@@ -91,6 +101,7 @@ export function residentSketch(app: ResidentAppSource): Sketch {
         throw new Error(bootError);
       }
       if (bootError) error(bootError); // reported, and the app runs on, as on the board
+      else appBooted(counted);
       hosts.set(display, host);
       session.host = host;
       if (app.live) session.persistLive(app.live);

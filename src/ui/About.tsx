@@ -43,8 +43,9 @@ export function About() {
           </p>
 
           <p className="about-foot">
-            Bench is open source under the MIT license, and so is Resident. This site counts page views with Vercel Web
-            Analytics: no cookies, and nothing about your apps or your bench.
+            Bench is open source under the MIT license, and so is Resident. This site counts page views and what Bench
+            is used for (which displays and apps, errors by kind) with Vercel Web Analytics: no cookies, and never your
+            code, your app's name or your device ID. The privacy policy lists every count.
             <span className="about-links">
               <a href="mailto:bench@porous.systems" title="Questions, ideas, bugs">
                 Contact: bench@porous.systems

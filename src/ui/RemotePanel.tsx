@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
+import { track } from '../analytics';
 import { firmwarePrompt } from '../resident/firmware';
 import { type MirrorSource, remote, type SavedDevice } from '../resident/remote';
 import type { Board } from '../sim/boards';
@@ -130,7 +131,7 @@ export function RemotePanel({ device, board, app, source, onShow, tz }: Props) {
           label="Copy a prompt to set up a board"
           done="Prompt copied"
           title={`Copy a prompt for Claude Code to build Resident firmware for ${device.name} and flash it, so it gets a device ID`}
-          text={() => firmwarePrompt(device, board, source().bench.hardware())}
+          text={() => (track('copied_prompt', { which: 'firmware', display: device.id }), firmwarePrompt(device, board, source().bench.hardware()))}
         />
       </div>
     </Panel>

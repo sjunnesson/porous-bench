@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/relay/devices/:id/send", "destination": "https://resident.inanimate.tech/devices/:id/send" },
     { "source": "/s/:id", "destination": "/index.html" },
+    { "source": "/device-skill.md", "destination": "/api/device-skill" },
     { "source": "/guide", "destination": "/guide.html" },
     { "source": "/privacy", "destination": "/privacy.html" }
   ],

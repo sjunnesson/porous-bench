@@ -3,6 +3,7 @@
 // events, so the real display is driven by the virtual sensors. Everything goes through the relay,
 // via Bench's own /relay path (a same-origin proxy: the relay itself doesn't allow browser calls).
 
+import { track } from '../analytics';
 import type { Bench, PartKind } from '../sim/controls/bench';
 import type { Control, Dial, Trigger } from '../sim/controls/controls';
 import type { Imu } from '../sim/inputs/imu';
@@ -237,6 +238,8 @@ export class RemoteMirror {
   private inFlight = false;
   /** Bumped by start and stop: an await that comes back to an older run leaves the status alone. */
   private run = 0;
+  /** The display Bench showed when mirroring began, as analytics names it. */
+  private shown = 'unknown';
   private listeners = new Set<() => void>();
   private version = 0;
 
@@ -305,16 +308,19 @@ export class RemoteMirror {
     this.eventsSent = 0;
     this.waiting = new Set();
     this.backoff = this.retryAt = 0;
+    this.shown = opts.display?.id ?? 'unknown';
     this.set('pushing', `Sending ${app.name}…`);
     try {
       if (opts.tz) await send(this.deviceId, { channel: 'bench', type: 'timezone', data: { tz: opts.tz } }).catch(() => 0);
       if (run !== this.run) return;
       const status = await send(this.deviceId, { channel: 'system', type: 'app', code: remoteApp(app.code), description: `${app.name} (from Bench)` });
       if (run !== this.run) return;
+      track('mirror', { result: status === 200 ? 'live' : status === 503 ? 'offline' : 'refused', display: this.shown });
       if (!this.result(status)) return this.halt();
       this.remember(opts.display);
     } catch (e) {
       if (run !== this.run) return;
+      track('mirror', { result: 'unreachable', display: this.shown });
       this.set('error', `Couldn't reach the relay: ${e instanceof Error ? e.message : e}`);
       return this.halt();
     }
@@ -352,6 +358,7 @@ export class RemoteMirror {
     const json = shed(snap, this.waiting);
     if (bytes(json) > MAX_BYTES) {
       if (this.status !== 'error') this.set('error', 'This app has too many controls to mirror: an update is over the 1 KB the device takes.');
+      track('mirror', { result: 'too_big', display: this.shown });
       return;
     }
     const now = Date.now();

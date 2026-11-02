@@ -9,6 +9,7 @@
 // the first render. What it replaces is kept until you choose: the note saying a link was opened
 // comes back on every load until you go back to your bench or keep this one.
 
+import { track } from './analytics';
 import { type LiveApp, session } from './resident/session';
 import { residentApps } from './resident-apps';
 import { decodeSetup, encodeSetup, type Setup } from './share-format';
@@ -135,20 +136,28 @@ export async function openShared(): Promise<Opened | string | null> {
   if (!short && !location.hash.startsWith(PREFIX)) return pending?.opened ?? null;
   let setup: Setup | null = null;
   let why = "That share link didn't open: it's damaged or cut short (chat apps with a message limit cut long links off). Your bench is as it was.";
+  let reason = 'damaged';
   if (short) {
     try {
       // The page waits on this before it draws: a store that doesn't answer mustn't leave it blank.
       const r = await fetch(`/api/share/${short[1]}`, { signal: AbortSignal.timeout(8000) });
       if (r.ok) setup = await decodeSetup(await r.text());
-      else if (r.status === 404) why = "That share link didn't open: nothing is stored under it. Check that the whole link was copied. Your bench is as it was.";
+      else if (r.status === 404) {
+        why = "That share link didn't open: nothing is stored under it. Check that the whole link was copied. Your bench is as it was.";
+        reason = 'not_found';
+      }
       else throw new Error(`HTTP ${r.status}`); // the server or its store is down: the link may be fine
     } catch {
       // The link stays in the address bar, so a reload tries again.
+      track('share_failed', { reason: 'unreachable' });
       return "That share link didn't open: Bench's server couldn't be reached. Reload to try again.";
     }
   } else setup = await readLink(location.hash);
   history.replaceState(null, '', (short ? '/' : location.pathname) + location.search);
-  if (!setup) return why;
+  if (!setup) {
+    track('share_failed', { reason });
+    return why;
+  }
   let before: Pending['before'] | null = null;
   try {
     // Opened link after link without choosing, "Back to my bench" still goes back to yours.
@@ -156,6 +165,8 @@ export async function openShared(): Promise<Opened | string | null> {
     const { live, opened } = applySetup(setup, localStorage);
     localStorage.setItem(PENDING, JSON.stringify({ before, opened } satisfies Pending));
     if (live) session.setLive(live);
+    const app = setup.app;
+    track('opened_share', { link: short ? 'short' : 'long', app: 'bundled' in app ? (residentApps.some((a) => a.id === app.bundled) ? app.bundled : 'unknown') : 'own' });
     return opened;
   } catch {
     // Storage filled up partway: put back what was written, or the bench is half the link's.
@@ -164,6 +175,7 @@ export async function openShared(): Promise<Opened | string | null> {
     } catch {
       /* storage is blocked outright: nothing was written */
     }
+    track('share_failed', { reason: 'storage' });
     return "That share link didn't open: this browser won't let Bench save a setup (storage is blocked or full).";
   }
 }

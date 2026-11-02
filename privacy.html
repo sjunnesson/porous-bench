@@ -46,7 +46,7 @@
     <main>
       <a class="brand" href="/">porous.systems <b>Bench</b></a>
       <h1>Privacy policy</h1>
-      <p class="muted">Effective 15 October 2026.</p>
+      <p class="muted">Effective 2 November 2026.</p>
 
       <p>This policy covers Bench: the website at bench.porous.systems and the Bench app for iPhone, iPad and Mac.
         Bench collects as little as it can. There are no accounts, no advertising, no tracking across apps or sites,
@@ -84,6 +84,24 @@
           <td>Aggregated; Vercel keeps the counts for the analytics period of our plan</td>
         </tr>
         <tr>
+          <td>What you do in Bench, as counts: the events listed under <a href="#counted">What Bench counts</a>, each
+            with at most two of Bench's own names (a bundled app's id, a display's, a board's, a part's kind, a kind of
+            error). Never your code, your app's or a folder's name, your device ID, an error's text or a share link's
+            ID</td>
+          <td>To see what Bench is used for and where people get stuck, so we know what to fix and what to make
+            better, through Vercel Web Analytics, as with page views: no cookies, nothing stored in your browser and
+            nothing that links one event to another. Our legitimate interest in improving Bench.</td>
+          <td>Aggregated, as page views</td>
+        </tr>
+        <tr>
+          <td>A fetch of Bench's device skill (bench.porous.systems/device-skill.md, which the prompts Bench copies for
+            Claude link to): which prompt the link came from, and whether Claude, curl, a browser or something else
+            fetched it. Like a page view, Vercel sees the fetching computer's address to tell its country</td>
+          <td>To see how many people build apps and firmware with Claude from Bench's prompts, through Vercel Web
+            Analytics. Our legitimate interest in improving Bench.</td>
+          <td>Aggregated, as page views</td>
+        </tr>
+        <tr>
           <td>A setup you share with a short link (bench.porous.systems/s/…): the displays, parts and settings, and
             the app's code if you include it</td>
           <td>So that anyone with the link can open it, because you asked for the link. A long link carries the setup
@@ -106,9 +124,37 @@
       <p>As any web host does, Vercel processes the requests your browser makes (including your IP address) to deliver
         the site and keep it secure.</p>
 
+      <h2 id="counted">What Bench counts</h2>
+      <p>Each event is counted once per visit (once per page load), with the values in brackets. "Own" stands for any
+        app you brought: written, opened, dropped, pushed or opened from a link.</p>
+      <ul>
+        <li><code>setup</code>: the display (or LED strip, ring or matrix) and the board an app ran on.</li>
+        <li><code>ran_app</code>: an app started (a bundled app's id, or own; the kind of output).</li>
+        <li><code>own_code</code>: your own code ran (how it came in: the editor, a file, a drop on the display, a watched
+          folder, the relay, or Start from my bench).</li>
+        <li><code>app_error</code>: an app stopped on an error (the app, as above; the stage: compile, runtime, the
+          time limit, memory, a halt, or the store's size limit).</li>
+        <li><code>recovered</code>: an app ran without an error after one earlier in the visit (the app).</li>
+        <li><code>wont_fit</code>: an app the chosen display and board can't run (the app; why: animation, colour, touch,
+          screen size, memory or a missing library).</li>
+        <li><code>part_added</code>: a part put on the bench (its kind; by you or by an app).</li>
+        <li><code>view</code>: the view in use (3D, flat or wiring).</li>
+        <li><code>copied_prompt</code>: a prompt for Claude copied (for an app or for firmware; the display).</li>
+        <li><code>shared</code>: a share link made (short or long).</li>
+        <li><code>opened_share</code>: a share link opened (short or long; a bundled app's id, or own).</li>
+        <li><code>share_failed</code>: a share link that didn't open (why: damaged, not found, server out of reach, or
+          storage blocked).</li>
+        <li><code>relay_connected</code>: Connect pressed to receive apps over the relay.</li>
+        <li><code>mirror</code>: mirroring to a board (how it went: live, device offline, refused, relay out of reach, or
+          too many controls; the display).</li>
+        <li><code>crash</code>: something in Bench itself broke (where; the error's type, such as TypeError).</li>
+        <li><code>froze</code>: the page froze while an app ran, seen on the next load (the app).</li>
+        <li><code>device_skill</code>: Bench's device skill fetched (which prompt; what fetched it).</li>
+      </ul>
+
       <h2>Who handles data for us</h2>
       <ul>
-        <li><b>Vercel</b> hosts the site and counts page views (Vercel Web Analytics).</li>
+        <li><b>Vercel</b> hosts the site and counts page views and the events above (Vercel Web Analytics).</li>
         <li><b>Upstash</b>, through Vercel, stores short share links and the hour-long rate limit.</li>
       </ul>
       <p>They act on our instructions. Both are US companies, so data may be processed outside the EU/EEA, including in

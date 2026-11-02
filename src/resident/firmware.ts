@@ -10,8 +10,9 @@ import { gpioName, type Wiring, wiring, wiringLines } from '../sim/wiring';
 
 const RESIDENT = 'https://github.com/inanimate-tech/resident';
 const START_BUILDING = 'https://raw.githubusercontent.com/inanimate-tech/resident/main/docs/start-building.md';
-const DEVICE_SKILL = 'https://raw.githubusercontent.com/sjunnesson/porous-bench/main/docs/resident/DEVICE-SKILL.md';
 const SITE = 'https://bench.porous.systems';
+// Served by Bench (api/device-skill.js) from GitHub's main, so each fetch is counted.
+const DEVICE_SKILL = `${SITE}/device-skill.md?from=firmware`;
 
 /** Official Resident firmware for these boards: build it as it is. */
 const M5_ENVS: Record<string, string> = { 'm5stickc-plus2': 'm5stick', m5sticks3: 'm5sticks3' };

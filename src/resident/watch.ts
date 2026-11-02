@@ -6,6 +6,7 @@
 // was built with; someone who refuses edit access can watch the folder read-only instead.
 
 import SKILL from '../../docs/resident/DEVICE-SKILL.md?raw';
+import { track } from '../analytics';
 import { session } from './session';
 
 type Mode = 'read' | 'readwrite';
@@ -218,6 +219,7 @@ class FolderWatch {
         // An editor may save in two steps; an empty file is the first one.
         if (code.trim()) {
           this.last = newest.name;
+          track('own_code', { via: 'watch' });
           session.setLive({ name: newest.name.replace(/\.lua$/, ''), code, source: 'file' });
           this.notify();
         }

@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useState, useSyncExternalStore } from 'react';
+import { track } from '../analytics';
 import { type Bench, CHANNELS, type PartKind, PART_KINDS } from '../sim/controls/bench';
 import type { Control, Dial, Trigger } from '../sim/controls/controls';
 import type { Button } from '../sim/inputs/button';
@@ -118,7 +119,10 @@ function AddPart({ bench }: { bench: Bench }) {
         className="wide"
         value=""
         onChange={(e) => {
-          if (e.target.value) bench.add(e.target.value as PartKind);
+          if (e.target.value) {
+            bench.add(e.target.value as PartKind);
+            track('part_added', { kind: e.target.value, by: 'user' });
+          }
           e.target.blur();
         }}
         aria-label="Add an input"
@@ -224,6 +228,7 @@ function ControlRow({ control, bench, onBind }: { control: Control; bench: Bench
           if (v.startsWith('add:')) {
             const kind = v.slice(4) as PartKind;
             const part = bench.add(kind);
+            track('part_added', { kind, by: 'user' });
             const ch = CHANNELS[kind].find((c) => (control.kind === 'trigger' ? c.kind === 'momentary' : c.kind !== 'momentary'));
             if (ch) onBind(control, `${bench.idOf(part)}:${ch.id}`);
           } else onBind(control, v);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { appRef, misfitKind, track } from './analytics';
 import { session } from './resident/session';
 import { appPrompt } from './resident/prompt';
 import { remote } from './resident/remote';
@@ -106,7 +107,7 @@ const bundled: Entry[] = residentApps.map((a) => ({
   id: `resident:${a.id}`,
   name: a.name,
   group: a.origin === 'resident' ? 'Resident examples' : 'Bench examples',
-  sketch: residentSketch({ name: a.name, code: a.code, description: a.description || undefined }),
+  sketch: residentSketch({ id: a.id, name: a.name, code: a.code, description: a.description || undefined }),
   code: a.code,
   needs: a.needs,
 }));
@@ -194,6 +195,19 @@ export default function App({ shared = null }: { shared?: Opened | string | null
     // A library the firmware doesn't have stops it on Bench too; the rest only a real board stops.
     return { why: misfits(needs, caps), library: needs.output === caps.output && needs.libraries.some((l) => !caps.libraries.includes(l)) };
   }, [live, caps]);
+  // Counted (analytics.ts): your own app that this output and board can't run, and the app chosen
+  // last that Bench passed over for one that fits after the display or board changed.
+  const passedOver = entry.id !== sketchId ? bundled.find((e) => e.id === sketchId) : undefined;
+  useEffect(() => {
+    const count = (app: string, why: string[]) => {
+      for (const w of why) {
+        const reason = misfitKind(w);
+        if (reason) track('wont_fit', { app, reason });
+      }
+    };
+    if (entry.id === 'resident:live') count('own', liveFit.why);
+    if (passedOver?.needs) count(appRef(passedOver.id), misfits(passedOver.needs, caps));
+  }, [entry.id, liveFit, passedOver, caps]);
 
   // The bench: the board's own hardware plus your parts. It outlives app switches (a new board
   // brings its own built-ins), and every add or remove is saved in this browser.
@@ -213,6 +227,10 @@ export default function App({ shared = null }: { shared?: Opened | string | null
   useEffect(() => {
     if (sketchId !== FIRST_APP) setNotice(null);
   }, [sketchId]);
+  useEffect(() => {
+    if (frozeOn) track('froze', { app: appRef(frozeOn) });
+  }, []);
+  useEffect(() => track('view', { mode: view.mode ?? '3d' }), [view.mode]);
   // What a share link opened: said on every load until you go back to your bench or keep this one.
   const [shareNote, setShareNote] = useState(shared);
 
@@ -231,6 +249,8 @@ export default function App({ shared = null }: { shared?: Opened | string | null
     session.log = (level, text) => r.stopped || setLogs((l) => [...l.slice(-299), { t: r.millis(), text, level: level === 'info' ? 'log' : level }]);
     void r.start();
     noteRunning(entry.id);
+    track('setup', { display: device.id, board: board.id });
+    track('ran_app', { app: appRef(entry.id), output: outputKind });
     return () => {
       r.stop();
       noteRunning(null);
@@ -366,7 +386,11 @@ export default function App({ shared = null }: { shared?: Opened | string | null
           <Copy
             className=""
             label="Share"
-            done={(link) => (link.includes('#share=') ? 'Copied a long link' : 'Link copied')}
+            done={(link) => {
+              const long = link.includes('#share=');
+              track('shared', { link: long ? 'long' : 'short' });
+              return long ? 'Copied a long link' : 'Link copied';
+            }}
             title="Copy a short link that opens this setup in anyone's Bench: the output and board, your parts, the connections and the app. Bench keeps the setup on its server so the link stays short; anyone with the link can open it. If it can't be stored, you get a long link that carries the setup itself."
             text={() => shareLink(shareSetup(), `${location.origin}/`)}
           />
@@ -417,12 +441,13 @@ export default function App({ shared = null }: { shared?: Opened | string | null
             <div className="app-actions">
               <button
                 onClick={() =>
+                  (track('own_code', { via: 'bench' }),
                   session.setLive({
                     name: 'My bench',
                     code: benchApp(target, bench.hardware(), caps.libraries),
                     source: 'editor',
                     description: 'Every input on your bench, shown live. Edit the code below to make it your own.',
-                  })
+                  }))
                 }
                 title="Write a Lua app with a control for every part on your bench, connected and shown live: a starting point to edit"
               >
@@ -433,6 +458,7 @@ export default function App({ shared = null }: { shared?: Opened | string | null
                 done="Prompt copied"
                 title="Copy a prompt for Claude to write a new Lua app for this output and bench, with the right skills, ready to paste"
                 text={() =>
+                  (track('copied_prompt', { which: 'app', display: device.id }),
                   appPrompt({
                     device,
                     board,
@@ -443,7 +469,7 @@ export default function App({ shared = null }: { shared?: Opened | string | null
                     online: session.status === 'online',
                     watching: folderWatch.folder?.name ?? null,
                     skillInFolder: folderWatch.skill,
-                  })
+                  }))
                 }
               />
             </div>
@@ -460,7 +486,7 @@ export default function App({ shared = null }: { shared?: Opened | string | null
             board={board}
             view={view}
             error={error}
-            onDropApp={(name, code) => session.setLive({ name: name.replace(/\.lua$/, ''), code, source: 'file' })}
+            onDropApp={(name, code) => (track('own_code', { via: 'drop' }), session.setLive({ name: name.replace(/\.lua$/, ''), code, source: 'file' }))}
             onViewFailed={() => setView((v) => ({ ...v, mode: 'flat' }))}
             notice={
               shareNote && typeof shareNote === 'object'

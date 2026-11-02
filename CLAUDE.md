@@ -65,10 +65,15 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   its own keys and touch panel always reach the app, even though the two screens can then differ.
 - **Other Claude sessions learn Bench from the prompts and the device skill.** When behaviour
   changes, update `prompt.ts`, `firmware.ts` (shipped firmware in `BENCH_FIRMWARE`, hardware
-  lessons in `LESSONS`) and `docs/resident/DEVICE-SKILL.md` (prompts fetch it from GitHub `main`,
-  so it's live once pushed). People learn it from the guide at `/guide` (`src/ui/Guide.tsx`): keep its
-  steps true too; `tests/guide.test.ts` checks every control it names still exists.
+  lessons in `LESSONS`) and `docs/resident/DEVICE-SKILL.md` (prompts fetch it from Bench's
+  `/device-skill.md`, which serves GitHub's `main` and counts the fetch, so it's live once pushed).
+  People learn it from the guide at `/guide` (`src/ui/Guide.tsx`): keep its steps true too;
+  `tests/guide.test.ts` checks every control it names still exists.
 - **Firmware for a real board** lives in `firmware/<name>/`, one buildable PlatformIO project per
   stage of Resident's start-building guide, with a README of what bring-up taught. Ask before
   flashing a board.
+- **What Bench counts** (Vercel Web Analytics custom events, at most two values each on Pro) is
+  `src/analytics.ts`, every event listed in `privacy.html` (`tests/analytics.test.ts` checks): only
+  Bench's own names (a bundled app's id, a display, a part's kind, a kind of error), never a person's
+  code, app or folder name, device ID, error text or share-link id. A new event changes both.
 - Commits: a short title, then a body that says why. Comments and docs in plain, concrete prose.

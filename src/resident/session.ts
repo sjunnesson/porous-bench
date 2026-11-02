@@ -2,6 +2,7 @@
 // the app loaded over the wire (persisted like NVS, so it survives a reload), the time zone, and
 // a pointer to whichever app is running right now.
 
+import { track } from '../analytics';
 import type { ResidentHost } from './host';
 import { DEFAULT_RELAY, type IncomingApp, newDeviceId, type RelayStatus, ResidentRelay } from './relay';
 import { Zone } from './zone';
@@ -55,6 +56,7 @@ class ResidentSession {
     this.relay = new ResidentRelay(id, load<string>('relayHost') ?? DEFAULT_RELAY, {
       onApp: (app) => {
         this.log('info', `relay: app received${app.description ? ` — ${app.description}` : ''}`);
+        track('own_code', { via: 'relay' });
         this.setLive({ ...app, name: app.description ?? 'Pushed app', source: 'relay' });
       },
       onChunk: (code) => {

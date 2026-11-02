@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { track } from '../analytics';
 import { session } from '../resident/session';
 import { Panel } from './Panel';
 
@@ -18,7 +19,7 @@ export function CodePanel({ code, appName }: Props) {
   const picker = useRef<HTMLInputElement>(null);
   useEffect(() => setDraft(code), [code]);
 
-  const run = () => session.setLive({ name: `${appName} (edited)`, code: draft, source: 'editor' });
+  const run = () => (track('own_code', { via: 'editor' }), session.setLive({ name: `${appName} (edited)`, code: draft, source: 'editor' }));
   const sendEvent = () => {
     try {
       const data = eventData.trim() ? JSON.parse(eventData) : {};
@@ -58,7 +59,7 @@ export function CodePanel({ code, appName }: Props) {
             const file = e.target.files?.[0];
             // Cleared so picking the same file again (after editing it) runs it again.
             e.target.value = '';
-            if (file) void file.text().then((code) => session.setLive({ name: file.name.replace(/\.lua$/, ''), code, source: 'file' }));
+            if (file) void file.text().then((code) => (track('own_code', { via: 'file' }), session.setLive({ name: file.name.replace(/\.lua$/, ''), code, source: 'file' })));
           }}
         />
       </div>
