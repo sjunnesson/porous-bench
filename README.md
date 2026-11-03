@@ -209,6 +209,26 @@ gh repo create my-bench-apps --private --source my-apps --push
 Then **Receive apps → Watch a folder for apps** and pick `my-apps/`: every app you save there runs on Bench
 as you save it. `src/resident-apps/` is for apps that ship with Bench.
 
+### The gallery
+
+[bench.porous.systems/gallery](https://bench.porous.systems/gallery) shows apps running live, as
+nothing but their screens, each at its real size (graph paper ruled every 10 mm). Point at one and
+it's the board in your hand: its keys work, a touch panel takes presses and drags, and a board with an
+IMU tilts towards the pointer (a quick back and forth shakes it). Clicking one opens it in Bench, as
+does the ↗ beside it (on a touch panel a click is a press). An entry is a short share link: share
+the app from Bench, then
+
+```sh
+npm run gallery -- add https://bench.porous.systems/s/<id> [--title "Name"]
+npm run gallery -- move <id> 1      # first
+npm run gallery -- remove <id>
+npm run gallery -- list
+```
+
+and commit `src/gallery/entries.json`. The list holds only ids: an app's code stays in the share
+store. A long link is stored on Bench's site first, as Share would. Each app boots as it comes near
+the screen and stops while it's off it, with a store that starts empty and events that go nowhere.
+
 ### Your bench, and connecting it
 
 Set up the hardware first, then connect it:
@@ -594,6 +614,8 @@ src/sim/            simulator core, framework-free
 src/resident/       Lua runtime: wasmoon host, Resident sandbox prelude, Bench drivers (drivers.ts: each
                     sensor's Lua reading, events and what the mirror sends), relay, datetime
 src/resident-apps/  bundled Lua apps (Bench's examples and Resident's)
+src/gallery/        the gallery at /gallery (gallery.html): entries.json, setups run as Bench runs
+                    them (open.ts, on src/resident/run.ts), the pointer as touch and tilt (pointer.ts)
 src/ui/             React UI; ui/three/ builds the wireframe models from each enclosure
   Guide.tsx           the walkthrough at /guide, a page of its own (guide.html, src/guide.tsx)
 src/share.ts        share links: making them, opening them, Back to my bench
@@ -604,7 +626,8 @@ tests/              Vitest: graphics, bus timing, panel physics, LD2410 protocol
                     drivers, every bundled and generated app on every kind of output
 docs/resident/      DEVICE-SKILL.md for Resident's agent skills
 my-apps/            your own apps, ignored by this repo (npm run my-apps makes it its own repo)
-scripts/            my-apps.mjs (sets up my-apps/), logo-app.mjs (the logo SVG into its app)
+scripts/            my-apps.mjs (sets up my-apps/), logo-app.mjs (the logo SVG into its app),
+                    gallery.mjs (what the gallery shows)
 firmware/           Resident firmware for real boards Bench supports (epd213: the 2.13" e-paper;
                     c6-lcd147: the Waveshare ESP32-C6-LCD-1.47; s3-lcd2: the ESP32-S3-Touch-LCD-2;
                     xiao-round: Seeed's Round Display for XIAO; guition-4848s040: the Guition
@@ -614,11 +637,13 @@ firmware/           Resident firmware for real boards Bench supports (epd213: th
 ## Development
 
 ```sh
-npm run dev        # dev server with hot reload (short links kept in memory until it restarts)
+npm run dev        # dev server with hot reload (short links kept in memory until it restarts;
+                   #   one it doesn't hold is read from bench.porous.systems)
 npm test           # unit tests
 npm run typecheck  # TypeScript
 npm run build      # typecheck, tests, then the static build into dist/
 npm run my-apps    # set up my-apps/ for your own apps
+npm run gallery    # what the gallery shows: add, move, remove, list
 ```
 
 ## Credits and license

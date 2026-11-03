@@ -1,0 +1,154 @@
+/*
+ * The gallery wears Bench's design language (styles.css): the cool paper ground, near-black ink,
+ * Bench's blue, IBM Plex. The page is graph paper ruled every 10 mm at the screens' scale, so the
+ * grid says how big each one is. Every size is a number of millimetres times --mm (CSS pixels per
+ * mm, set by main.ts).
+ */
+
+:root {
+  --mm: 5px;
+}
+
+/* The whole page is the graph paper, edge to edge and however long, ruled at the screens' scale. */
+html {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(to right, rgba(27, 75, 122, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(27, 75, 122, 0.07) 1px, transparent 1px);
+  background-size: calc(10 * var(--mm)) calc(10 * var(--mm));
+  background-position: center top;
+}
+body {
+  background: transparent;
+}
+
+#root {
+  height: auto;
+  min-height: 100%;
+}
+
+.masthead {
+  padding: 40px 32px 0;
+}
+.masthead h1 {
+  margin: 0;
+  font: 600 44px/1 var(--display);
+  letter-spacing: -0.01em;
+}
+.masthead h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.drawer {
+  list-style: none;
+  margin: 0;
+  padding: calc(10 * var(--mm)) 32px calc(16 * var(--mm));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: calc(10 * var(--mm)) calc(12 * var(--mm));
+}
+.drawer:empty {
+  display: none;
+}
+.empty {
+  margin: 24px 0;
+  padding: 0 32px;
+  color: var(--muted);
+}
+
+.specimen {
+  position: relative;
+  max-width: 100%;
+}
+.specimen.loading {
+  display: none;
+}
+
+/* The screen, turned so its app reads upright: the frame takes the turned size, the glass turns in
+ * it, and leans a little under the pointer when the board has an IMU (--rx, --ry). */
+.frame {
+  position: relative;
+  display: block;
+  width: calc(var(--fw) * var(--mm));
+  height: calc(var(--fh) * var(--mm));
+  max-width: 100%;
+  perspective: calc(400 * var(--mm));
+  outline-offset: 6px;
+  cursor: default;
+}
+.specimen[data-touch] .frame {
+  cursor: crosshair;
+}
+.specimen.cut .frame {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, #000 85%, transparent);
+}
+.glass {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  width: calc(var(--w) * var(--mm));
+  height: calc(var(--h) * var(--mm));
+  background: #0b0b0d;
+  transform: translate(-50%, -50%) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) rotate(var(--turn));
+  transition:
+    transform 0.12s ease-out,
+    box-shadow 0.2s ease;
+}
+.specimen[data-tech='epaper'] .glass {
+  background: #d8d6cf;
+}
+.specimen[data-tech='led'] .glass {
+  background: transparent;
+}
+.specimen.active .glass {
+  box-shadow: 0 calc(1.5 * var(--mm)) calc(5 * var(--mm)) rgba(17, 24, 28, 0.22);
+}
+.specimen[data-tech='led'].active .glass {
+  box-shadow: none;
+}
+
+/* Beside the screen under the pointer: the way into Bench. It runs the screen's height, so moving
+ * across to it from anywhere on the screen keeps the screen the one. */
+.open {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  z-index: 1;
+  padding: 0 0 6px 8px;
+  font: 500 16px/1 var(--mono);
+  color: var(--blue);
+  text-decoration: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.specimen.active .open,
+.open:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.specimen.cut .open {
+  left: auto;
+  right: 0;
+  top: auto;
+  bottom: 100%;
+  padding: 0 0 8px 8px;
+}
+
+@media (max-width: 640px) {
+  .masthead {
+    padding: 28px 16px 0;
+  }
+  .masthead h1 {
+    font-size: 34px;
+  }
+  .drawer {
+    padding: calc(8 * var(--mm)) 16px;
+  }
+}

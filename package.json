@@ -18,7 +18,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "my-apps": "node scripts/my-apps.mjs"
+    "my-apps": "node scripts/my-apps.mjs",
+    "gallery": "node scripts/gallery.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

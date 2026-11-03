@@ -18,6 +18,11 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   (`src/share-format.js`); a short one, `/s/<id>`, names it, kept in Upstash Redis by the Vercel
   functions in `api/` (the dev server keeps them in memory). `api/` and the format are plain
   JavaScript checked through JSDoc: Vercel's builder can't compile TypeScript 7.
+- `src/gallery/`: the gallery at `/gallery` (`gallery.html`): apps running live as just their
+  screens at real size, used by pointing (keys, touch, tilt: `pointer.ts`), each entry a short
+  share link's id in `entries.json` (`npm run gallery -- add <link>`), run through
+  `src/resident/run.ts` as Bench runs them but without touching the visitor's storage or sending
+  Bench's events (it counts page views only).
 - `firmware/`: Resident firmware Bench ships for real boards (PlatformIO; Resident pinned by commit).
 - `my-apps/`: the user's own apps. Ignored by this repo and its own git repo (`npm run my-apps`).
 - `apple/`: the native app (macOS, iPhone, iPad). Ignored by this repo and its own private git repo; when
