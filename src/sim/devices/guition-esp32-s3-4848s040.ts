@@ -2,8 +2,9 @@ import type { DeviceProfile } from './types';
 
 // Pins and panel timing from ESPHome's device config (devices.esphome.io, Guition-ESP32-S3-4848S040)
 // and its labelled photo of the back of the board; the touch panel from rzeldent's board file and
-// Tasmota's autoconf; the outline and active area from Guition's spec sheet (ESP32-4848S040
-// Specifications). Not measured on a board: where the glass and the side ports sit is approximate.
+// Tasmota's autoconf; the outline, active area and side ports from Guition's spec sheet
+// (ESP32-4848S040 Specifications). Not measured on a board: where the glass sits is approximate,
+// and the ports are read off the sheet's render to about ±2 mm.
 export default {
   id: 'guition-esp32-s3-4848s040',
   name: 'Guition ESP32-S3-4848S040',
@@ -70,16 +71,19 @@ export default {
   url: 'https://devices.esphome.io/devices/guition-esp32-s3-4848s040/',
   enclosure: {
     // The front unit of the 86-box wall panel: 86.5 × 86.5 × 13.6 mm, black glass over the whole
-    // face (the relay versions add a ~24 mm deep box behind, left out here). The TF slot, the USB-C
-    // and the charger's key are on the right edge in the panel's native orientation; where along it
-    // is approximate.
+    // face (the relay versions add a ~24 mm deep box behind, left out here). On the right edge in
+    // the panel's native orientation, from the top: the TF slot well above the middle, the
+    // charger's key at the middle ("Lithium battery") and the USB-C below it, as the spec sheet's
+    // render shows them (p5, corrected for its perspective). With the USB-C facing down, the USB-C
+    // is ~9 mm left of the middle and the TF slot ~21 mm right. They sit midway across the side
+    // wall, 5.3 mm behind the glass: the last 3 mm of the back steps in to 82.1 mm square.
     style: 'case',
     body: { w: 86.5, h: 86.5, d: 13.6, r: 3 },
     screen: { x: 0, y: 0 },
     parts: [
-      { kind: 'port', face: 'right', u: 0, v: 12, w: 2, h: 12, label: 'TF card' },
-      { kind: 'port', face: 'right', u: 0, v: -2, w: 3.2, h: 9, label: 'USB-C' },
-      { kind: 'port', face: 'right', u: 0, v: -14, w: 2.5, h: 4, label: 'Power key' },
+      { kind: 'port', face: 'right', u: 1.5, v: 21, w: 2, h: 14, label: 'TF card' },
+      { kind: 'port', face: 'right', u: 1.5, v: 1, w: 2.5, h: 3, label: 'Battery key' },
+      { kind: 'port', face: 'right', u: 1.5, v: -9, w: 3.2, h: 9, label: 'USB-C' },
     ],
   },
   look: { activeWidthMm: 71.8, activeHeightMm: 70.2 },
