@@ -1,4 +1,4 @@
--- Porous systems: the porous.systems logo. Its spokes sweep in and the words fade in. The encoder moves the hollow spoke, the button stamps one where it is, the slide pot colours the background; tap A to start again.
+-- Porous systems: the porous.systems logo. Its spokes sweep in over 1.5 s and the words fade in. The encoder moves the hollow spoke, the button stamps one where it is, the slide pot colours the background; touch the screen or tap A to start again.
 -- @output display
 local g = lgfx.bind("main")
 local s = screens.get("main")
@@ -62,11 +62,16 @@ else
 end
 local WORDS_SHOWN = K * 50 >= 6 -- the words, once their x-height reaches 6 px
 
--- Rasterise polygon contours (flat x, y lists in pixels, even-odd) into runs of one shade, packed
--- 7 bytes each (x, y, width, shade) so every shape can be kept and repainted in a new colour.
+-- Shapes are kept as runs of one shade, packed 7 bytes each (x, y, width, shade), so every shape is
+-- worked out once and can be repainted in a new colour. Working them out is most of what the app
+-- costs a board, so both kinds below measure as few pixels as they can and make no tables per row.
 local RUN = "<i2i2i2B"
+
+-- The words: polygon contours (flat x, y lists in pixels, even-odd), each pixel row sampled at SUB
+-- heights. A span adds its end pixels' fractions to `part` and its whole pixels to `step` (+1 where
+-- they start, -1 after them), so one pass along the row sums each pixel's cover.
 local function raster(contours)
-  local edges, top, bottom = {}, 1e9, -1e9
+  local edges, top, bottom, left, right = {}, 1e9, -1e9, 1e9, -1e9
   for _, c in ipairs(contours) do
     local n = #c
     for i = 1, n, 2 do
@@ -75,63 +80,65 @@ local function raster(contours)
       if ay ~= by then
         if ay > by then ax, ay, bx, by = bx, by, ax, ay end
         edges[#edges + 1] = { ay, by, ax, (bx - ax) / (by - ay) }
-        top, bottom = min(top, ay), max(bottom, by)
+        top, bottom, left, right = min(top, ay), max(bottom, by), min(left, ax, bx), max(right, ax, bx)
       end
     end
   end
   table.sort(edges, function(p, q) return p[1] < q[1] end)
-  local runs, active, nxt = {}, {}, 1 -- runs: packed strings, joined at the end
+  local base = floor(left) - 1 -- pixel x is index x - base
+  local part, step = {}, {}
+  for i = 1, floor(right) - base + 2 do part[i], step[i] = 0, 0 end
+  local runs, active, nxt, xs, scale = {}, {}, 1, {}, LEVELS / SUB
   for py = floor(top), math.ceil(bottom) - 1 do
-    local cov, lo, hi = {}, 1e9, -1e9
+    local lo, hi = 1e9, -1e9
     for k = 0, SUB - 1 do
       local sy = py + (k + 0.5) / SUB
       while edges[nxt] and edges[nxt][1] <= sy do
         active[#active + 1] = edges[nxt]
         nxt = nxt + 1
       end
-      local xs = {}
-      for i = #active, 1, -1 do
+      local m, i = 0, 1
+      while i <= #active do
         local e = active[i]
-        if e[2] <= sy then table.remove(active, i) else xs[#xs + 1] = e[3] + (sy - e[1]) * e[4] end
-      end
-      table.sort(xs)
-      for i = 1, #xs - 1, 2 do
-        local a, b = xs[i], xs[i + 1]
-        local ia, ib = floor(a), floor(b)
-        lo, hi = min(lo, ia), max(hi, ib)
-        if ia == ib then
-          cov[ia] = (cov[ia] or 0) + b - a
+        if e[2] <= sy then -- past its end: the last one takes its place
+          active[i] = active[#active]
+          active[#active] = nil
         else
-          cov[ia] = (cov[ia] or 0) + ia + 1 - a
-          for x = ia + 1, ib - 1 do cov[x] = (cov[x] or 0) + 1 end
-          cov[ib] = (cov[ib] or 0) + b - ib
+          m = m + 1
+          xs[m] = e[3] + (sy - e[1]) * e[4]
+          i = i + 1
         end
       end
+      for j = #xs, m + 1, -1 do xs[j] = nil end
+      table.sort(xs)
+      for j = 1, m - 1, 2 do
+        local a, b = xs[j] - base, xs[j + 1] - base
+        local ia, ib = floor(a), floor(b)
+        if ia == ib then
+          part[ia] = part[ia] + b - a
+        else
+          part[ia] = part[ia] + ia + 1 - a
+          step[ia + 1] = step[ia + 1] + 1
+          step[ib] = step[ib] - 1
+          part[ib] = part[ib] + b - ib
+        end
+        if ia < lo then lo = ia end
+        if ib > hi then hi = ib end
+      end
     end
-    local function shade(x) return floor((cov[x] or 0) / SUB * LEVELS + 0.5) end
-    local x = lo
-    while x <= hi do
-      local e = x
-      while e < hi and shade(e + 1) == shade(x) do e = e + 1 end
-      if shade(x) > 0 then runs[#runs + 1] = string.pack(RUN, x, py, e - x + 1, shade(x)) end
-      x = e + 1
+    local whole, rx, rs = 0, lo, 0
+    for i = lo, hi do
+      whole = whole + step[i]
+      local sh = ((whole + part[i]) * scale + 0.5) // 1
+      part[i], step[i] = 0, 0
+      if sh ~= rs then
+        if rs > 0 then runs[#runs + 1] = string.pack(RUN, rx + base, py, i - rx, rs) end
+        rx, rs = i, sh
+      end
     end
+    if rs > 0 then runs[#runs + 1] = string.pack(RUN, rx + base, py, hi + 1 - rx, rs) end
   end
   return table.concat(runs)
-end
-
--- A spoke: a capsule from radius INNER to r (0.1 units) at angle a, hw pixels either side of its axis.
-local function capsule(a, r, hw)
-  local c, sn, pts = math.cos(a), math.sin(a), {}
-  for _, e in ipairs({ { r, a - pi / 2 }, { INNER, a + pi / 2 } }) do
-    local cx, cy = OX + c * e[1] * K, OY + sn * e[1] * K
-    for i = 0, 6 do
-      local t = e[2] + pi * i / 6
-      pts[#pts + 1] = cx + math.cos(t) * hw
-      pts[#pts + 1] = cy + math.sin(t) * hw
-    end
-  end
-  return pts
 end
 
 -- The hollow spoke (the encoder's cursor) and its width and outline, and the ones stamped hollow.
@@ -140,13 +147,104 @@ for k, p in ipairs(SPOKES) do if p[4] then HOME, HW, HO = k, p[3], p[4] end end
 local cursor, stamped = HOME, {}
 local function isHollow(k) return k == cursor or stamped[k] end
 
+-- A spoke: a stroke with round ends along an axis from radius INNER out to its own, at its angle.
+-- How much of a pixel it covers follows the distance from the pixel's centre to that axis: all of
+-- it within ro - 0.5 px, none beyond ro + 0.5. A hollow one is the outline between two strokes,
+-- ri and ro. Along a row only the pixels at its edges are measured; the ones between are one run.
 local function spokeRuns(k)
-  local p = SPOKES[k]
-  local a, hollow = p[1] * pi / 1800, isHollow(k)
-  local hw = max((hollow and HW or STROKE) / 2 * K, LEVELS == 1 and 0.5 or 0)
-  if not hollow then return raster({ capsule(a, p[2], hw) }) end
-  local o = max(HO / 2 * K, LEVELS == 1 and 0.5 or 0) -- its outline, a ring between two capsules (1 px at least on 1-bit)
-  return raster({ capsule(a, p[2], hw + o), capsule(a, p[2], max(hw - o, 0.1)) })
+  local p, hollow, sqrt, pack = SPOKES[k], isHollow(k), math.sqrt, string.pack
+  local ro, ri = max((hollow and HW or STROKE) / 2 * K, LEVELS == 1 and 0.5 or 0), -1
+  if hollow then -- its outline: 1 px at least on 1-bit
+    local o = max(HO / 2 * K, LEVELS == 1 and 0.5 or 0)
+    ro, ri = ro + o, max(ro - o, 0.1)
+  end
+  local a = p[1] * pi / 1800
+  local c, sn, len = math.cos(a), math.sin(a), (p[2] - INNER) * K
+  local ax, ay = OX + c * INNER * K, OY + sn * INNER * K
+  local bx, by = ax + c * len, ay + sn * len
+  local ic = math.abs(c) > 1e-6 and 1 / c -- false along a vertical axis
+  local is = math.abs(sn) > 1e-6 and 1 / sn -- false along a level one
+  local aw = is and math.abs(is) or 0 -- how far in x a row goes for 1 px aside of the axis
+
+  -- The pixels on a row whose centres lie within r of the axis: lo to hi (none if lo > hi). dy and
+  -- ey are the row's height below each end; between the ends, the row is from al to ah along the
+  -- axis and crosses it at xm. The stroke is convex, so they're one span: the band and the ends.
+  local function span(dy, ey, al, ah, xm, r)
+    local lo, hi, rr = al, ah, r * r
+    if is then
+      if xm - r * aw > lo then lo = xm - r * aw end
+      if xm + r * aw < hi then hi = xm + r * aw end
+    elseif dy * c > r or dy * c < -r then hi = lo - 1 end
+    if lo > hi then lo, hi = 1e9, -1e9 end
+    local e = rr - dy * dy
+    if e >= 0 then
+      e = sqrt(e)
+      if ax - e < lo then lo = ax - e end
+      if ax + e > hi then hi = ax + e end
+    end
+    e = rr - ey * ey
+    if e >= 0 then
+      e = sqrt(e)
+      if bx - e < lo then lo = bx - e end
+      if bx + e > hi then hi = bx + e end
+    end
+    return -((0.5 - lo) // 1), (hi - 0.5) // 1
+  end
+
+  -- The core of each row: covered whole (solid) or not at all (inside a hollow one's outline).
+  local core, rc, ro5, ri5 = hollow and 0 or LEVELS, (hollow and ri or ro) - 0.5, ro + 0.5, ri + 0.5
+  local runs, nr = {}, 0
+  for py = floor(min(ay, by) - ro - 1), math.ceil(max(ay, by) + ro) do
+    local y = py + 0.5
+    local dy, ey, al, ah, xm = y - ay, y - by, -1e9, 1e9, 0
+    local t = dy * sn
+    if ic then
+      al, ah = ax - t * ic, ax + (len - t) * ic
+      if al > ah then al, ah = ah, al end
+    elseif t < 0 or t > len then ah = al - 1 end
+    if is then xm = ax + dy * c * is end
+    local xa, xb = span(dy, ey, al, ah, xm, ro5)
+    if xa <= xb then
+      local ca, cb = xb + 1, xb
+      if rc > 0 then
+        ca, cb = span(dy, ey, al, ah, xm, rc)
+        if ca > cb then ca = xb + 1 end
+      end
+      -- How far along the axis and how far aside of it pixel x's centre is: each pixel on adds c
+      -- to the one and takes sn off the other.
+      local dx = xa + 0.5 - ax
+      local q
+      t, q = dx * c + dy * sn, dy * c - dx * sn
+      local x, rx, rs = xa, xa, 0
+      while x <= xb do
+        local sh, at = nil, x
+        if x == ca then -- the core, in one step
+          sh = core
+          local m = cb + 1 - x
+          x, t, q = cb + 1, t + m * c, q - m * sn
+        else
+          local d
+          if t < 0 then d = sqrt(t * t + q * q)
+          elseif t > len then d = sqrt((t - len) * (t - len) + q * q)
+          else d = q < 0 and -q or q end
+          local f = ro5 - d
+          f = f < 0 and 0 or f > 1 and 1 or f
+          if hollow then
+            local e = ri5 - d
+            f = f - (e < 0 and 0 or e > 1 and 1 or e)
+          end
+          sh = (f * LEVELS + 0.5) // 1
+          x, t, q = x + 1, t + c, q - sn
+        end
+        if sh ~= rs then
+          if rs > 0 then nr = nr + 1; runs[nr] = pack(RUN, rx, py, at - rx, rs) end
+          rx, rs = at, sh
+        end
+      end
+      if rs > 0 then nr = nr + 1; runs[nr] = pack(RUN, rx, py, xb + 1 - rx, rs) end
+    end
+  end
+  return table.concat(runs)
 end
 
 -- A letter's steps, one character each: '#' to 't' less the backslash stand for -40..40.
@@ -220,32 +318,37 @@ local function shape(k)
   return shapes[key]
 end
 
--- The intro: four spokes a tick, clockwise from the hollow one, then the words fade in. E-paper
--- gets the end of it in one frame.
-local step, start, drawn, words, shown = 0, HOME, {}, nil, 0 -- shown: how far the words have faded in
-local FADE = LEVELS == 1 and 1 or 6 -- 1-bit can't fade
+-- The intro: the spokes sweep in clockwise from the hollow one over SWEEP ms, then the words fade
+-- in over FADE ms. It follows the clock, not the ticks, so it takes as long on every board. E-paper
+-- gets the end of it in one frame, and 1-bit can't fade.
+local SWEEP, FADE = 1500, LEVELS == 1 and 0 or 500
+local began, start, swept, drawn, words, shown = 0, HOME, 0, {}, nil, 0
+-- began: when the sweep started (ms); swept: how many spokes it has drawn; shown: how far the words
+-- have faded in
 
-local function advance()
-  local from = step * (paper and n or 4)
-  local f = paper and FADE + step or step - math.ceil(n / 4) + 1
-  if from >= n and (f > FADE or not WORDS_SHOWN) then return end
-  for i = from, min(n, from + (paper and n or 4)) - 1 do
-    local k = (start - 1 + i) % n + 1
+local function advance(now)
+  local t = time.ticks_diff(now, began)
+  local due = paper and n or min(n, t * n // SWEEP + 1)
+  local fade = 0
+  if WORDS_SHOWN and (paper or t >= SWEEP) then fade = (paper or FADE == 0) and 1 or min(1, (t - SWEEP) / FADE) end
+  if swept >= due and fade <= shown then return end
+  while swept < due do
+    local k = (start - 1 + swept) % n + 1
     drawn[k] = true
     paint(shape(k), INK)
+    swept = swept + 1
   end
-  if f > 0 and WORDS_SHOWN then
-    words, shown = words or wordRuns(), f / FADE
+  if fade > shown then
+    shown = fade
     paint(words, palette(shown))
   end
-  step = step + 1
   g:flip()
 end
 
-local function restart()
-  step, start, drawn, shown = 0, cursor, {}, 0
+local function restart(now)
+  began, start, swept, drawn, shown = now, cursor, 0, {}, 0
   g:fillScreen(BG)
-  advance()
+  advance(now)
 end
 
 -- Everything drawn so far, in the current colours (from the kept shapes: no rasterising).
@@ -264,8 +367,8 @@ local function change(ks, apply)
   end
   apply()
   for _, k in ipairs(ks) do
-    for j = k - 1, k + 1 do
-      j = (j - 1) % n + 1
+    for i = k - 2, k do
+      local j = i % n + 1
       if drawn[j] then paint(shape(j), INK) end
     end
   end
@@ -286,7 +389,11 @@ local function follow()
   if to ~= cursor then change({ cursor, to }, function() cursor = to end) end
 end
 
-function init(ctx) restart() end
+function init(ctx)
+  -- The words take a board longest to work out: before the first frame, not in the intro.
+  if WORDS_SHOWN then words = wordRuns() end
+  restart(time.ticks_ms())
+end
 
 function on_tick(ctx, dt_ms)
   if recolour then
@@ -294,12 +401,13 @@ function on_tick(ctx, dt_ms)
     setBackground(bg:fraction())
     repaint()
   end
-  advance()
+  advance(time.ticks_ms())
 end
 
 function on_event(ctx, e)
   local d = e.data
-  if e.name == "tap" and d.index == 0 then restart() end
+  -- A touch on the screen (or a tap on A) sweeps the logo in again.
+  if e.name == "touch_down" or (e.name == "tap" and d.index == 0) then restart(time.ticks_ms()) end
   if e.name == "dial" and d.name == "spoke" then follow() end
   -- The pot moves in many small steps: recolour once a tick.
   if e.name == "dial" and d.name == "background" then recolour = true end

@@ -105,7 +105,7 @@ describe('bundled apps', () => {
 });
 
 describe('the porous.systems logo', () => {
-  // The words are rasterised after the spokes, ~1.3 s in: run past the end of the intro.
+  // The spokes sweep in for 1.5 s and the words fade in over 0.5 s after them: run past the end.
   it('runs its whole intro on every display', async () => {
     const app = apps.find((a) => a.name === 'porous-systems.lua')!;
     for (const device of OUTPUTS.display) expect(await runApp(app.code, device, 2500), device.id).toEqual([]);

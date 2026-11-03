@@ -200,7 +200,7 @@ export function Guide() {
               <li>Click the button on the desk (Button 1). It stamps a spoke where the hollow one is.</li>
               <li>Drag the slider. The background runs from black through the colours to white.</li>
               <li>
-                Press <Key>A</Key> to start the logo again.
+                Press <Key>A</Key> to start the logo again (on a touch screen, a click on the screen does too).
               </li>
             </ol>
             <p>

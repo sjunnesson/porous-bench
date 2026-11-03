@@ -168,12 +168,12 @@ motion so speeds are right whatever the timing. A tap or other event can redraw 
 Coordinates are checked like `luaL_checkinteger`, so `math.floor` anything computed.
 
 Bench opens on **Porous systems**: the porous.systems logo, its spokes sweeping in around the ring
-and the words fading in, drawn anti-aliased with `lgfx` on any display (e-paper gets the finished
-logo in one refresh). The encoder moves the hollow spoke around the ring, Button 1 stamps a hollow
-one where it is (again to make it solid), and the slide pot colours the background, black through
-the colour wheel to white, with the ink switching to stay readable; tap A to start again. It needs a
-board with PSRAM (or the C6). Its shapes come from the logo's SVG:
-`node scripts/logo-app.mjs <logo.svg>` writes a new logo into it.
+over 1.5 seconds and the words fading in, drawn anti-aliased with `lgfx` on any display (e-paper gets
+the finished logo in one refresh). The encoder moves the hollow spoke around the ring, Button 1
+stamps a hollow one where it is (again to make it solid), and the slide pot colours the background,
+black through the colour wheel to white, with the ink switching to stay readable; touch the screen
+or tap A to start again. It needs a board with PSRAM (or the C6). Its shapes come from the logo's
+SVG: `node scripts/logo-app.mjs <logo.svg>` writes a new logo into it.
 
 Included, from Bench, all drawn with LVGL and moved by `lvgl.Anim` (see [LVGL](#lvgl-smooth-animation)):
 **Hello display** (device facts and a DVD-style bouncing ball; adapts to every display type),
