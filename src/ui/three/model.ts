@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import type { DeviceProfile, Enclosure, EnclosurePart, Face } from '../../sim/devices/types';
+import { enclosureOf, glassMm, isCircle } from '../../sim/enclosure';
 import { LED_PACKAGE_MM } from '../../sim/leds';
 
 export const GHOST = new THREE.LineBasicMaterial({ color: 0x1b4b7a, transparent: true, opacity: 0.72, depthWrite: false });
@@ -25,11 +26,6 @@ export interface BuiltModel {
   buttons: ModelButton[];
   radius: number;
   dispose(): void;
-}
-
-/** A square whose corner radius reaches its middle is a circle (round glass, a round board). */
-function isCircle(w: number, h: number, r: number): boolean {
-  return Math.abs(w - h) < 0.01 && r >= w / 2 - 0.01;
 }
 
 /** Enough segments that a circle's facets fall under the edge threshold: clean rims, no polygon. */
@@ -139,15 +135,8 @@ function faceNormal(face: Face): THREE.Vector3 {
   }[face];
 }
 
-/** A plain enclosure for profiles that don't describe one: the glass plus a thin frame. */
-function fallbackEnclosure(p: DeviceProfile): Enclosure {
-  const w = p.look.activeWidthMm || p.width / 6;
-  const h = p.look.activeHeightMm || p.height / 6;
-  return { style: 'pcb', body: { w: w + 6, h: h + 6, d: 1.6, r: 1.5 }, module: { w: w + 3, h: h + 3, d: 1.6, r: 1, x: 0, y: 0 }, screen: { x: 0, y: 0 } };
-}
-
 export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasElement): BuiltModel {
-  const enc = profile.enclosure ?? fallbackEnclosure(profile);
+  const enc = enclosureOf(profile);
   const { body } = enc;
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
@@ -177,9 +166,7 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
   }
 
   // Screen: rounded like the glass, textured with the live panel
-  const sw = profile.look.activeWidthMm || profile.width / 6;
-  const sh = profile.look.activeHeightMm || profile.height / 6;
-  const radiusMm = ((profile.look.cornerRadiusPx ?? 0) * sw) / profile.width;
+  const { w: sw, h: sh, radius: radiusMm } = glassMm(profile);
   // A ring's face has the board's hole in it: the desk shows through.
   const screenShape = body.hole ? annulusShape(sw / 2, body.hole) : roundedRect(sw, sh, radiusMm);
   const screenGeo = track(new THREE.ShapeGeometry(screenShape, body.hole || isCircle(sw, sh, radiusMm) ? CIRCLE_SEGMENTS : 12));
