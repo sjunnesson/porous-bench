@@ -69,16 +69,25 @@ local function arcPts(cx, cy, rx, ry, a0, a1)
   end
   return pts
 end
--- A curve as a Line placed at its parent's origin, so its points are in the parent's coordinates.
-local function curve(parent, pts, width, c)
-  return parent:Line { x = 0, y = 0, points = pts, line_width = math.max(1, I(width)), line_color = c, line_rounded = true }
+-- A curve from points in its parent's coordinates, as a Line placed at their corner: a Line repaints its
+-- whole box, and one placed at the parent's origin has a box as far as its furthest point.
+local function curveAt(pts)
+  local x0, y0, out = 1e9, 1e9, {}
+  for _, p in ipairs(pts) do x0, y0 = math.min(x0, p[1]), math.min(y0, p[2]) end
+  for i, p in ipairs(pts) do out[i] = { p[1] - x0, p[2] - y0 } end
+  return { x = x0, y = y0, points = out }
 end
--- A heart: two circles and a square turned 45°, in a group of 2r × 2r.
+local function curve(parent, pts, width, c)
+  local at = curveAt(pts)
+  return parent:Line { x = at.x, y = at.y, points = at.points, line_width = math.max(1, I(width)), line_color = c, line_rounded = true }
+end
+-- A heart: two circles and a square turned 45°, in a group of 2r × 2r. The square is a thick line along
+-- its diagonal: anything turned with transform_rotation is drawn through a layer, each repaint, and a
+-- few of them overflow a board's stack and reboot it.
 local function fillHeart(g, r, c)
-  local side = I(r * 1.15)
-  box(g, r - side / 2, r - side / 2 + r * 0.2, side, side, c, I(r * 0.15), {
-    transform_rotation = 450, transform_pivot_x = I(side / 2), transform_pivot_y = I(side / 2),
-  })
+  local side, d = r * 1.15, r * 1.15 * 0.3536
+  g:Line { x = 0, y = 0, line_color = c, line_width = I(side),
+    points = { { I(r - d), I(r + r * 0.2 - d) }, { I(r + d), I(r + r * 0.2 + d) } } }
   dot(g, r - r * 0.48, r - r * 0.1, r * 0.56, c)
   dot(g, r + r * 0.48, r - r * 0.1, r * 0.56, c)
 end
@@ -94,9 +103,11 @@ end
 -- ── the devil ───────────────────────────────────────────────────────────────
 
 -- Everything moves together inside the rig: bobbing, hopping and the boo shake animate the rig.
+local BIG = W * H > 150000 -- too many pixels to repaint in a frame
 local rig = group(h.screen(), 0, 0, W, H)
 local bodyParts = {} -- recoloured when it falls asleep
-local function bodyColored(o) bodyParts[#bodyParts + 1] = o return o end
+local lined = {} -- those drawn as a Line
+local function bodyColored(o, isLine) bodyParts[#bodyParts + 1] = o lined[o] = isLine return o end
 
 local bx, by = CX, CY + I(S * 0.92) -- the little body, under the head
 
@@ -121,19 +132,32 @@ local function tailPoints(wag)
   return pts
 end
 local function slice(pts, a, b) local out = {} for i = a, b do out[#out + 1] = pts[i] end return out end
+-- The tail's shapes, worked out once per step of its wag (a table of them per droop): that's 16 points of
+-- float maths and 20 tables a frame otherwise, and the tail only moves when its step changes.
+local tailShapes, tailStep, tailDroop = {}, nil, nil
 local function setTail(wag)
-  local pts = tailPoints(wag)
-  tail[1]:set { points = slice(pts, 1, 7) }
-  tail[2]:set { points = slice(pts, 7, 12) }
-  tail[3]:set { points = slice(pts, 12, 16) }
-  tailHeart:set { x = pts[16][1] - HR, y = pts[16][2] - HR - I(S * 0.12) }
+  local step = I(wag * 16)
+  if step == tailStep and droop == tailDroop then return end
+  if droop ~= tailDroop then tailShapes, tailDroop = {}, droop end
+  tailStep = step
+  local shape = tailShapes[step]
+  if not shape then
+    local pts = tailPoints(step / 16)
+    shape = { curveAt(slice(pts, 1, 7)), curveAt(slice(pts, 7, 12)), curveAt(slice(pts, 12, 16)),
+      { x = pts[16][1] - HR, y = pts[16][2] - HR - I(S * 0.12) } }
+    tailShapes[step] = shape
+  end
+  tail[1]:set(shape[1])
+  tail[2]:set(shape[2])
+  tail[3]:set(shape[3])
+  tailHeart:set(shape[4])
 end
 
 if not compact then
   local p = tailPoints(0)
-  tail[1] = bodyColored(curve(rig, slice(p, 1, 7), S * 0.2, C.body))
-  tail[2] = bodyColored(curve(rig, slice(p, 7, 12), S * 0.15, C.body))
-  tail[3] = bodyColored(curve(rig, slice(p, 12, 16), S * 0.1, C.body))
+  tail[1] = bodyColored(curve(rig, slice(p, 1, 7), S * 0.2, C.body), true)
+  tail[2] = bodyColored(curve(rig, slice(p, 7, 12), S * 0.15, C.body), true)
+  tail[3] = bodyColored(curve(rig, slice(p, 12, 16), S * 0.1, C.body), true)
   tailHeart = heart(rig, HR, C.body)
   setTail(0)
 
@@ -143,12 +167,12 @@ if not compact then
   bodyColored(dot(rig, bx + S * 0.16, by + S * 0.32, S * 0.1, C.body))
 end
 
--- Horn nubs: rounded, cream, tilted outwards.
+-- Horn nubs: rounded, cream, tilted outwards: a thick round line, for what's said at fillHeart.
 for sx = -1, 1, 2 do
   local hw, hh = S * 0.3, S * 0.46
-  box(rig, CX + sx * S * 0.55 - hw / 2, CY - S * 0.98, hw, hh, C.horn, I(hw / 2), {
-    transform_rotation = sx * 220, transform_pivot_x = I(hw / 2), transform_pivot_y = I(hh),
-  })
+  local bx, by = CX + sx * S * 0.55, CY - S * 0.98 + hh
+  local dx, dy = sx * 0.3746, -0.9272 -- 22° from upright
+  curve(rig, { { I(bx + dx * hw / 2), I(by + dy * hw / 2) }, { I(bx + dx * (hh - hw / 2)), I(by + dy * (hh - hw / 2)) } }, hw, C.horn)
 end
 
 -- Paws, up for the boo.
@@ -172,11 +196,12 @@ end
 -- Eyes: each in its own group, so a glance moves it and a surprise scales it.
 local ER = S * 0.29
 local eyes, lids = {}, {}
+local balls = {}
 for sx = -1, 1, 2 do
   local ex, ey = CX + sx * S * 0.4, CY + S * 0.02
   local g = group(rig, ex - ER, ey - ER, 2 * ER, 2 * ER)
   g:set { transform_pivot_x = I(ER), transform_pivot_y = I(ER) }
-  dot(g, ER, ER, ER, C.eye)
+  balls[#balls + 1] = dot(g, ER, ER, ER, C.eye)
   dot(g, ER - ER * 0.3, ER - ER * 0.35, ER * 0.3, C.shine)
   dot(g, ER + ER * 0.3, ER + ER * 0.3, math.max(1, ER * 0.13), C.shine)
   -- A cheeky half-lid for scheming: a slice of head colour over the top of the eye.
@@ -330,7 +355,7 @@ local function applyMood(mood)
   -- Colour: dimmer when asleep; rosier cheeks when cozy.
   local body = mood == "sleeping" and C.sleepy or C.body
   for _, o in ipairs(bodyParts) do
-    if o.__kind == "Line" then o:set { line_color = body } else o:set { bg_color = body } end
+    o:set(lined[o] and { line_color = body } or { bg_color = body })
   end
   if tailHeart then
     tailHeart:clean()
@@ -343,10 +368,12 @@ local function applyMood(mood)
   end
 
   -- Eyes: bigger when surprised, squinting when sulking; a fixed look, or a glance / dart around.
-  local sc = I(256 * (st.scale or 1))
-  for _, e in ipairs(eyes) do
+  -- (By the eyeball's box: transform_scale draws through a layer, each repaint.)
+  local grow = I(ER * ((st.scale or 1) - 1))
+  for i, e in ipairs(eyes) do
     local look = st.look or { 0, 0 }
-    e:set { transform_scale_x = sc, transform_scale_y = sc, translate_x = I(look[1] * ER), translate_y = I(look[2] * ER) }
+    balls[i]:set { transform_width = grow, transform_height = grow }
+    e:set { translate_x = I(look[1] * ER), translate_y = I(look[2] * ER) }
   end
   if st.glance or st.dart then
     for i, e in ipairs(eyes) do
@@ -369,7 +396,9 @@ local function applyMood(mood)
   local amp = I(st.bob * S)
   local sink = I((st.sink or 0) * S)
   rig:set { translate_x = 0, translate_y = sink }
-  if st.hop then
+  if BIG and not st.hop then
+    -- Nothing for a gentle sway: the rig is the whole screen, and each pixel it moves repaints that.
+  elseif st.hop then
     running.bob = anim(rig, { start_value = 0, end_value = -amp, duration = st.period // 2, playback_time = st.period // 2,
       path = "ease_out", repeat_count = FOREVER, exec_cb = function(o, v) o:set { translate_y = v } end })
   else
