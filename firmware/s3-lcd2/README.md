@@ -171,6 +171,24 @@ What it taught:
 - **Doubles are software on the S3** (its FPU is single precision), as on the C6: blend colours in
   integers, build tables once, precompute per-object constants.
 
+## Speed and memory since 2026-11-05
+
+The same changes as the Guition's, whose README says why each is there: LVGL's hot drawing code in IRAM
+with only the colour formats in use, TLS in PSRAM (`TlsInPsram.h`), a floor under LVGL's use of
+internal RAM (`LvglAlloc.c`), a 16 KB loop stack (`[perf]` reports what's left), `BootGuard.h`,
+`LUAI_MAXCCALLS` 25 and `LV_INV_BUF_SIZE` 64. Passes of LVGL's timer a second, capped at 66, for Patterns as it now is and (old)
+as it was:
+
+| | before | now |
+|---|---|---|
+| Orbits / Rings / Bars / Spinner | 58 / 46 / 51 / 63 | 60 / 55 / 51 / 62 |
+| Old Orbits / Rings / Bars / Spinner | 16.5 / 25 / 26 / 33 | 16.7 / 26.7 / 28.9 / 33.7 |
+
+The flame holds 29 fps. Running Patterns, internal RAM is 107-134 KB free, lowest 104 KB. The boot guard
+was tested with an app built to overflow the stack: "crash 2 in a row: not loading the saved app", and
+connected. After changing `lv_conf.h`, delete LVGL's objects (`rm -rf .pio/build/s3-lcd2/lib*/lvgl`):
+PlatformIO doesn't see that it changed, and flashes the old LVGL.
+
 ## Home Assistant (optional)
 
 With `device/src/HomeAssistantConfig.h` (gitignored; copy `HomeAssistantConfig.example.h`), every

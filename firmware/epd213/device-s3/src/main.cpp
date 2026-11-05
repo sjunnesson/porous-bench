@@ -7,6 +7,8 @@
 // Bench while it mirrors an app here, so there are no drivers for them.
 #include <Arduino.h>
 #include <Resident.h>
+#include <ResidentNvsStore.h>
+#include "BootGuard.h"
 #include <ResidentLgfxModule.h>
 #include <ResidentLvglModule.h>
 #include "EpdFrame.h"
@@ -24,6 +26,16 @@ CanvasLgfxTarget lgfxMain;
 Resident::LgfxModule lgfxModule;
 Resident::LvglModule lvglModule;
 
+// Resident's own store, but a saved app that keeps crashing the board stays out of the boot (BootGuard.h).
+class GuardedStore : public Resident::NvsPersistentStore {
+public:
+  String load() override { return BootGuard::holding() ? String() : NvsPersistentStore::load(); }
+};
+GuardedStore appStore;
+
+// Arduino's loop task has 8 KB, and LVGL draws on it (firmware/s3-lcd2/README.md).
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
 static Resident::SandboxConfig makeConfig() {
   Resident::SandboxConfig cfg;
   cfg.deviceType = "epd213";
@@ -34,6 +46,7 @@ static Resident::SandboxConfig makeConfig() {
   lvglModule.addDisplay("main");
   cfg.extensions = {&screenDriver, &buttonDriver, &lgfxModule, &lvglModule};
   cfg.systemDisplay = &screenDriver;
+  cfg.persistentStore = &appStore;
   cfg.systemButton = &buttonDriver;  // tap = load the saved app now, hold = forget it
 
   // Courier::Config has a constructor with default args, so designated
@@ -49,6 +62,7 @@ Resident::Sandbox sandbox{makeConfig()};
 
 void setup() {
   Serial.begin(115200);
+  BootGuard::begin();
   delay(300);
   Serial.println();
   Serial.println("=== Waveshare 2.13\" e-Paper on ESP32-S3: Resident + drivers + lvgl ===");
@@ -61,7 +75,7 @@ void setup() {
 
   EpdFrame::begin();  // panel up before Resident paints its first status
 
-  sandbox.setIdleScreenTitle("Connected");
+  sandbox.setIdleScreenTitle(BootGuard::holding() ? "Saved app crashed" : "Connected");
 
   // Override the default /agents/<type>-agent/<id> path with the canonical
   // /devices/<id> path used by resident.inanimate.tech.
@@ -87,11 +101,13 @@ void setup() {
     sandbox.setTimezone(tz.c_str());
   });
 
+  appStore.begin();  // Resident doesn't start a store the board supplies
   sandbox.setup();
 }
 
 void loop() {
   sandbox.loop();
+  BootGuard::loop();
 
   static uint32_t lastBeat = 0;
   if (millis() - lastBeat >= 30000) {

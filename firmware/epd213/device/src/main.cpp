@@ -6,6 +6,8 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <Resident.h>
+#include <ResidentNvsStore.h>
+#include "BootGuard.h"
 #include <ResidentLgfxModule.h>
 #include "EpdFrame.h"
 #include "ScreenDriver.h"
@@ -38,6 +40,13 @@ static void printMemory(const char* when) {
                 (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT));
 }
 
+// Resident's own store, but a saved app that keeps crashing the board stays out of the boot (BootGuard.h).
+class GuardedStore : public Resident::NvsPersistentStore {
+public:
+  String load() override { return BootGuard::holding() ? String() : NvsPersistentStore::load(); }
+};
+GuardedStore appStore;
+
 static Resident::SandboxConfig makeConfig() {
   Resident::SandboxConfig cfg;
   cfg.deviceType = "epd213";
@@ -45,6 +54,7 @@ static Resident::SandboxConfig makeConfig() {
   lgfxModule.addDisplay("main", &lgfxMain);
   cfg.extensions = {&luaArena, &screenDriver, &buttonDriver, &lgfxModule};
   cfg.systemDisplay = &screenDriver;
+  cfg.persistentStore = &appStore;
   cfg.systemButton = &buttonDriver;  // tap = load the saved app now, hold = forget it
 
   // Courier::Config has a constructor with default args, so designated
@@ -60,6 +70,7 @@ Resident::Sandbox sandbox{makeConfig()};
 
 void setup() {
   Serial.begin(115200);
+  BootGuard::begin();
   delay(300);
   Serial.println();
   Serial.println("=== Waveshare 2.13\" e-Paper (V2): Resident + drivers ===");
@@ -73,7 +84,7 @@ void setup() {
   if (!luaArena.reserve()) Serial.println("[lua] arena allocation FAILED: Lua shares the heap");
   printMemory("after the Lua arena");
 
-  sandbox.setIdleScreenTitle("Connected");
+  sandbox.setIdleScreenTitle(BootGuard::holding() ? "Saved app crashed" : "Connected");
 
   // Override the default /agents/<type>-agent/<id> path with the canonical
   // /devices/<id> path used by resident.inanimate.tech.
@@ -99,6 +110,7 @@ void setup() {
     sandbox.setTimezone(tz.c_str());
   });
 
+  appStore.begin();  // Resident doesn't start a store the board supplies
   sandbox.setup();
   Serial.printf("[lua] %u bytes stayed in the shared heap; arena %u KB, %u free for apps\n",
                 (unsigned)luaArena.before(), (unsigned)(luaArena.size() / 1024),
@@ -107,6 +119,7 @@ void setup() {
 
 void loop() {
   sandbox.loop();
+  BootGuard::loop();
 
   static uint32_t lastBeat = 0;
   if (millis() - lastBeat >= 30000) {

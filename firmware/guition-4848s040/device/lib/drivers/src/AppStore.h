@@ -18,6 +18,7 @@
 #pragma once
 #include <LittleFS.h>
 #include <ResidentNvsStore.h>
+#include "BootGuard.h"
 
 class AppStore : public Resident::NvsPersistentStore {
 public:
@@ -40,6 +41,7 @@ public:
   }
 
   String load() override {
+    if (BootGuard::holding()) return String();  // it keeps crashing the board: BootGuard.h
     if (_fs && LittleFS.exists(PATH)) {
       File f = LittleFS.open(PATH, "r");
       String s = f.readString();

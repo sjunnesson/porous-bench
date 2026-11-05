@@ -25,6 +25,14 @@ cd firmware/epd213/device && pio run -t upload && pio device monitor
 On first boot without saved Wi-Fi the board opens a `Resident epd213 …` hotspot; join it and enter
 your network. The panel then shows the 8-character device ID.
 
+## A saved app that keeps crashing
+
+`device/lib/drivers/src/BootGuard.h`, in all three projects (since 2026-11-05): two crashes in a row,
+each within a minute of booting, and the next boot leaves the saved app out, stays connected, and takes a
+new push as usual. Resident's own NVS store is wrapped to do it. It's the Guition's and S3-Touch-LCD-2's,
+tested there; here it has only been compiled. `device-s3` also has a 16 KB loop stack, for LVGL; `device-lvgl`
+doesn't, because this board's app memory is measured and has no room to spare.
+
 ## Wiring (fixed on the driver board)
 
 | Panel | GPIO |

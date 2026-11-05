@@ -16,6 +16,8 @@
 #include "ButtonsDriver.h"
 #include "TouchDriver.h"
 #include "AppStore.h"
+#include "TlsInPsram.h"
+#include "BootGuard.h"
 
 static constexpr const char* RESIDENT_HOST = "resident.inanimate.tech";
 static constexpr uint16_t RESIDENT_PORT = 443;
@@ -28,6 +30,10 @@ CanvasLgfxTarget lgfxMain;
 Resident::LgfxModule lgfxModule;
 Resident::LvglModule lvglModule;
 AppStore appStore;  // the last app for the next boot, on LittleFS (NVS is too small)
+
+// Arduino's loop task has 8 KB, and LVGL draws on it: an app with many transformed objects needed 8.3 KB
+// and rebooted the board (Stack canary watchpoint triggered). [perf] reports what's left.
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
 
 static void printMemory(const char* when) {
   Serial.printf("[mem] %s: internal free %u (largest %u, lowest %u), PSRAM free %u (largest %u)\n", when,
@@ -70,7 +76,9 @@ static Resident::SandboxConfig makeConfig() {
 Resident::Sandbox sandbox{makeConfig()};
 
 void setup() {
+  TlsInPsram::begin();
   Serial.begin(115200);
+  BootGuard::begin();
   // Never wait on the USB serial: with a computer plugged in but nothing reading the port, the
   // core waits up to 2 s a print for room (20 x 100 ms), and the status lines alone froze apps
   // for ~30 s at a time. Unread logs are dropped instead.
@@ -93,7 +101,7 @@ void setup() {
   }
   printMemory("after the canvas");
 
-  sandbox.setIdleScreenTitle("Connected");
+  sandbox.setIdleScreenTitle(BootGuard::holding() ? "Saved app crashed" : "Connected");
 
   // Override the default /agents/<type>-agent/<id> path with the canonical
   // /devices/<id> path used by resident.inanimate.tech.
@@ -128,6 +136,7 @@ void loop() {
   static uint32_t loops = 0, loopUs = 0, loopMax = 0, lastStats = 0;
   uint32_t t0 = micros();
   sandbox.loop();
+  BootGuard::loop();
   uint32_t us = micros() - t0;
   loops++;
   loopUs += us;
@@ -139,10 +148,10 @@ void loop() {
     lastStats = millis();
     uint32_t frames, pixels, pushUs;
     Lcd::takeStats(frames, pixels, pushUs);
-    Serial.printf("[perf] %.1f pushes/s, %.0f%% of the frame each, %.1f ms a push; loop %.1f ms avg, %.1f ms max\n",
+    Serial.printf("[perf] %.1f pushes/s, %.0f%% of the frame each, %.1f ms a push; loop %.1f ms avg, %.1f ms max; stack left %u\n",
                   frames / secs, frames ? 100.0f * pixels / frames / (Lcd::WIDTH * Lcd::HEIGHT) : 0.0f,
                   frames ? pushUs / 1000.0f / frames : 0.0f, loops ? loopUs / 1000.0f / loops : 0.0f,
-                  loopMax / 1000.0f);
+                  loopMax / 1000.0f, (unsigned)uxTaskGetStackHighWaterMark(nullptr));
     loops = loopUs = loopMax = 0;
   }
 

@@ -193,6 +193,64 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   fps). On this board `lvgl-check`, which moves its box in `on_tick`, pushes 28 frames a second:
   the tick is what holds it. Bench's profile for the display ticks at 33 too (`tickMs`).
 
+## Speed and memory: what the firmware does for LVGL (2026-11-05)
+
+Measured with Patterns and the other bundled apps, passes of LVGL's timer a second (Bench's firmware
+caps a pass at 66, and the apps draw at most 33 frames a second). "Old" is Patterns as it was before
+it was rewritten for a board: an app nobody has tuned.
+
+| | before | now |
+|---|---|---|
+| Patterns: Orbits, first / rebuilt | 33 / 23 | 41-44 / 30-31 |
+| Patterns: Rings, first / rebuilt | 32 / 29 | 38-47 / 38-39 |
+| Patterns: Spinner | 36-58 | 44-60 |
+| Old Patterns: Orbits / Rings / Bars / Spinner | 7.9 / 8.1 / 6.5 / 11.2 | 9.8 / 8.8 / 11.2 / 11.6 |
+| Internal RAM free: at boot / running Orbits | 253 / 90 KB | 229 / 111 KB |
+
+These move between boots with what's where in memory, hence the ranges. All hold 30 frames a second or
+better. So the firmware gives a tuned app its margin, and an untuned one little: most of what an app costs is
+what it makes LVGL repaint (`docs/resident/DEVICE-SKILL.md`, "Speed on a real board").
+
+- **LVGL's hot drawing code is in IRAM** (`LV_ATTRIBUTE_FAST_MEM`). Flash and PSRAM share a bus with
+  the panel's scan, so a cache miss costs more here than on any other board. That took more than
+  anything else: it's the difference above in Orbits and Rings.
+- **Only the colour formats in use** (`LV_DRAW_SW_SUPPORT_*`: RGB565 for the screen, ARGB8888 for
+  LVGL's layers, A8 for fonts). As shipped, IRAM cost 63 KB; 38 KB of it was blending to formats
+  nothing here draws to. No app can reach the others: luavgl's images take a file path, and every
+  filesystem driver is off.
+- **TLS in PSRAM** (`TlsInPsram.h`). The prebuilt core has mbedTLS allocate from internal RAM, about
+  40 KB for a session. `mbedtls_platform_set_calloc_free` moves it at run time, with no core rebuild.
+  With too little internal RAM a board can't connect at all (`mbedtls_ssl_setup returned -0x008D`
+  at 57 KB free, largest block 31 KB) and stays off the relay.
+- **A floor under LVGL's use of internal RAM** (`LvglAlloc.c`, `LV_STDLIB_CUSTOM`). Small blocks are
+  internal down to 48 KB free and PSRAM past it: 900 objects stopped at 46 KB free, relay still up.
+- **A 16 KB loop stack.** LVGL draws on Arduino's loop task, which has 8 KB. Patterns' old Tiles (72
+  objects with `transform_scale`) needed 8.3 KB and rebooted the board; `[perf]` now reports what's
+  left. Layers nested inside layers can still overflow it, which is what `BootGuard.h` is for.
+- **`BootGuard.h`.** Two crashes in a row, each within a minute of booting, and the next boot leaves the
+  saved app out: "Saved app crashed" on the idle screen, connected, and a new push runs as usual.
+  Before, a crashing saved app rebooted the board for ever. Tested with an app built to overflow the
+  stack.
+- **`LUAI_MAXCCALLS` 25.** Lua allows 200 nested C calls: a recursive `pcall` or `__index` overflowed even
+  the 16 KB stack at ~30 levels and panicked the board. Now the app gets a Lua error, `C stack overflow`.
+  Lua's parser counts its nesting against the same limit: every bundled app and everything in `my-apps`
+  compiled under 25, measured on the XIAO. Here 24 levels of `pcall` left 2.5 KB of the stack, so it's about
+  as high as 16 KB allows.
+- **`LV_INV_BUF_SIZE` 64.** Past that many changed areas in a frame LVGL repaints the whole screen,
+  which on this board means ~100 ms. At the default 32, 16 objects changing `y` and `h` tip it over.
+- **The draw buffer stays at 40 rows.** 80 gave 8% on full-screen repaints (Rings 8.8 to 9.8) for 25 KB
+  of internal RAM.
+- **Not it:** a bigger circle cache (64 changed nothing), or waiting on the scan (a push doesn't).
+- **Not known:** why Orbits' guide lines take about twice as long after some garbage collections, with
+  the same area painted and the same push time. Hiding the lines gets it back, and the S3-Touch-LCD-2,
+  with no scan on its bus, doesn't do it. A cache effect is the best guess, not a finding. IRAM lifted
+  that state from 23 to 30-31. A bigger cache needs a core rebuild (`CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB`:
+  the prebuilt core has 16 KB) and hasn't been tried.
+- **Not tested:** a reconnect to the relay while an app has internal RAM down at the floor.
+- **After changing `lv_conf.h`, delete LVGL's objects** (`rm -rf .pio/build/guition-4848/lib*/lvgl`).
+  LVGL includes it through a macro, which PlatformIO's dependency scan doesn't follow: it says SUCCESS
+  and flashes the old LVGL. A real build of LVGL shows as a minute more.
+
 ## What bring-up found
 
 The first board (2026-10-26) ran stage 3 with both check apps, not turned and then turned 270°,

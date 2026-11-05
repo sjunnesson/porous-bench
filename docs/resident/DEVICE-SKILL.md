@@ -129,10 +129,12 @@ flip the same way, so drawing less is faster on both.
     at most every 30 ms. LVGL's timer can come every 15 ms, and each Anim runs Lua each time.
   - **Reuse one table for `obj:set(p)`.** A table a call cost 739 µs against 278 on the Guition, and
     its garbage makes the long pauses. Skip the call when the rounded value hasn't changed.
-  - **No `transform_scale` on anything that moves.** It draws the object into a layer and transforms
-    that (~40 ms for one 68 px circle on the Guition), and 72 of them **overflow the stack and reboot
-    the board** (`Stack canary watchpoint triggered (loopTask)`). Change `w` and `h`, or
-    `transform_width` and `transform_height`, which grow the box each way with no layer.
+  - **No `transform_scale` or `transform_rotation` on anything that moves, or that sits under what
+    does.** It draws the object into a layer and transforms that, each repaint (~40 ms for one 68 px
+    circle on the Guition; 72 objects: 3.5 fps). Layers nested in layers can **overflow the stack and
+    reboot the board** (`Stack canary watchpoint triggered (loopTask)`), and on firmware before
+    2026-11-05 so did those 72. Change `w` and `h`, or `transform_width` and `transform_height`, which
+    grow the box each way with no layer. For a turned shape, a thick `Line` needs no layer at all.
   - **No `align` on an object whose size changes:** it costs 3× as much (13 against 41 updates a
     second for 16 small objects). Place it by `x` and `y`. Also `clear_flag(lvgl.FLAG.SCROLLABLE)`
     on a parent that never scrolls: ~10%.
@@ -155,9 +157,17 @@ flip the same way, so drawing less is faster on both.
   - **Costs on a board, per call:** Guition / S3-LCD-2: `set` of translate (same table) 278 / 220 µs,
     `w, h` 569 / 289, `bg_opa` 479 / 198, arc's two angles 618 / 388, `style:set` 105 / 61,
     `math.sin` + `math.cos` 32 / 29. Lua's maths is cheap on an S3; LVGL's calls and repaints aren't.
-  - **Known and unexplained on the Guition:** after some sequences of screens, Patterns' Orbits falls
-    to ~23 fps and Rings to ~29 until the board restarts, with the same work a frame. The S3-LCD-2
-    doesn't. Forcing a garbage collection doesn't help.
+  - **Known and unexplained on the Guition:** after some garbage collections, Patterns' guide lines
+    take about twice as long to draw, with the same area painted, until the board restarts. Orbits then
+    holds 30-31 fps rather than 33. The S3-LCD-2 doesn't do it, and a screen with fewer `Line`s barely shows it.
+  - **A saved app that crashes the board twice in a row isn't loaded again** on Bench's firmware: the
+    screen says "Saved app crashed" and the board stays connected. Push a fixed one; a reset or power
+    cycle tries the saved one again. An ordinary Lua error never gets that far.
+- **Calls that go through C can only nest so far.** Plain Lua recursion is fine, but each `pcall`,
+  metamethod (`__index` as a function) or callback from C (`string.gsub`, `table.sort`) takes board
+  stack. Lua's own limit is 200, which is what Bench has. On Bench's S3 boards it's 25, then the error
+  `C stack overflow`, and on boards without PSRAM (C6-LCD-1.47, e-paper) there's no limit that fits: about
+  9 levels of `pcall` **panics the board and reboots it**. A recursive `__index` is the usual way there.
 - **Don't clear what didn't change, with `screen` or `lgfx`.** `screen.clear` or `fillScreen` marks every
   tile, so `flip()` pushes the whole frame: 30.5 ms on the Guition, whatever moved. Bounce, Accel and
   Tilt ball went from 13-17 fps to 30 there by painting over only where the thing was, and the Swiss

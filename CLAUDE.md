@@ -76,7 +76,8 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   `tests/guide.test.ts` checks every control it names still exists.
 - **Firmware for a real board** lives in `firmware/<name>/`, one buildable PlatformIO project per
   stage of Resident's start-building guide, with a README of what bring-up taught. Ask before
-  flashing a board.
+  flashing a board. PlatformIO doesn't notice a changed `lv_conf.h` (LVGL includes it through a macro):
+  delete `.pio/build/<env>/lib*/lvgl`, or the old LVGL is flashed and the build still says SUCCESS.
 - **What Bench counts** (Vercel Web Analytics custom events, at most two values each on Pro) is
   `src/analytics.ts`, every event listed in `privacy.html` (`tests/analytics.test.ts` checks): only
   Bench's own names (a bundled app's id, a display, a part's kind, a kind of error), never a person's

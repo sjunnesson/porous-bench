@@ -116,6 +116,22 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
 - **Wi-Fi:** the portal is `Resident Xiao-round <id>`.
 - **Device ID:** `6880f9a1` (from the MAC, E0:72:A1:F9:80:68).
 
+## Speed and memory since 2026-11-05
+
+The same changes as the Guition's, whose README says why each is there: LVGL's hot drawing code in IRAM
+with only the colour formats in use, TLS in PSRAM (`TlsInPsram.h`), a floor under LVGL's use of
+internal RAM (`LvglAlloc.c`), a 16 KB loop stack (`[perf]` reports what's left), `BootGuard.h`,
+`LUAI_MAXCCALLS` 25 and `LV_INV_BUF_SIZE` 64. This board kept up before them, so they buy margin: Patterns' Rings 50 passes of
+LVGL's timer a second to 54, Bars 56 to 57, Little devil 42 to 44, and Patterns at 33 frames a second
+either way. Internal RAM free at boot went from 250 to 226 KB, and running the apps from 137 to 152 KB,
+lowest 100 to 115 KB. The boot guard was tested with an app built to overflow the stack: "crash 2 in a
+row: not loading the saved app", connected, and the next push ran and saved. After changing `lv_conf.h`,
+delete LVGL's objects (`rm -rf .pio/build/xiao-round/lib*/lvgl`): PlatformIO doesn't see that it changed.
+
+`LUAI_MAXCCALLS` was measured here: nested `pcall` panicked the board at ~30 levels on the 16 KB stack, and
+with the limit it stops at 24 with `C stack overflow`, as does a recursive `__index`. All 19 bundled display
+apps compile under it.
+
 ## Check apps (device/device-apps/)
 
 - `driver-check.lua`: touch and its events (a crosshair, a ball chasing the finger), B taps and

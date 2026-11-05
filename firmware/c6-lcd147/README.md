@@ -235,6 +235,20 @@ plus 4x the code with its spaces, a few per cent under these:
 
 No `lvgl`: luavgl's first bind alone keeps ~30 KB.
 
+### A saved app that keeps crashing
+
+`BootGuard.h` (since 2026-11-05): two crashes in a row, each within a minute of booting, and the next boot
+leaves the saved app out, stays connected, and takes a new push as usual. It wraps Resident's own NVS store.
+A crash is within reach here: nested `pcall` or a recursive `__index` overflows the 8 KB loop stack at ~9
+levels (`Stack protection fault`). The S3 boards raised their stack and set `LUAI_MAXCCALLS`; this one can't
+afford the first, and the second would have to go under what Lua's parser needs for ordinary code. The first
+crash and the guard's count were seen here on the board; the hold itself was tested on the S3 boards.
+
+Today's bundled apps on it, plain pushes: bounce, accel, tilt ball, the clock and rainbow hold the 30 Hz tick.
+Water Sim (11.6 KB as sent) and the logo (15 KB) can be dropped as they arrive, `dropping non-JSON payload:
+NoMemory`, as under "What fits": then the board carries on with the app it had, so check for `app compiled`
+before believing a frame rate.
+
 ### A saved app makes the next push smaller
 
 Resident reads the saved app from NVS before Wi-Fi starts and holds the source until the 20 s

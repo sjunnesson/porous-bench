@@ -37,7 +37,7 @@
  * - LV_STDLIB_RTTHREAD:    RT-Thread implementation
  * - LV_STDLIB_CUSTOM:      Implement the functions externally
  */
-#define LV_USE_STDLIB_MALLOC    LV_STDLIB_CLIB
+#define LV_USE_STDLIB_MALLOC    LV_STDLIB_CUSTOM  /* Bench: internal RAM down to a floor (lib/drivers/src/LvglAlloc.c) */
 #define LV_USE_STDLIB_STRING    LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF   LV_STDLIB_CLIB
 
@@ -63,6 +63,7 @@
  *====================*/
 
 /*Default display refresh, input device read and animation step period.*/
+#define LV_INV_BUF_SIZE 64  /* Bench: past 32 changed areas a frame LVGL repaints the whole screen; 24 bars went from 7.4 fps to 12.4 */
 #define LV_DEF_REFR_PERIOD  15      /*[ms]*/  /* Bench: Resident runs LVGL every 5 ms, so 15 gives ~66 fps (16 waits for 20: 50); 33 capped it at 30 */
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
@@ -98,6 +99,17 @@
 
 #define LV_USE_DRAW_SW 1
 #if LV_USE_DRAW_SW == 1
+    /* Bench: what this screen and LVGL's layers draw with, and fonts. The rest of LVGL's blending would
+     * only take IRAM (see LV_ATTRIBUTE_FAST_MEM): ~38 KB of it. */
+    #define LV_DRAW_SW_SUPPORT_RGB565   1
+    #define LV_DRAW_SW_SUPPORT_RGB565A8 0
+    #define LV_DRAW_SW_SUPPORT_RGB888   0
+    #define LV_DRAW_SW_SUPPORT_XRGB8888 0
+    #define LV_DRAW_SW_SUPPORT_ARGB8888 1
+    #define LV_DRAW_SW_SUPPORT_L8       0
+    #define LV_DRAW_SW_SUPPORT_AL88     0
+    #define LV_DRAW_SW_SUPPORT_A8       1
+    #define LV_DRAW_SW_SUPPORT_I1       0
     /* Set the number of draw unit.
      * > 1 requires an operating system enabled in `LV_USE_OS`
      * > 1 means multiply threads will render the screen in parallel */
@@ -361,7 +373,10 @@
 #define LV_ATTRIBUTE_LARGE_RAM_ARRAY
 
 /*Place performance critical functions into a faster memory (e.g RAM)*/
-#define LV_ATTRIBUTE_FAST_MEM
+#if !defined(__ASSEMBLER__)
+#include <esp_attr.h>
+#endif
+#define LV_ATTRIBUTE_FAST_MEM IRAM_ATTR  /* Bench: flash is on the bus the panel scans PSRAM through, so a cache miss costs; Rings went from 32 passes a second to 38-47 here, and a rebuilt Orbits from 23 to 30-31 */
 
 /*Export integer constant to binding. This macro is used with constants in the form of LV_<CONST> that
  *should also appear on LVGL binding API such as Micropython.*/
