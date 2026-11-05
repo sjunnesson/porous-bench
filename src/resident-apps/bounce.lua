@@ -4,6 +4,7 @@
 local x, y = 60, 40
 local vx, vy = 80, 60
 local radius = 8
+local px, py -- where the ball was drawn: only that's erased, so a flip pushes only what moved
 
 function on_tick(ctx, dt_ms)
   local dt = dt_ms / 1000
@@ -18,13 +19,8 @@ function on_tick(ctx, dt_ms)
   if y - radius < 0 then y = radius; vy = -vy end
   if y + radius > h then y = h - radius; vy = -vy end
 
-  screen.clear(0, 0, 0)
-  screen.fill_rect(
-    math.floor(x - radius),
-    math.floor(y - radius),
-    radius * 2,
-    radius * 2,
-    255, 100, 50
-  )
+  if px then screen.fill_rect(px, py, radius * 2, radius * 2, 0, 0, 0) else screen.clear(0, 0, 0) end
+  px, py = math.floor(x - radius), math.floor(y - radius)
+  screen.fill_rect(px, py, radius * 2, radius * 2, 255, 100, 50)
   screen.flip()
 end

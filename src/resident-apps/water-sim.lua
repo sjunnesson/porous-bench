@@ -153,18 +153,68 @@ local function draw_bub()
   end
 end
 
-local function draw_shells()
+-- A strip of the picture from the screen's edge to its far edge, one along the waterline's axis: sand,
+-- then foam, the lighter band and deep water (or the other way, as gravity points).
+local STEP = 2
+local along, deepEnd = true, true -- strips run down the screen; the deep water is at their far end
+local surf, erase, shown = {}, {}, nil -- the waterline per strip; what to paint over next tick; the view
+local function seg(i, a, b, lo, hi, r, g, bl)
+  if a < lo then a = lo end
+  if b > hi then b = hi end
+  if a >= b then return end
+  if along then screen.fill_rect(i * STEP, a, STEP, b - a, r, g, bl)
+  else screen.fill_rect(a, i * STEP, b - a, STEP, r, g, bl) end
+end
+local function strip(i, lo, hi, long)
+  if lo < 0 then lo = 0 end
+  if hi > long then hi = long end
+  local q = surf[i]
+  if deepEnd then
+    seg(i, 0, q, lo, hi, 220, 192, 150)
+    seg(i, q, q + 3, lo, hi, 206, 226, 224)
+    seg(i, q + 3, q + BAND, lo, hi, 106, 166, 184)
+    seg(i, q + BAND, long, lo, hi, 60, 116, 144)
+  else
+    seg(i, 0, q - BAND, lo, hi, 60, 116, 144)
+    seg(i, q - BAND, q - 3, lo, hi, 106, 166, 184)
+    seg(i, q - 3, q, lo, hi, 206, 226, 224)
+    seg(i, q, long, lo, hi, 220, 192, 150)
+  end
+end
+
+-- Shells. With the tank tilted (`long` set), those on the dry side: the waterline may be moving over the
+-- rest, and these may just have come out of it. On a flat tank, all if `fresh`, else those a fish or a
+-- bubble has been over.
+local function draw_shells(long, fresh)
   for i = 1, NSHELL do
     local cx, cy = shell[i].x, shell[i].y
-    local br, bg, bb, ar, ag, ab
-    if i % 3 == 0 then
-      br, bg, bb, ar, ag, ab = 192, 152, 152, 230, 192, 190  -- dusty pink
-    else
-      br, bg, bb, ar, ag, ab = 198, 184, 158, 240, 230, 212  -- cream
+    local show = fresh
+    if long then
+      show = true
+      local p, u = along and cx or cy, along and cy or cx
+      for k = (p - 6) // STEP, (p + 6) // STEP do
+        local q = surf[k]
+        if q and ((deepEnd and u + 6 >= q) or (not deepEnd and u - 6 <= q)) then show = false end
+      end
+    elseif not fresh then
+      for e = 1, #erase, 4 do
+        if cx + 5 >= erase[e] and cx - 5 <= erase[e] + erase[e + 2] and cy + 3 >= erase[e + 1] and cy - 2 <= erase[e + 1] + erase[e + 3] then
+          show = true
+          break
+        end
+      end
     end
-    -- darker base + lighter inset, both fills, so the rim always lines up
-    screen.fill_triangle(cx, cy + 3, cx - 5, cy - 2, cx + 5, cy - 2, br, bg, bb)
-    screen.fill_triangle(cx, cy + 1, cx - 3, cy - 1, cx + 3, cy - 1, ar, ag, ab)
+    if show then
+      local br, bg, bb, ar, ag, ab
+      if i % 3 == 0 then
+        br, bg, bb, ar, ag, ab = 192, 152, 152, 230, 192, 190  -- dusty pink
+      else
+        br, bg, bb, ar, ag, ab = 198, 184, 158, 240, 230, 212  -- cream
+      end
+      -- darker base + lighter inset, both fills, so the rim always lines up
+      screen.fill_triangle(cx, cy + 3, cx - 5, cy - 2, cx + 5, cy - 2, br, bg, bb)
+      screen.fill_triangle(cx, cy + 1, cx - 3, cy - 1, cx + 3, cy - 1, ar, ag, ab)
+    end
   end
 end
 
@@ -189,6 +239,7 @@ end
 
 function init(ctx)
   W, H = screen.width(), screen.height()
+  if W * H > 150000 then STEP = 6 end
   sx, sy, sz = imu.accel()
   for i = 1, N do h[i] = 0; v[i] = 0; vd[i] = 0 end
   local px = { 0.30, 0.62, 0.48 }
@@ -283,68 +334,70 @@ function on_tick(ctx, dt_ms)
   update_fish(dt, t, flat)
   update_bub(t, flat)
 
-  screen.clear(220, 192, 150)  -- warm sand
+  -- What's on screen stays: only what changed is painted, so a flip pushes only that.
+  local mode
+  if flat then mode = f > 0.5 and "under" or "dry"
+  elseif abs(gy) >= abs(gx) then mode = gy > 0 and "v+" or "v-"
+  else mode = gx > 0 and "h+" or "h-" end
+  local fresh = mode ~= shown
+  shown = mode
+  along = mode == "v+" or mode == "v-"
+  deepEnd = mode == "v+" or mode == "h+"
+  local long, count = along and H or W, (along and W or H) // STEP + 1
 
   if flat then
-    if f > 0.5 then screen.clear(106, 166, 184) else draw_shells() end
-    draw_bub()
-    draw_fish()
-    screen.flip()
-    return
-  end
-
-  draw_shells()  -- on the sand; the water strips below cover submerged ones
-
-  local step = 2
-  if abs(gy) >= abs(gx) then
-    for x = 0, W - 1, step do
-      local y0 = (thr - x * gx) / gy
-      local idx = 1 + (-gy * x + gx * y0 - umin) / uspan * (N - 1)
-      local ys = (thr - lerp_h(idx) - x * gx) / gy
-      if gy > 0 then
-        local yt = floor(ys)
-        if yt < 0 then yt = 0 end
-        if yt < H then
-          screen.fill_rect(x, yt, step, H - yt, 60, 116, 144)
-          screen.fill_rect(x, yt, step, BAND, 106, 166, 184)
-          screen.fill_rect(x, yt, step, 3, 206, 226, 224)
-        end
-      else
-        local yb = ceil(ys)
-        if yb > H then yb = H end
-        if yb > 0 then
-          screen.fill_rect(x, 0, step, yb, 60, 116, 144)
-          screen.fill_rect(x, yb - BAND, step, BAND, 106, 166, 184)
-          screen.fill_rect(x, yb - 3, step, 3, 206, 226, 224)
-        end
-      end
+    if fresh then
+      if f > 0.5 then screen.clear(106, 166, 184) else screen.clear(220, 192, 150) end
+    else
+      local r, g, b = 220, 192, 150
+      if f > 0.5 then r, g, b = 106, 166, 184 end
+      for i = 1, #erase, 4 do screen.fill_rect(erase[i], erase[i + 1], erase[i + 2], erase[i + 3], r, g, b) end
     end
+    if f <= 0.5 then draw_shells(nil, fresh) end
   else
-    for y = 0, H - 1, step do
-      local x0 = (thr - y * gy) / gx
-      local idx = 1 + (-gy * x0 + gx * y - umin) / uspan * (N - 1)
-      local xs = (thr - lerp_h(idx) - y * gy) / gx
-      if gx > 0 then
-        local xt = floor(xs)
-        if xt < 0 then xt = 0 end
-        if xt < W then
-          screen.fill_rect(xt, y, W - xt, step, 60, 116, 144)
-          screen.fill_rect(xt, y, BAND, step, 106, 166, 184)
-          screen.fill_rect(xt, y, 3, step, 206, 226, 224)
-        end
-      else
-        local xb = ceil(xs)
-        if xb > W then xb = W end
-        if xb > 0 then
-          screen.fill_rect(0, y, xb, step, 60, 116, 144)
-          screen.fill_rect(xb - BAND, y, BAND, step, 106, 166, 184)
-          screen.fill_rect(xb - 3, y, 3, step, 206, 226, 224)
+    -- The waterline along each strip, and the band around it where it moved.
+    for i = 0, count - 1 do
+      local p = i * STEP
+      local q0 = along and (thr - p * gx) / gy or (thr - p * gy) / gx
+      local idx
+      if along then idx = 1 + (-gy * p + gx * q0 - umin) / uspan * (N - 1)
+      else idx = 1 + (-gy * q0 + gx * p - umin) / uspan * (N - 1) end
+      local ys = along and (thr - lerp_h(idx) - p * gx) / gy or (thr - lerp_h(idx) - p * gy) / gx
+      local q = deepEnd and floor(ys) or ceil(ys)
+      local was = surf[i]
+      surf[i] = q
+      if fresh then
+        strip(i, 0, long, long)
+      elseif q ~= was then
+        strip(i, min(q, was) - BAND - 1, max(q, was) + BAND + 1, long)
+      end
+    end
+    -- What the fish and bubbles were over.
+    if not fresh then
+      for i = 1, #erase, 4 do
+        local x, y, w, ht = erase[i], erase[i + 1], erase[i + 2], erase[i + 3]
+        if along then
+          for k = max(0, x // STEP), min(count - 1, (x + w) // STEP) do strip(k, y, y + ht, long) end
+        else
+          for k = max(0, y // STEP), min(count - 1, (y + ht) // STEP) do strip(k, x, x + w, long) end
         end
       end
     end
+    draw_shells(long)
   end
 
   draw_bub()
   draw_fish()
+  -- Where they are now is what the next tick has to paint over.
+  local n = 0
+  for i = 1, 3 do
+    local fx, fy = floor(fish[i].x), floor(fish[i].y)
+    erase[n + 1], erase[n + 2], erase[n + 3], erase[n + 4] = fx - 20, fy - 20, 40, 40
+    n = n + 4
+  end
+  for i = 1, 5 do
+    erase[n + 1], erase[n + 2], erase[n + 3], erase[n + 4] = floor(bub[i].x) - 2, floor(bub[i].y) - 2, 5, 5
+    n = n + 4
+  end
   screen.flip()
 end

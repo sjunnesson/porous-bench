@@ -3,6 +3,7 @@
 -- @needs motion
 local PI = 3.14159265
 local CX, CY, R
+local shown -- the second on the face: it's all that moves, so there's nothing to draw until it changes
 
 local function ftri(x0, y0, x1, y1, x2, y2, r, g, b)
   local f = math.floor
@@ -34,6 +35,8 @@ end
 function on_tick(ctx, dt_ms)
   local t = datetime.now()   -- local once the server's timezone is applied
   local hr, mn, sc = t.hour, t.minute, t.second
+  if sc == shown then return end
+  shown = sc
 
   local th = ((hr % 12) + mn / 60) * PI / 6
   local tm = (mn + sc / 60) * PI / 30
