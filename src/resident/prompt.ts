@@ -104,7 +104,7 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
     '- Read the screen\'s facts from `screens.get("main")` rather than hard-coding them, so the app adapts.',
     board && !board.libraries.includes('lvgl')
       ? '- Draw with `lgfx` (or the `screen` verbs). There is no `lvgl` on this board.'
-      : `- Draw with \`lgfx\`, or with the optional \`lvgl\` module. For motion, use \`lvgl.Anim\`: LVGL runs it on its own timer pump, smoother than the ${tickHz(p)} \`on_tick\`.`,
+      : `- Draw with \`lgfx\`, or with the optional \`lvgl\` module. For motion, use \`lvgl.Anim\`: LVGL runs it on its own timer pump, smoother than the ${tickHz(p)} \`on_tick\`. Many moving objects share one Anim, and never use \`transform_scale\` on them: the device skill's "Speed on a real board" says what holds 30 fps.`,
     ...boardLines(board),
   ];
   if (p.shape === 'round') {

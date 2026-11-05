@@ -123,6 +123,55 @@ flip the same way, so drawing less is faster on both.
   three translucent glow ovals ran at 3.4 fps (12 once the glow was opaque and still). The same
   flame drawn row by row with `lgfx`, redrawing only where it moved, runs at 28. For many moving
   shapes use `lgfx`; for LVGL, few objects, opaque ones, and leave big ones still.
+- **What holds 30 fps with LVGL** (measured on the Guition 4848S040, 480×480, and the S3-Touch-LCD-2,
+  240×320, with Patterns: from 6.5-11 fps to 32-33 on the Guition, and from 16-33 to 33 on the S3):
+  - **One Anim per pattern or screen, not one per object**, and move everything from it by the clock,
+    at most every 30 ms. LVGL's timer can come every 15 ms, and each Anim runs Lua each time.
+  - **Reuse one table for `obj:set(p)`.** A table a call cost 739 µs against 278 on the Guition, and
+    its garbage makes the long pauses. Skip the call when the rounded value hasn't changed.
+  - **No `transform_scale` on anything that moves.** It draws the object into a layer and transforms
+    that (~40 ms for one 68 px circle on the Guition), and 72 of them **overflow the stack and reboot
+    the board** (`Stack canary watchpoint triggered (loopTask)`). Change `w` and `h`, or
+    `transform_width` and `transform_height`, which grow the box each way with no layer.
+  - **No `align` on an object whose size changes:** it costs 3× as much (13 against 41 updates a
+    second for 16 small objects). Place it by `x` and `y`. Also `clear_flag(lvgl.FLAG.SCROLLABLE)`
+    on a parent that never scrolls: ~10%.
+  - **A long `Line` is the most expensive thing on screen.** LVGL draws every segment whenever anything
+    touches its bounding box, so one orbit of 48 segments under a moving dot cost ~50 ms a frame.
+    Split it into short `Line`s (12 of 4 segments): only those under the change redraw.
+  - **Turn an `Arc` by `start_angle` and `end_angle`, not `rotation`,** which repaints the whole ring;
+    its ends repaint only where they moved. Every arc under a repainted area is masked again, even
+    where it shows nothing there, so concentric arcs lose their track (`arc_opa = 0` on `MAIN`) and
+    round ends (`arc_rounded = 0`): that alone took five rings from 21 fps to 32 on the Guition.
+  - **Stay under 32 changed areas a frame.** Past that LVGL repaints the whole screen. A `set` of one
+    size or position marks up to 2, of `y` and `h` together up to 4, so 16 objects can tip it over
+    (4.8 fps on the Guition). Change one property per object, and past ~14 objects take turns.
+  - **Share a `lvgl.Style` among objects that look the same.** `style:set` is 4× cheaper than a
+    `set` (105 µs against 479) and covers them all, but **it repaints nothing**: call `obj:invalidate()`
+    on each. Keep Styles for the life of the app and reuse them.
+  - **To change little of something tall, leave it still.** An object repaints whole when it changes,
+    so an equaliser's bar is a still gradient under opaque covers in the background's colour, in fixed
+    sections, and only the cover at the level changes.
+  - **Costs on a board, per call:** Guition / S3-LCD-2: `set` of translate (same table) 278 / 220 µs,
+    `w, h` 569 / 289, `bg_opa` 479 / 198, arc's two angles 618 / 388, `style:set` 105 / 61,
+    `math.sin` + `math.cos` 32 / 29. Lua's maths is cheap on an S3; LVGL's calls and repaints aren't.
+  - **Known and unexplained on the Guition:** after some sequences of screens, Patterns' Orbits falls
+    to ~23 fps and Rings to ~29 until the board restarts, with the same work a frame. The S3-LCD-2
+    doesn't. Forcing a garbage collection doesn't help.
+- **Don't clear what didn't change, with `screen` or `lgfx`.** `screen.clear` or `fillScreen` marks every
+  tile, so `flip()` pushes the whole frame: 30.5 ms on the Guition, whatever moved. Bounce, Accel and
+  Tilt ball went from 13-17 fps to 30 there by painting over only where the thing was, and the Swiss
+  clock by drawing only when its second changes. A strip picture repaints only around its edge (Water
+  Sim: 12 to 29 fps). When every pixel really changes, flip part of it each tick, in bands at least
+  16 px wide (Rainbow: 8.5 to 30 flips a second, each band at 15).
+- **A `Line`'s points in its parent's coordinates give it a box from the parent's origin to its furthest
+  point**, and it repaints all of that. Place it at the corner of its points (Little devil: 6.4 to 27-29 fps).
+- **Reading LVGL back on a board:** an object has `.w` and `.h`, and `get_coords()` and `get_pos()`, as
+  LVGL's last pass laid it out: a new or changed label reads 0 or its old size until then. There is no
+  `get_width`, `get_height`, `get_x`, `get_y`, `has_flag` or `has_state`, and reading a property that
+  doesn't exist is an error, `property not found`, not nil. To measure text now, keep a hidden label:
+  `ruler:set { text = t }`, `ruler:align_to { base = ruler:get_parent(), type = lvgl.ALIGN.TOP_LEFT }` (it
+  lays out at once, and its `base` is required), then `ruler.w`. Bench does all of this as a board does.
 - **Faster than a 10 Hz `on_tick` with `lgfx`:** `lvgl.Timer` runs at ~30 fps on boards with `lvgl`. Bind
   LVGL first and `lgfx` last (the last bind owns the screen; the timer keeps running), and fall
   back to `on_tick` where `lvgl` is nil.
