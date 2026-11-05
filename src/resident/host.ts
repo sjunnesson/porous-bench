@@ -760,9 +760,7 @@ export class ResidentHost {
       lv_coords: (id: number) => this.lv!.coords(id),
       lv_parent: (id: number) => this.lv!.parentOf(id),
       lv_child_count: (id: number) => this.lv!.childCount(id),
-      lv_invalidate: () => {
-        this.lv!.dirty = true;
-      },
+      lv_invalidate: (id: number) => this.lv!.invalidate(id),
       lv_theme: (theme: Record<string, Record<string, unknown>> | null | undefined) => this.lv!.setTheme(theme ?? null),
 
       // leds: the LED chain when the output is one (strip, ring, matrix), in chain order: on a matrix

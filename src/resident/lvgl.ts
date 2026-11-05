@@ -120,6 +120,8 @@ export class LvglScreen {
   private warned = new Set<string>();
   /** Something changed since the last refresh. */
   dirty = true;
+  /** Style values set since the objects using them were last repainted: the style's id, its props. */
+  private pendingStyles = new Map<number, Props>();
 
   constructor(
     private display: Display,
@@ -148,6 +150,7 @@ export class LvglScreen {
 
   set(id: number, props: Props): void {
     const n = this.get(id);
+    this.seeStyles(n);
     for (const [k, v] of Object.entries(expand(props))) {
       if (k === 'align' && v && typeof v === 'object') {
         // align = { type, x_ofs, y_ofs }
@@ -288,15 +291,33 @@ export class LvglScreen {
       const local = n.styles.find((e) => e.sid === undefined && e.selector === selector);
       if (local) Object.assign(local.props, props);
       else n.styles.push({ props, selector });
-    } else n.styles.push({ props, selector, sid });
+    } else n.styles.push({ props: sid != null && this.pendingStyles.has(sid) ? this.forPart(n, this.pendingStyles.get(sid)!, selector) : props, selector, sid });
     this.dirty = true;
   }
 
-  /** style:set{...} / remove_prop / delete: every object that added the style sees the change. */
+  /**
+   * style:set{...} / remove_prop / delete. As on a board, this repaints nothing: luavgl changes the
+   * style without telling the objects that use it (no lv_obj_report_style_change), so each shows the
+   * new values once something repaints it. Bench takes that to be its invalidate() or its own set.
+   */
   updateStyle(sid: number, raw: Props): void {
-    for (const n of this.nodes.values()) {
-      for (const e of n.styles) if (e.sid === sid) e.props = this.forPart(n, raw, e.selector);
+    this.pendingStyles.set(sid, raw);
+  }
+
+  /** The newest values of the shared styles this object uses, and its children's, now it's repainted. */
+  private seeStyles(n: Node): void {
+    if (this.pendingStyles.size) {
+      for (const e of n.styles) {
+        const raw = e.sid === undefined ? undefined : this.pendingStyles.get(e.sid);
+        if (raw) e.props = this.forPart(n, raw, e.selector);
+      }
     }
+    for (const c of n.children) this.seeStyles(c);
+  }
+
+  /** obj:invalidate(): repaint this object. */
+  invalidate(id: number): void {
+    this.seeStyles(this.get(id));
     this.dirty = true;
   }
   childCount(id: number): number {
@@ -313,8 +334,8 @@ export class LvglScreen {
   }
   /** x1, y1, x2, y2 (inclusive, like lv_area_t) and the position within the parent's content box
    *  (inside its padding and border), as lv_obj_get_x and _get_y give it. */
+  /** As LVGL's last pass laid it out, like a board's: nothing here lays out. */
   coords(id: number): number[] {
-    this.layout();
     const n = this.get(id);
     const p = n.parent;
     const pad = p ? this.pads(p) : { l: 0, t: 0 };
@@ -735,15 +756,19 @@ export class LvglScreen {
       ctx.restore();
     }
     if (bgOpa > 0 && n.kind !== 'Led') {
+      // transform_width and transform_height grow the box each way as it's drawn, without a layout.
+      const tw = this.num(n, 'transform_width');
+      const th = this.num(n, 'transform_height');
+      const [bx, by, bw, bh] = [n.x - tw, n.y - th, n.w + 2 * tw, n.h + 2 * th];
       const grad = this.prop(n, 'bg_grad_color');
       const dir = this.num(n, 'bg_grad_dir');
       if (grad !== undefined && dir) {
-        const g = dir === 1 ? ctx.createLinearGradient(0, n.y, 0, n.y + n.h) : ctx.createLinearGradient(n.x, 0, n.x + n.w, 0);
+        const g = dir === 1 ? ctx.createLinearGradient(0, by, 0, by + bh) : ctx.createLinearGradient(bx, 0, bx + bw, 0);
         g.addColorStop(0, this.rgba(this.prop(n, 'bg_color'), bgOpa, CARD));
         g.addColorStop(1, this.rgba(grad, bgOpa, CARD));
         ctx.fillStyle = g;
       } else ctx.fillStyle = this.rgba(this.prop(n, 'bg_color'), bgOpa, CARD);
-      this.roundRect(ctx, n.x, n.y, n.w, n.h, r);
+      this.roundRect(ctx, bx, by, Math.max(0, bw), Math.max(0, bh), r);
       ctx.fill();
     }
     const bw = this.num(n, 'border_width');

@@ -230,13 +230,18 @@ describe('lvgl module', () => {
       local st = lvgl.Style { w = 50, h = 10 }
       local a, b = h.Object(nil, {}), h.Object(nil, {})
       a:add_style(st) b:add_style(st)
-      st:set { w = 80 }                       -- reaches both objects
-      log.info(a:get_width(), b:get_width())
+      local function sizes() a:align_to{ base = a:get_parent() } b:align_to{ base = b:get_parent() } log.info(a.w, b.w, b.h) end -- align_to lays out at once
+      log.info(a.w, b.w)                      -- nothing is laid out yet, as on a board
+      sizes()
+      st:set { w = 80 }                       -- changes nothing until they're repainted, as on a board
+      sizes()
+      a:invalidate() b:invalidate()           -- now it reaches both objects
+      sizes()
       b:set_style({ w = 30 }) b:set_style({ h = 20 })   -- one local style: the width stays
-      log.info(b:get_width(), b:get_height(), a:get_width())
+      sizes()
     end`);
     expect(t.error).toBeUndefined();
-    expect(t.logs).toEqual(['80\t80', '30\t20\t80']);
+    expect(t.logs).toEqual(['0\t0', '50\t50\t10', '50\t50\t10', '80\t80\t10', '80\t30\t20']);
   });
 
   it('owns the panel once bound: lgfx flips stand down', async () => {

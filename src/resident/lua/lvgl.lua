@@ -151,12 +151,22 @@ end
 local anims = {} -- running animations, newest first: lv_anim_start puts each at the head of its list
 local objects = {} -- id → Lua object (weak would let a running Anim lose its target; keep strong)
 local OBJ = {}
+-- As luavgl: a method, a widget's constructor, or one of the few properties that read back. w and h
+-- are what LVGL's last pass laid out (0 before its first; align_to lays out at once). Anything else
+-- is an error, not nil. A field of ours (__id, __events...) is nil until it's set.
+local READABLE = { align = true, id = true, user_data = true }
 OBJ.__index = function(o, k)
   local m = OBJ[k]
   if m then return m end
   local ctor = M._ctors and M._ctors[k]
   if ctor then return function(self, ...) return ctor(self, ...) end end
-  return nil
+  if k == "w" or k == "h" then
+    local c = P.coords(o.__id)
+    if k == "w" then return c[3] - c[1] + 1 end
+    return c[4] - c[2] + 1
+  end
+  if READABLE[k] or (type(k) == "string" and k:sub(1, 2) == "__") then return nil end
+  error("property not found: " .. tostring(k), 2)
 end
 OBJ.__tostring = function(o) return "lv_obj: " .. o.__kind .. "#" .. o.__id end
 
@@ -188,7 +198,9 @@ end
 function OBJ:center() P.set(alive(self, "center"), { align = M.ALIGN.CENTER, x = 0, y = 0 }) return self end
 function OBJ:align_to(t)
   local id = alive(self, "align_to")
-  P.align_to(id, t.base and alive(t.base, "align_to") or nil, t.type or M.ALIGN.CENTER, t.x_ofs or 0, t.y_ofs or 0)
+  -- luavgl needs a base: without one it fails, "Expected lv_obj userdata".
+  if not t.base then error("bad argument to 'align_to' (Expected lv_obj userdata)", 2) end
+  P.align_to(id, alive(t.base, "align_to"), t.type or M.ALIGN.CENTER, t.x_ofs or 0, t.y_ofs or 0)
   return self
 end
 function OBJ:delete()
@@ -199,10 +211,8 @@ end
 function OBJ:clean() kill(P.clean(alive(self, "clean"))) end
 function OBJ:add_flag(f) P.flag(alive(self, "add_flag"), floor(f), true) return self end
 function OBJ:clear_flag(f) P.flag(alive(self, "clear_flag"), floor(f), false) return self end
-function OBJ:has_flag(f) return P.has_flag(alive(self, "has_flag"), floor(f)) end
 function OBJ:add_state(s) P.state(alive(self, "add_state"), floor(s), true) return self end
 function OBJ:clear_state(s) P.state(alive(self, "clear_state"), floor(s), false) return self end
-function OBJ:has_state(s) return P.has_state(alive(self, "has_state"), floor(s)) end
 function OBJ:add_style(style, selector)
   local id = alive(self, "add_style")
   if type(style) ~= "table" or not style.__style then error("add_style: expected an lvgl.Style", 2) end
@@ -250,10 +260,6 @@ function OBJ:get_coords()
   local c = P.coords(alive(self, "get_coords"))
   return { x1 = c[1], y1 = c[2], x2 = c[3], y2 = c[4] }
 end
-function OBJ:get_x() return P.coords(alive(self, "get_x"))[5] end
-function OBJ:get_y() return P.coords(alive(self, "get_y"))[6] end
-function OBJ:get_width() local c = P.coords(alive(self, "get_width")) return c[3] - c[1] + 1 end
-function OBJ:get_height() local c = P.coords(alive(self, "get_height")) return c[4] - c[2] + 1 end
 function OBJ:get_parent() local p = P.parent(alive(self, "get_parent")) return p and objects[p] or nil end
 function OBJ:invalidate() P.invalidate(alive(self, "invalidate")) end
 -- Events are kept, and fired when Bench gets an input device for LVGL; on a board without a

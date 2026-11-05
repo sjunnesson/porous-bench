@@ -330,11 +330,12 @@ describe('the mirror, the minifier and drawing', () => {
         a:set_parent(b) scr:set_parent(a)
         local red, wide = lvgl.Style({ bg_color = 0xff0000 }), lvgl.Style({ width = 90 })
         a:add_style(red) a:add_style(wide) a:remove_style(red)
-        log.info(a:get_parent() == scr, a:get_width())
+        log.info(a:get_parent() == scr)
+        lvgl.Timer { period = 50, repeat_count = 1, cb = function() log.info(a.w) end }
       end`);
     expect(t.error).toBeUndefined();
     t.steps(100);
-    expect(t.logs).toEqual(['true\t90']);
+    expect(t.logs).toEqual(['true', '90']);
   });
 });
 
@@ -422,14 +423,18 @@ describe('drawing as the boards draw it', () => {
         local kid = h:Object(box) kid:set{ w = 20, h = 10, x = 0, y = 0 }
         local tag = h:Object(scr) tag:set{ w = 21, h = 11 }
         tag:align_to{ base = box, type = lvgl.ALIGN.OUT_BOTTOM_LEFT, x_ofs = 0, y_ofs = 2 }
-        local x0, y0 = tag:get_pos()
-        box:set{ x = 50 } -- tag stays put: align_to placed it once
-        local x1 = tag:get_pos()
         local mid = h:Object(scr) mid:set{ w = 21, h = 11 } mid:center()
-        log.info(kid:get_x(), kid:get_y(), x0, y0, x1, mid:get_x())
+        lvgl.Timer { period = 50, repeat_count = 1, cb = function() -- positions read as laid out
+          local x0, y0 = tag:get_pos()
+          box:set{ x = 50 } -- tag stays put: align_to placed it once
+          lvgl.Timer { period = 50, repeat_count = 1, cb = function()
+            local kx, ky = kid:get_pos()
+            log.info(kx, ky, x0, y0, (tag:get_pos()), (mid:get_pos()))
+          end }
+        end }
       end`);
     expect(t.error).toBeUndefined();
-    t.steps(50);
+    t.steps(300);
     const [kx, ky, x0, y0, x1] = t.logs[0].split('\t').map(Number);
     expect([kx, ky]).toEqual([0, 0]);
     expect([x0, y0]).toEqual([10, 92]);

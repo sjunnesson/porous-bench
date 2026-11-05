@@ -49,17 +49,28 @@ end
 
 -- Put the first text that fits `avail` px into a label; failing that, clip the last one.
 -- (Built-in LVGL Montserrat is ASCII plus symbols, so separators are lvgl.SYMBOL.BULLET.)
+-- A board knows a label's size only once LVGL has laid it out: align_to does that at once, so a hidden
+-- label measures for us.
+local ruler = ui.Label { text = "" }
+ruler:add_flag(lvgl.FLAG.HIDDEN)
+local function textWidth(t)
+  ruler:set { text = t }
+  ruler:align_to { base = ruler:get_parent(), type = lvgl.ALIGN.TOP_LEFT }
+  return ruler.w
+end
 local function fit(lbl, texts, avail)
   for _, t in ipairs(texts) do
-    lbl:set { text = t }
-    if lbl:get_width() <= avail then return t end
+    if textWidth(t) <= avail then
+      lbl:set { text = t }
+      return t
+    end
   end
   local t = texts[#texts]
   while #t > 1 do
     t = t:sub(1, #t - 1)
-    lbl:set { text = t .. ".." }
-    if lbl:get_width() <= avail then break end
+    if textWidth(t .. "..") <= avail then break end
   end
+  lbl:set { text = t .. ".." }
   return t
 end
 
@@ -121,7 +132,7 @@ end
 local footColor = color and 0xB4FF2F or FG
 local uptime = ui.Label { x = pad, y = 0, text_color = footColor }
 uptime:set { text = paper and "up 0000 s" or "000.0 s" }
-local upW = uptime:get_width()
+local upW = textWidth(paper and "up 0000 s" or "000.0 s")
 local B = " " .. lvgl.SYMBOL.BULLET .. " "
 local notes = paper
   and { "e-paper" .. B .. "every 5 s", "every 5 s", "" }

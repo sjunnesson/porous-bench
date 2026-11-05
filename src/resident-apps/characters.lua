@@ -143,7 +143,16 @@ local bubble = jumper:Label {
 }
 local talks = groundY - sh - 2 - (lineH(bfont) + 2 * padV) >= textBottom
 if not talks then bubble:add_flag(lvgl.FLAG.HIDDEN) end
-local bubbleW = bubble:get_width()
+-- A board knows a label's size only once LVGL has laid it out: align_to does that at once, so a hidden
+-- label in the bubble's font measures its lines.
+local ruler = h.Label { text = "", text_font = font(bfont) }
+ruler:add_flag(lvgl.FLAG.HIDDEN)
+local function bubbleWidth(t)
+  ruler:set { text = t }
+  ruler:align_to { base = ruler:get_parent(), type = lvgl.ALIGN.TOP_LEFT }
+  return ruler.w + 2 * padH
+end
+local bubbleW = bubbleWidth(LINES[1])
 
 -- ── state → widgets ────────────────────────────────────────────────────────
 
@@ -234,7 +243,7 @@ local function nextLine()
   if not talks then return end
   line = line % #LINES + 1
   bubble:set { text = LINES[line] }
-  bubbleW = bubble:get_width()
+  bubbleW = bubbleWidth(LINES[line])
   clampBubble()
 end
 
