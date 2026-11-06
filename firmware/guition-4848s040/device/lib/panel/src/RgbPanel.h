@@ -51,6 +51,14 @@ int rotation();
 // in the image.
 void toImage(int& x, int& y);
 
+#ifdef BENCH_PROFILE
+// A vertical sync whose frame didn't get its 48 bounce buffers refilled, and which way the driver's
+// count now stands: odd, it refills the buffer being sent rather than the one just sent.
+struct ScanEvent { uint32_t ms; uint16_t got; uint16_t odd; };
+uint32_t scanEvents();
+bool scanEvent(uint32_t i, ScanEvent& out);
+#endif
+
 // Tear the scan down and start it again, on a new (black) frame buffer: the
 // caller pushes its frame again after. Stage 1's RESTART: for a picture that
 // slipped and stayed slipped, which a flash write hasn't done on this board

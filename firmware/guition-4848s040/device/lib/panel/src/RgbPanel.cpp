@@ -5,6 +5,10 @@
 #include <esp_lcd_panel_rgb.h>
 #include <esp32s3/rom/cache.h>
 #include <esp_idf_version.h>
+#ifdef BENCH_PROFILE
+#include <esp_timer.h>
+#include <sdkconfig.h>
+#endif
 // Stage 3 builds on Arduino core 3.x (ESP-IDF 5), stages 1-2 on core 2.x (IDF 4.4): both compile this.
 #if ESP_IDF_VERSION_MAJOR >= 5
 #include <esp_memory_utils.h>
@@ -124,10 +128,56 @@ static void initSequence() {
   command(0x29);  // display on
 }
 
+#if defined(BENCH_PROFILE) && ESP_IDF_VERSION_MAJOR >= 5
+// The driver's count of bounce buffers sent, whose parity picks the buffer it refills next. A frame is
+// 48 of them. Profile builds only: the count lives in the driver's private state, found by the field
+// after it (the 48 it expects a frame) and the one before (a position, whole buffers of 4800 pixels).
+static volatile uint32_t* s_eofCount = nullptr;
+static uint32_t s_eofLast = 0;
+static ScanEvent s_scanEvents[32];
+static volatile uint32_t s_scanEventN = 0;
+static void findEofCount() {
+  uint32_t* words = (uint32_t*)s_panel;
+  for (int i = 2; i < 200; i++) {
+    if (words[i] == 48 && words[i - 2] % 4800 == 0 && words[i - 2] < 480 * 480) {
+      s_eofCount = &words[i - 1];
+      Serial.printf("[scan] the driver's buffer count is at word %d\n", i - 1);
+      return;
+    }
+  }
+  Serial.println("[scan] the driver's buffer count wasn't found");
+}
+static inline void IRAM_ATTR noteScan() {
+  if (!s_eofCount) return;
+  uint32_t c = *s_eofCount;
+#if CONFIG_LCD_RGB_RESTART_IN_VSYNC
+  uint32_t got = c - s_eofLast;  // it just keeps counting
+  s_eofLast = c;
+#else
+  uint32_t got = c;  // the driver sets it to 0 after this callback
+#endif
+  if (got != 48 && s_scans > 10) {
+    uint32_t n = s_scanEventN;
+    ScanEvent& e = s_scanEvents[n % 32];
+    e.ms = (uint32_t)(esp_timer_get_time() / 1000), e.got = (uint16_t)got, e.odd = c & 1;
+    s_scanEventN = n + 1;
+  }
+}
+bool scanEvent(uint32_t i, ScanEvent& out) {
+  if (i >= s_scanEventN || s_scanEventN - i > 32) return false;
+  out = s_scanEvents[i % 32];
+  return true;
+}
+uint32_t scanEvents() { return s_scanEventN; }
+#endif
+
 #if ESP_IDF_VERSION_MAJOR >= 5
 static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
 #else
 static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, esp_lcd_rgb_panel_event_data_t*, void*) {
+#endif
+#if defined(BENCH_PROFILE) && ESP_IDF_VERSION_MAJOR >= 5
+  noteScan();
 #endif
   s_scans = s_scans + 1;  // not ++: C++20 (core 3.x) deprecates it on a volatile
   return false;
@@ -269,6 +319,9 @@ static bool startScan() {
   esp_lcd_panel_init(s_panel);  // starts the scan, which never stops on its own
   s_fb = findFrameBuffer();
   s_shown = s_scanned = s_fb;
+#if defined(BENCH_PROFILE) && ESP_IDF_VERSION_MAJOR >= 5
+  findEofCount();
+#endif
   if (!haveStrip()) s_rotation = 0;
   return true;
 }

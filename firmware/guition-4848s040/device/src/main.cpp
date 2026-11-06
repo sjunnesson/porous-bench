@@ -44,6 +44,9 @@ AppStore appStore;  // the last app for the next boot, on LittleFS (NVS is too s
 // it and rebooted the board (Stack canary watchpoint triggered). [perf] reports what's left.
 SET_LOOP_TASK_STACK_SIZE(16 * 1024);
 
+// At boot only. A heap's largest free block is found by walking every block with interrupts off, and
+// an app's Lua makes a great many in PSRAM: 4.4 to 9.5 ms, and the panel's refill interrupt can't wait
+// 0.5 ms. Done every 30 s, that made the picture jump every 30 s (2026-11-06, with an app of 2-3 MB).
 static void printMemory(const char* when) {
   Serial.printf("[mem] %s: internal free %u (largest %u, lowest %u), PSRAM free %u (largest %u)\n", when,
                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -51,6 +54,14 @@ static void printMemory(const char* when) {
                 (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+}
+
+// While an app runs: only the running totals the heap keeps, which walk nothing.
+static void printMemoryNow() {
+  Serial.printf("[mem] now: internal free %u (lowest %u), PSRAM free %u\n",
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 static Resident::SandboxConfig makeConfig() {
@@ -189,6 +200,6 @@ void loop() {
     Serial.printf("[heartbeat] %s, app %s, last push %lu us\n",
                   sandbox.isConnected() ? "connected" : "offline",
                   sandbox.isAppRunning() ? "running" : "idle", (unsigned long)Lcd::lastPushUs());
-    printMemory("now");
+    printMemoryNow();
   }
 }

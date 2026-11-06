@@ -86,7 +86,8 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   then. That is esp-idf#19070: in bounce-buffer mode with `CONFIG_LCD_RGB_RESTART_IN_VSYNC` (on in
   Arduino's build) one late interrupt leaves the refill out of step with the scan. Fixed in IDF 6.0
   and 6.1, not 5.5, so core 4.0.0-RC1, whose IDF build has the fix: no glitch in several minutes of
-  the full-screen `driver-check`. Bounce buffers cost 19 KB of internal RAM and the CPU that refills
+  the full-screen `driver-check`. (Only half fixed with that option on, it turned out: see "A late
+  refill" below.) Bounce buffers cost 19 KB of internal RAM and the CPU that refills
   them: `driver-check` 15 fps (34.5 ms a push), against 17.7 fps (30.5) on 2.0.17; 127 KB of internal
   RAM free with it running. On 4.0 it also needed QRCode's C compiled as C17 (C23 makes `bool` a
   keyword) and LVGL's ARM assembly left out (`../../core3.py`), and the panel's pins typed
@@ -104,6 +105,32 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   Arduino core 2.0.17) owns a 450 KB frame buffer in PSRAM and streams it at a 12 MHz pixel clock,
   with Arduino_GFX's porches for this init sequence (H 10/8/50, V 10/8/20): 548 × 518 clocks a
   frame, 42.3 frames a second. Pixels go out in RGB565 as the chip stores them; no byte swap.
+- **A late refill, and how it looks.** The scan reads two buffers of 10 frame rows in turn, and an
+  interrupt refills the one just sent, so it can wait ~450 us at most (10 rows at 45.7 us, less the
+  copy). With the picture turned 270°, a frame row is a picture column, scanned from the right of the
+  picture to the left, and each from the top down. So on the glass:
+  - *A jump (one frame):* the same 20 columns repeat while the interrupt is held off, so a shape smears
+    into a run of copies across the screen, and the rest of the frame is displaced. Captured on video:
+    the right arrow eight times over.
+  - *Shifted and ticked (lasting):* the whole picture 10 px to the right, and in every 10th column the
+    first ~60 px from the top show what's 20 columns to the right: thin ticks beside anything curved
+    near the top, half-lit dots. IDF 6.1's driver chooses the buffer to refill from a count of buffers
+    sent, and with `CONFIG_LCD_RGB_RESTART_IN_VSYNC` on (Arduino's default) it never sets that count
+    back to 0. A frame that loses an odd number of refills leaves it odd, and every refill after that
+    goes into the buffer being sent, racing the scan, until another such frame turns it even. So a
+    board was shifted for about half of each stretch between hiccups. The option is off here
+    (`platformio.ini`): the driver then restarts the scan only after a frame that lost a refill, and
+    sets the count back at each vertical sync. On the board (2026-11-06), three deliberate 9 ms hold-offs
+    each came back within two frames.
+  - *What held it off:* the heartbeat. `heap_caps_get_largest_free_block` walks the whole heap with
+    interrupts off, and an app's Lua leaves a great many blocks in PSRAM: 4.4 to 9.5 ms with an app
+    of 2-3 MB running, every 30 s, and nothing else over 1.8 ms in 5 minutes. The heartbeat
+    now prints only the totals the heap keeps. Don't walk a heap (`heap_caps_get_largest_free_block`,
+    `heap_caps_get_info`, `heap_caps_check_integrity`) while an app runs on this board.
+
+  A profile build's `[gap]` lines catch these (`Profiler.h`): any time the app's core took no interrupt
+  for over 1.8 ms, with where it was when they came back, and `[scan]` lines for each frame that lost
+  refills. Send `x` to hold interrupts off for 9 ms on purpose.
 - **Three frames, and apps draw straight into one that isn't on the glass** (since 2026-11-06,
   `Lcd::Canvas`). The driver keeps three frame buffers (`num_fbs = 3`). `screen`, `lgfx`, LVGL's
   flushes and the status text all draw into one that is neither being scanned nor about to be, and a

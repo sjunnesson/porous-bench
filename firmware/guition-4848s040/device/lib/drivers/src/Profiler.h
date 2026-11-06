@@ -1,6 +1,6 @@
 // Where the app's core spends its time, for firmware work: built in only with -DBENCH_PROFILE
 // (PLATFORMIO_BUILD_FLAGS=-DBENCH_PROFILE pio run -t upload), never in what Bench ships. The same
-// file on each board that has it.
+// file on each board that has it, but for the watch on interrupts below, which only this panel needs.
 //
 // A timer interrupts the loop task's core ~1000 times a second and notes where it was and who called
 // that (the PC FreeRTOS saved on the way into the interrupt, and two return addresses up the stack).
@@ -10,6 +10,12 @@
 // for them, so their time shows up as nothing at all. spin() measures that instead: the same loop
 // timed with and without them running.
 //
+// The same timer watches for interrupts held off: it should run every 997 us, so a longer gap is time
+// this core couldn't take an interrupt, and the panel's refill can't afford more than ~450 us of that.
+// Each gap over GAP_US prints as "[gap]", with where the task was when interrupts came back and who
+// called that; 'x' holds them off for 9 ms on purpose, to see what the panel does. "[scan]" lines say
+// when a frame's refills went short (RgbPanel::scanEvent).
+//
 // It also takes an app over serial, so a board needs no Wi-Fi to be measured: "L<bytes>\n" and then
 // the Lua source ('s' prints spin() again; 'k' drops Wi-Fi and joins again; 'h' prints a hash of the
 // picture after each flip, for checking that a change to the drawing code leaves every pixel where it
@@ -18,10 +24,14 @@
 #ifdef BENCH_PROFILE
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_cpu.h>
 #include <esp_heap_caps.h>
+#include <esp_rom_sys.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include "Lcd.h"
+#include <RgbPanel.h>
 
 namespace Profiler {
 
@@ -30,14 +40,25 @@ static uint32_t* s_pc = nullptr;
 static volatile int s_n = -1;  // -1: not sampling
 static hw_timer_t* s_timer = nullptr;
 
+static constexpr uint32_t GAP_US = 1800;
+struct Gap { uint32_t ms, us, stack[DEPTH]; };
+static Gap s_gaps[32];
+static volatile uint32_t s_gapN = 0;
+static uint32_t s_lastCycles = 0;
+
 static void IRAM_ATTR onTimer() {
+  uint32_t now = esp_cpu_get_cycle_count(), us = (now - s_lastCycles) / 240;
+  bool gap = s_lastCycles && us > GAP_US;
+  s_lastCycles = now;
   int n = s_n;
-  if (n < 0 || n >= N) return;
+  bool sampling = n >= 0 && n < N;
+  if (!gap && !sampling) return;
   // The interrupted task's stack top is the frame its registers were saved in: exit, pc, ps, a0, a1.
   // Its callers' windows were spilled to the stack on the way in: under each frame's stack pointer
   // lie the caller's a0 (its return address) and a1 (its stack pointer).
   uint32_t* frame = *(uint32_t**)xTaskGetCurrentTaskHandle();
-  uint32_t* rec = s_pc + n * DEPTH;
+  uint32_t here[DEPTH];
+  uint32_t* rec = here;
   uint32_t a0 = frame[3], sp = frame[4];
   rec[0] = frame[1];
   for (int d = 1; d < DEPTH; d++) {
@@ -51,7 +72,17 @@ static void IRAM_ATTR onTimer() {
     if (up <= sp) a0 = 0;
     sp = up;
   }
-  s_n = n + 1;
+  if (gap) {
+    uint32_t g = s_gapN;
+    Gap& e = s_gaps[g % 32];
+    e.ms = (uint32_t)(esp_timer_get_time() / 1000), e.us = us;
+    for (int d = 0; d < DEPTH; d++) e.stack[d] = here[d];
+    s_gapN = g + 1;
+  }
+  if (sampling) {
+    for (int d = 0; d < DEPTH; d++) s_pc[n * DEPTH + d] = here[d];
+    s_n = n + 1;
+  }
 }
 
 // A loop that touches no memory: how long it takes says how much of the core is left to the app.
@@ -72,9 +103,31 @@ inline void begin() {
 }
 
 inline void loop(void (*load)(const char*)) {
+  static uint32_t gapsShown = 0, scansShown = 0, lastScanLine = 0;
+  for (; gapsShown < s_gapN; gapsShown++) {
+    if (s_gapN - gapsShown > 32) gapsShown = s_gapN - 32;
+    const Gap& e = s_gaps[gapsShown % 32];
+    Serial.printf("[gap] %u ms: %u us, at %08x from %08x %08x\n", (unsigned)e.ms, (unsigned)e.us, (unsigned)e.stack[0],
+                  (unsigned)e.stack[1], (unsigned)e.stack[2]);
+  }
+  RgbPanel::ScanEvent se;
+  for (uint32_t total = RgbPanel::scanEvents(); scansShown < total; scansShown++) {
+    if (RgbPanel::scanEvent(scansShown, se)) {
+      Serial.printf("[scan] %u ms: %u refills in a frame, count at the vertical sync %s\n", (unsigned)se.ms, (unsigned)se.got, se.odd ? "odd" : "even");
+    }
+  }
+  if (millis() - lastScanLine >= 5000) {
+    lastScanLine = millis();
+    Serial.printf("[scan] %u short frames, %u gaps\n", (unsigned)RgbPanel::scanEvents(), (unsigned)s_gapN);
+  }
   while (Serial.available()) {
     int c = Serial.read();
-    if (c == 'p' && s_n < 0) {
+    if (c == 'x') {  // what a long critical section does to the picture
+      Serial.printf("[prof] interrupts off for 9 ms at %u ms\n", (unsigned)millis());
+      portDISABLE_INTERRUPTS();
+      esp_rom_delay_us(9000);
+      portENABLE_INTERRUPTS();
+    } else if (c == 'p' && s_n < 0) {
       Serial.println("[prof] sampling");
       s_n = 0;
     } else if (c == 'h') {
