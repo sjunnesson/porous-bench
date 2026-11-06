@@ -116,16 +116,17 @@ describe('Display.show timing', () => {
     const clock = pausedClock();
     const d = new Display(device('guition-esp32-s3-4848s040'), clock);
     let t0 = clock.now();
-    await settle(clock, d.show(), 0.5);
-    // The whole 480×480 frame, as measured on the board: 30.5 ms (a pixel a clock at 12 MHz would be 19.2).
-    expect(clock.now() - t0).toBeGreaterThan(30);
-    expect(clock.now() - t0).toBeLessThan(31);
+    await settle(clock, d.show(), 0.05);
+    // The whole 480×480 frame: the firmware shows another frame and copies next to nothing, ~0.5 ms
+    // on the board (a pixel a clock at 12 MHz would be 19.2; copying every tile, as it did, was 30.5).
+    expect(clock.now() - t0).toBeGreaterThan(0.4);
+    expect(clock.now() - t0).toBeLessThan(0.7);
     // Two squares in opposite corners: the box round them is the whole frame, but they're two tiles.
     d.fillRect(0, 0, 10, 10, colors.RED);
     d.fillRect(470, 470, 10, 10, colors.RED);
     t0 = clock.now();
     await settle(clock, d.show(), 0.01);
-    expect(clock.now() - t0).toBeLessThan(0.1); // 2 × 16 × 16 pixels ≈ 0.04 ms
+    expect(clock.now() - t0).toBeLessThan(0.1); // two tiles of 900: next to nothing
     expect(d.stats.bytes).toBe(480 * 480 * 2 + 11 + 2 * 16 * 16 * 2 + 11);
     expect(pixel(d, 475, 475)[0]).toBeGreaterThan(100); // and both reached the panel
   });

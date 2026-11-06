@@ -52,8 +52,11 @@ export interface DeviceProfile {
    *  clock (hz); it has no RAM of its own. */
   /** `flipMs`: a whole-frame flip as measured on the board with Bench's firmware, which a flip then
    *  takes its share of (what it sends); unset, the time comes from `hz` alone. A real flip costs more
-   *  than its clock: the CPU feeding the bus, PSRAM, the firmware turning the picture. */
-  bus: { kind: 'spi' | 'qspi' | 'rgb' | 'i2c' | 'ws2812'; hz: number; i2cAddress?: number; flipMs?: number };
+   *  than its clock: the CPU feeding the bus, PSRAM, the firmware turning the picture.
+   *  `scanHz` (rgb): how often the panel is scanned, measured, where the firmware flips between
+   *  frames at the vertical sync: a flip then costs next to nothing, and this is the most frames
+   *  a second the glass can show. */
+  bus: { kind: 'spi' | 'qspi' | 'rgb' | 'i2c' | 'ws2812'; hz: number; i2cAddress?: number; flipMs?: number; scanHz?: number };
   /** Where the visible area sits inside controller RAM (what drivers call colstart/rowstart). */
   ram?: { width: number; height: number; offsetX: number; offsetY: number };
   /** setRotation() the board's firmware applies (e.g. M5StickC Plus2 runs landscape). Used for Resident apps. */

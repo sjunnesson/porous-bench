@@ -16,13 +16,15 @@ export default {
   width: 480,
   height: 480,
   controller: 'ST7701S',
-  // 16-bit RGB at 12 MHz, as ESPHome runs it: no panel RAM, the chip scans a frame out of PSRAM.
-  // A flip of every tile, turned, measured 30.5 ms (firmware/guition-4848s040/README.md): PSRAM's
-  // bandwidth, not the 12 MHz pixel clock, sets it.
-  bus: { kind: 'rgb', hz: 12_000_000, flipMs: 30.5 },
+  // 16-bit RGB at 12 MHz, as ESPHome runs it: no panel RAM, the chip scans a frame out of PSRAM,
+  // 42.3 times a second with the porches Bench's firmware uses (measured). The firmware keeps three
+  // such frames and draws into one that isn't on the glass: a flip shows it from the next vertical
+  // sync and copies only tiles that frame lacked, ~0.5 ms measured (firmware/guition-4848s040/README.md).
+  // Until 2026-11-06 a flip copied every tile drawn into the one scanned frame: 30.5 ms for them all.
+  bus: { kind: 'rgb', hz: 12_000_000, flipMs: 0.5, scanHz: 42.3 },
   // Bench's firmware turns the picture 270° (SCREEN_ROTATION), so up is away from a USB-C facing down.
   firmwareRotation: 3,
-  // and copies only the 16×16 tiles drawn on since the last flip into the frame the panel scans.
+  // and a flip costs by the 16×16 tiles drawn on since the last one.
   flip: { tile: 16 },
   boards: ['guition-esp32-s3-4848s040'],
   wiring: {

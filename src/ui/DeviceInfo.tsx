@@ -3,6 +3,7 @@ import type { DeviceProfile } from '../sim/devices/types';
 
 function maxFps(d: DeviceProfile): number {
   const n = d.width * d.height;
+  if (d.bus.scanHz) return d.bus.scanHz;
   if (d.bus.flipMs) return 1000 / d.bus.flipMs;
   if (d.tech === 'led') return 1000 / (((n * 24) / d.bus.hz) * 1000 + 0.3);
   const bytes = d.tech === 'lcd' || d.tech === 'amoled' ? n * 2 : n / 8;

@@ -102,9 +102,12 @@ crawl on the glass. `on_tick` comes every 100 ms by default; Bench's firmware fo
 S3-Touch-LCD-2, the XIAO Round Display, the C6-LCD-1.47 and the Guition 4848S040 ticks every 33 ms
 (~30 fps, `SandboxConfig::tickIntervalMs`). Move things by `dt_ms`, not a fixed step a tick, so an
 app runs at the same speed on either. A tick that takes longer than the interval (its Lua plus
-the `flip()` that pushes the frame) delays the next one, and the frame rate drops with it. On
-those four a `flip()` sends only the 16×16 squares drawn on since the last one, and Bench times a
-flip the same way, so drawing less is faster on both.
+the `flip()` that pushes the frame) delays the next one, and the frame rate drops with it. On the
+S3-Touch-LCD-2, the XIAO and the C6 a `flip()` sends only the 16×16 squares drawn on since the last
+one, and Bench times a flip the same way, so drawing less is faster on both. On the Guition (its
+firmware since 2026-11-06) a flip sends nothing: the board draws into a frame that isn't on the
+glass and shows it at the next vertical sync, 42 times a second at most, so there a frame costs
+what drawing it costs.
 
 - **ESP32-C6: no FPU.** Every float operation is emulated, and `math.sin`, `math.sqrt` and `^` cost
   the most. Measured on the C6-LCD-1.47 with a full-screen `lgfx` flame: about 137,000 Lua
@@ -154,12 +157,13 @@ flip the same way, so drawing less is faster on both.
   - **To change little of something tall, leave it still.** An object repaints whole when it changes,
     so an equaliser's bar is a still gradient under opaque covers in the background's colour, in fixed
     sections, and only the cover at the level changes.
-  - **Costs on a board, per call:** Guition / S3-LCD-2: `set` of translate (same table) 278 / 220 µs,
-    `w, h` 569 / 289, `bg_opa` 479 / 198, arc's two angles 618 / 388, `style:set` 105 / 61,
-    `math.sin` + `math.cos` 32 / 29. Lua's maths is cheap on an S3; LVGL's calls and repaints aren't.
-  - **Known and unexplained on the Guition:** after some garbage collections, Patterns' guide lines
-    take about twice as long to draw, with the same area painted, until the board restarts. Orbits then
-    holds 30-31 fps rather than 33. The S3-LCD-2 doesn't do it, and a screen with fewer `Line`s barely shows it.
+  - **Costs on a board, per call:** Guition / S3-LCD-2: `set` of translate (same table) 109 / 220 µs,
+    `w, h` 170 / 289, `bg_opa` 134 / 198, arc's two angles 201 / 388, `style:set` 67 / 61,
+    `math.sin` + `math.cos` 31 / 29. Lua's maths is cheap on an S3; LVGL's calls and repaints aren't.
+    (The Guition's are with its firmware since 2026-11-06; before, they cost 2.5-4 times as much.)
+  - **The firmware only gets an untuned screen part of the way.** With the Guition's firmware since
+    2026-11-06, Patterns as it was before these rules runs at 29 passes a second on Orbits, 22 on
+    Bars, 14.5 on Spinner and 10.5 on Rings (it was 6.5-11 on all of them), and as it is now at 57-62.
   - **A saved app that crashes the board twice in a row isn't loaded again** on Bench's firmware: the
     screen says "Saved app crashed" and the board stays connected. Push a fixed one; a reset or power
     cycle tries the saved one again. An ordinary Lua error never gets that far.
@@ -168,12 +172,15 @@ flip the same way, so drawing less is faster on both.
   stack. Lua's own limit is 200, which is what Bench has. On Bench's S3 boards it's 25, then the error
   `C stack overflow`, and on boards without PSRAM (C6-LCD-1.47, e-paper) there's no limit that fits: about
   9 levels of `pcall` **panics the board and reboots it**. A recursive `__index` is the usual way there.
-- **Don't clear what didn't change, with `screen` or `lgfx`.** `screen.clear` or `fillScreen` marks every
-  tile, so `flip()` pushes the whole frame: 30.5 ms on the Guition, whatever moved. Bounce, Accel and
-  Tilt ball went from 13-17 fps to 30 there by painting over only where the thing was, and the Swiss
-  clock by drawing only when its second changes. A strip picture repaints only around its edge (Water
-  Sim: 12 to 29 fps). When every pixel really changes, flip part of it each tick, in bands at least
-  16 px wide (Rainbow: 8.5 to 30 flips a second, each band at 15).
+- **Don't clear what didn't change, with `screen` or `lgfx`, where a flip sends pixels** (the
+  S3-Touch-LCD-2, the XIAO, the C6, and the Guition's firmware before 2026-11-06). `screen.clear` or
+  `fillScreen` marks every tile, so `flip()` pushes the whole frame: 30.5 ms on that Guition, whatever
+  moved. Bounce, Accel and Tilt ball went from 13-17 fps to 30 there by painting over only where the
+  thing was, and the Swiss clock by drawing only when its second changes. A strip picture repaints
+  only around its edge (Water Sim: 12 to 29 fps). When every pixel really changes, flip part of it
+  each tick, in bands at least 16 px wide (Rainbow: 8.5 to 30 flips a second, each band at 15).
+  With the Guition's firmware since 2026-11-06 a flip copies nothing, and clearing and redrawing all
+  of 480×480 runs at the tick's 30 fps (an every-pixel Rainbow too); drawing less is still less work.
 - **A `Line`'s points in its parent's coordinates give it a box from the parent's origin to its furthest
   point**, and it repaints all of that. Place it at the corner of its points (Little devil: 6.4 to 27-29 fps).
 - **Reading LVGL back on a board:** an object has `.w` and `.h`, and `get_coords()` and `get_pos()`, as
