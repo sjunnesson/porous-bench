@@ -13,13 +13,19 @@ device/                   stage 3: the drivers; DEVICE-SKILL.md and check apps i
 Build and flash a stage with `pio run -t upload` in its folder. The board shows up as a USB
 Serial/JTAG port (`/dev/cu.usbmodem…`); if it doesn't, hold BOOT while pressing RST.
 
+Stage 3's first build compiles ESP-IDF to rebuild the Arduino core with its own settings (about
+four minutes; see "Speed and memory"). It rebuilds the libraries inside the shared `~/.platformio`
+framework package, so building another board's project afterwards reinstalls the prebuilt ones, and
+the next build here compiles its own again. Build one project at a time.
+
 ## What stage 3 gives apps
 
 `screen` (M5Stick verbs), `lgfx` (LovyanGFX-style), `lvgl` (LVGL 9 via luavgl), `button` (BOOT:
 `tap` / `hold`), `touchscreen` (CST816D: `read()`, `touch_*` events), `imu` (QMI8658), `screens`
 (`"main"`: 240×320, 16-bit, dark, brightness). Lua and LVGL live in the 8 MB PSRAM. Bench's board
-entry (`waveshare-esp32-s3-touch-lcd-2`: screen, lgfx, lvgl, 8192 KB) matches: with an app running,
-~7.9 MB of PSRAM and ~124-130 KB of internal RAM stay free (measured on core 3.3.12; ~204 KB on 2.0.17).
+entry (`waveshare-esp32-s3-touch-lcd-2`: screen, lgfx, lvgl, 8192 KB) names the chip's PSRAM: with
+an app running, ~5.2 MB of it stays free (the firmware's own code takes 2.75 MB since 2026-11-06)
+and ~105 KB of internal RAM with LVGL in use (see "Speed and memory").
 
 **Arduino core 3.3.12** (ESP-IDF 5.5, pioarduino's platform `55.03.312`, pinned) since 2026-11-01,
 as the C6 builds, so the two no longer reinstall each other's packages in `~/.platformio`; it was
@@ -171,23 +177,65 @@ What it taught:
 - **Doubles are software on the S3** (its FPU is single precision), as on the C6: blend colours in
   integers, build tables once, precompute per-object constants.
 
-## Speed and memory since 2026-11-05
+## Speed and memory
 
-The same changes as the Guition's, whose README says why each is there: LVGL's hot drawing code in IRAM
-with only the colour formats in use, TLS in PSRAM (`TlsInPsram.h`), a floor under LVGL's use of
-internal RAM (`LvglAlloc.c`), a 16 KB loop stack (`[perf]` reports what's left), `BootGuard.h`,
-`LUAI_MAXCCALLS` 25 and `LV_INV_BUF_SIZE` 64. Passes of LVGL's timer a second, capped at 66, for Patterns as it now is and (old)
-as it was:
+What the Guition's firmware learned (its README says how each was found), applied here on
+2026-11-06 where this board's profile agreed. The same apps before and after, in passes of LVGL's
+timer a second for LVGL apps (capped at 66; the apps draw at most 33 frames a second) and frames a
+second for the rest (the tick is 30). "Untuned" is Patterns as it was before it was rewritten for a
+board.
 
-| | before | now |
-|---|---|---|
-| Orbits / Rings / Bars / Spinner | 58 / 46 / 51 / 63 | 60 / 55 / 51 / 62 |
-| Old Orbits / Rings / Bars / Spinner | 16.5 / 25 / 26 / 33 | 16.7 / 26.7 / 28.9 / 33.7 |
+| | 2026-11-05 | own heap | faster SPI | code in PSRAM | bigger instruction cache |
+|---|---|---|---|---|---|
+| Untuned Orbits | 16.4 | 29.7 | 28.7 | 37.0 | 42.2 |
+| Untuned Rings | 26.7 | 27.8 | 30.1 | 33.3 | 34.3 |
+| Untuned Bars | 28.9 | 30.1 | 31.6 | 41.4 | 48.3 |
+| Untuned Spinner | 34.0 | 34.5 | 37.3 | 42.8 | 44.7 |
+| Little devil, hopping | 14.8 | 15.0 | 15.8 | 21.9 | 23.8 |
+| `driver-check` (most of the screen every tick) | 27.2 | 27.2 | 30.3 | 30.3 | 30.3 |
 
-The flame holds 29 fps. Running Patterns, internal RAM is 107-134 KB free, lowest 104 KB. The boot guard
-was tested with an app built to overflow the stack: "crash 2 in a row: not loading the saved app", and
-connected. After changing `lv_conf.h`, delete LVGL's objects (`rm -rf .pio/build/s3-lcd2/lib*/lvgl`):
-PlatformIO doesn't see that it changed, and flashes the old LVGL.
+Each column adds to the one before. Patterns as it is now was at 54-62 and is at 59-64. A whole
+frame's flip takes 20.1 ms (it was ~24), and one LVGL `set` 95 us where it cost 220 (a new table
+each call: 151, was 335).
+
+Internal RAM free: 221 KB at boot (223), 163 KB once Resident is up, ~105 KB with an LVGL app
+running, lowest 64 (it was 107-134, lowest 104: LVGL's pool is 32 KB of it, the instruction cache
+16, and LVGL out of IRAM gives 16 back). In the profile build, which has 35 KB less (its serial
+buffer), with an LVGL app at 66 KB free, Wi-Fi was dropped three times and the relay's connection
+came back each time, once only after a second try.
+
+As shipped, over the relay: Patterns 60-65 on every screen (worst frame 19 ms), untuned Orbits /
+Rings / Bars / Spinner 41.6 / 34.2 / 47.7 / 45.4, Little devil 56 at rest and 24 hopping,
+`driver-check`, Rainbow, Water Sim, Koi Pond and the logo at the tick's 30.
+
+- **Profile first** (`Profiler.h`, `../prof.py`, built with
+  `PLATFORMIO_BUILD_FLAGS=-DBENCH_PROFILE`): untuned Orbits had the app's core waiting on the system
+  heap's lock 36% of the time and half of it in LVGL's allocations; `driver-check` had 68% in the
+  Arduino core's SPI loop; Little devil 30% there and most of the rest in LVGL code read from flash.
+- **LVGL's memory in pools of its own** (`LvglAlloc.c`, as the Guition's): 32 KB chunks of internal
+  RAM with no lock, taken once an app uses LVGL and only above a floor of 48 KB free.
+  `../../core3.py` compiles luavgl's `free` as `lv_free`, or `lvgl.Font()` corrupts the heap.
+- **Pixels go out with the next 64 bytes made ready while the last are sent** (`sendPixels` in
+  `Lcd.cpp`). The S3's SPI peripheral sends 64 bytes at a time, and the Arduino core makes each 64
+  ready only once the last has gone: reading the canvas out of PSRAM and swapping bytes while the
+  bus sits idle. The same registers in the same order, only sooner. LVGL's flush is copied into the
+  canvas in the same wait. What's left of the gap, 2 us in 8.4, is the chip taking 20-odd register
+  writes; only DMA would remove it, and the `esp_lcd` attempt at that showed a black screen (see
+  "What bring-up taught").
+- **A rebuilt core: code in PSRAM, a 32 KB instruction cache** (`custom_sdkconfig` in
+  `platformio.ini`, ~4 minutes the first build, 2.75 MB of PSRAM and 16 KB of internal RAM). A 64 KB
+  data cache, which the Guition needs for its panel's scan, gained nothing here and cost LVGL its
+  pool: untuned Orbits fell from 42 to 28.
+- **LVGL's hot code is no longer in IRAM**: with code in PSRAM it's worth 1-2% and cost 16 KB.
+- **Checked by hash and by arithmetic, not by eye.** `Profiler.h`'s `h` prints a hash of the canvas
+  after each flip: 16 drawing scenes and 9 LVGL scenes hash as they did. A self-test at boot of the
+  profile build compares the words `sendPixels` hands the peripheral with the Arduino core's own
+  arithmetic, for every length: none differ. Neither sees the glass.
+- **From 2026-11-05, still here:** only the colour formats in use, TLS in PSRAM (`TlsInPsram.h`),
+  a 16 KB loop stack (`[perf]` reports what's left), `BootGuard.h`, `LUAI_MAXCCALLS` 25 and
+  `LV_INV_BUF_SIZE` 64.
+- **After changing `lv_conf.h`, delete LVGL's objects** (`rm -rf .pio/build/s3-lcd2/lib*/lvgl`):
+  PlatformIO doesn't see that it changed, and flashes the old LVGL.
 
 ## Home Assistant (optional)
 

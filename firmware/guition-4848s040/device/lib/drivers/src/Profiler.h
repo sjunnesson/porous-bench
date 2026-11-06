@@ -1,17 +1,19 @@
 // Where the app's core spends its time, for firmware work: built in only with -DBENCH_PROFILE
-// (PLATFORMIO_BUILD_FLAGS=-DBENCH_PROFILE pio run -t upload), never in what Bench ships.
+// (PLATFORMIO_BUILD_FLAGS=-DBENCH_PROFILE pio run -t upload), never in what Bench ships. The same
+// file on each board that has it.
 //
 // A timer interrupts the loop task's core ~1000 times a second and notes where it was and who called
 // that (the PC FreeRTOS saved on the way into the interrupt, and two return addresses up the stack).
-// Send 'p' over serial and it samples for 8 s, then prints the addresses; ../../../prof.py on the host
+// Send 'p' over serial and it samples for 8 s, then prints the addresses; firmware/prof.py on the host
 // names them from firmware.elf. A sample at the ROM's _xtos_set_intlevel is one that had to wait for a
-// critical section to end: its callers say whose. Other interrupts
-// (the panel's refill) can't be sampled: this one waits for them, so their time shows up as nothing
-// at all. spin() measures that instead: the same loop timed with and without the scan running.
+// critical section to end: its callers say whose. Other interrupts can't be sampled: this one waits
+// for them, so their time shows up as nothing at all. spin() measures that instead: the same loop
+// timed with and without them running.
 //
 // It also takes an app over serial, so a board needs no Wi-Fi to be measured: "L<bytes>\n" and then
-// the Lua source ('s' prints spin() again; 'k' drops Wi-Fi and joins again; 'h' prints a hash of the picture after each flip, for
-// checking that a change to the drawing code leaves every pixel where it was).
+// the Lua source ('s' prints spin() again; 'k' drops Wi-Fi and joins again; 'h' prints a hash of the
+// picture after each flip, for checking that a change to the drawing code leaves every pixel where it
+// was).
 #pragma once
 #ifdef BENCH_PROFILE
 #include <Arduino.h>
@@ -103,6 +105,9 @@ inline void loop(void (*load)(const char*)) {
     }
   }
   if (s_n < N) return;
+#if ARDUINO_USB_CDC_ON_BOOT
+  Serial.setTxTimeoutMs(200);  // a board that drops prints nobody reads (its own USB): not these
+#endif
   Serial.printf("[prof] begin %d x %d\n", N, DEPTH);
   for (int i = 0; i < N * DEPTH; i += 15) {  // five samples a line
     char line[15 * 9 + 2];
@@ -111,6 +116,9 @@ inline void loop(void (*load)(const char*)) {
     Serial.println(line);
   }
   Serial.println("[prof] end");
+#if ARDUINO_USB_CDC_ON_BOOT
+  Serial.setTxTimeoutMs(0);
+#endif
   s_n = -1;
 }
 

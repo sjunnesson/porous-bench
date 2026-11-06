@@ -19,6 +19,7 @@
 #include "AppStore.h"
 #include "TlsInPsram.h"
 #include "BootGuard.h"
+#include "Profiler.h"
 #include "HomeAssistant.h"
 
 static constexpr const char* RESIDENT_HOST = "resident.inanimate.tech";
@@ -110,6 +111,9 @@ static void keepConnecting() {
 
 void setup() {
   TlsInPsram::begin();
+#ifdef BENCH_PROFILE
+  Serial.setRxBufferSize(32768);  // an app arrives over serial while a frame may be drawing
+#endif
   Serial.begin(115200);
   BootGuard::begin();
   // Never wait on the USB serial: with a computer plugged in but nothing reading the port, the
@@ -133,6 +137,10 @@ void setup() {
     while (true) delay(1000);
   }
   printMemory("after the canvas");
+#ifdef BENCH_PROFILE
+  Serial.printf("[selftest] words to the panel that differ from the Arduino core's: %u\n", (unsigned)Lcd::spiSelfTest());
+  Profiler::begin();
+#endif
 
   sandbox.setIdleScreenTitle(BootGuard::holding() ? "Saved app crashed" : "Connected");
 
@@ -191,6 +199,9 @@ void loop() {
   uint32_t t0 = micros();
   sandbox.loop();
   BootGuard::loop();
+#ifdef BENCH_PROFILE
+  Profiler::loop([](const char* code) { sandbox.loadApp(code); });
+#endif
   keepConnecting();
   uint32_t us = micros() - t0;
   loops++;

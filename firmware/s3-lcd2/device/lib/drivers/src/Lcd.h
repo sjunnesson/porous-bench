@@ -2,7 +2,7 @@
 // the status text all draw into `canvas`, a 240x320 RGB565 GFXcanvas16
 // (150 KB, in PSRAM).
 //
-// Pushes go to the ST7789T3 at 80 MHz: present() the whole canvas (~25 ms),
+// Pushes go to the ST7789T3 at 80 MHz: present() the whole canvas (~20 ms),
 // presentDirty() only the 16x16 tiles drawn since the last push (what lgfx and
 // screen flips use), LVGL's flushes each rectangle it redrew.
 #pragma once
@@ -100,6 +100,10 @@ public:
 };
 
 extern GFXcanvas16* canvas;
+#ifdef BENCH_PROFILE
+extern bool hashFlips;  // print a hash of the picture after each flip (Profiler.h's 'h')
+uint32_t spiSelfTest();  // how many of the words sent to the panel differ from the Arduino core's (0)
+#endif
 
 inline uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);

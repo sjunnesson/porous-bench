@@ -37,7 +37,7 @@
  * - LV_STDLIB_RTTHREAD:    RT-Thread implementation
  * - LV_STDLIB_CUSTOM:      Implement the functions externally
  */
-#define LV_USE_STDLIB_MALLOC    LV_STDLIB_CUSTOM  /* Bench: internal RAM down to a floor (lib/drivers/src/LvglAlloc.c) */
+#define LV_USE_STDLIB_MALLOC    LV_STDLIB_CUSTOM  /* Bench: pools of its own in internal RAM, down to a floor (lib/drivers/src/LvglAlloc.c) */
 #define LV_USE_STDLIB_STRING    LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF   LV_STDLIB_CLIB
 
@@ -373,10 +373,10 @@
 #define LV_ATTRIBUTE_LARGE_RAM_ARRAY
 
 /*Place performance critical functions into a faster memory (e.g RAM)*/
-#if !defined(__ASSEMBLER__)
-#include <esp_attr.h>
-#endif
-#define LV_ATTRIBUTE_FAST_MEM IRAM_ATTR  /* Bench: LVGL's hot drawing code out of flash, where each cache miss costs */
+/* Bench: left alone. In IRAM (IRAM_ATTR) it was worth having while code ran from flash, and took
+ * 25 KB of internal RAM; since code runs from PSRAM behind a 32 KB cache (platformio.ini's
+ * custom_sdkconfig) it's worth nothing here either (see the README). */
+#define LV_ATTRIBUTE_FAST_MEM
 
 /*Export integer constant to binding. This macro is used with constants in the form of LV_<CONST> that
  *should also appear on LVGL binding API such as Micropython.*/

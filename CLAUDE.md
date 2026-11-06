@@ -78,8 +78,8 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   stage of Resident's start-building guide, with a README of what bring-up taught. Ask before
   flashing a board. PlatformIO doesn't notice a changed `lv_conf.h` (LVGL includes it through a macro):
   delete `.pio/build/<env>/lib*/lvgl`, or the old LVGL is flashed and the build still says SUCCESS.
-  Profile before optimising firmware (`firmware/guition-4848s040/prof.py` and its `Profiler.h`), and
-  check a change to a drawing path with the picture's hash (the same file's `h`): the scan itself
+  Profile before optimising firmware (`firmware/prof.py` and a board's `Profiler.h`), and
+  check a change to a drawing path with the picture's hash (`Profiler.h`'s `h`): the scan itself
   still needs someone to look at the glass.
 - **What Bench counts** (Vercel Web Analytics custom events, at most two values each on Pro) is
   `src/analytics.ts`, every event listed in `privacy.html` (`tests/analytics.test.ts` checks): only
