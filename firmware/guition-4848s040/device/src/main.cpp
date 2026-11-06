@@ -3,9 +3,10 @@
 // (LVGL 9 via luavgl, flushed into the same frame), button (no keys on this
 // board: Bench's taps arrive through it while Bench mirrors an app),
 // touchscreen (GT911: read() and touch_* events; also the system button),
-// screens ("main": 480x480, 16-bit, dark, brightness). Lua, LVGL and the
-// frames live in PSRAM. Parts on the bench come from Bench while it mirrors an
-// app here, so there are no drivers for them.
+// screens ("main": 480x480, 16-bit, dark, brightness). Lua, the three frames
+// and the code itself live in PSRAM; LVGL's objects in pools of internal RAM.
+// Parts on the bench come from Bench while it mirrors an app here, so there
+// are no drivers for them.
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <Resident.h>
@@ -20,6 +21,7 @@
 #include "RootCerts.h"
 #include "TlsInPsram.h"
 #include "BootGuard.h"
+#include "Profiler.h"
 
 // Another relay that speaks the same wire (a self-hosted Worker) goes in at
 // build time: PLATFORMIO_BUILD_FLAGS='-DRELAY_HOST=\"my-relay.example.dev\"'.
@@ -64,10 +66,13 @@ static Resident::SandboxConfig makeConfig() {
   // LVGL's display is only created when an app first calls lvgl.bind("main");
   // it flushes into the same frame as screen/lgfx. Its draw buffer is ours, in
   // internal RAM: LVGL's own (a tenth of the screen, from lv_malloc) landed
-  // in PSRAM, where rendering is slower, and took ten strips a frame.
+  // in PSRAM, where rendering is slower. 32 rows: a whole number of the frame's
+  // 16-pixel tiles, so a strip of a full repaint never leaves a tile half
+  // drawn to be brought over first (40 rows did, a third of them). 48 rows were
+  // 6-8% faster for screens of arcs and cost 15 KB more internal RAM.
   Resident::LvglModule::DisplayOptions lv;
-  lv.bufferRows = 40;
-  lv.bufferBytes = 480 * 40 * 2;
+  lv.bufferRows = 32;
+  lv.bufferBytes = 480 * 32 * 2;
   lv.buffer = heap_caps_malloc(lv.bufferBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   lvglModule.addDisplay("main", lv);
   cfg.extensions = {&screenDriver, &buttonDriver, &touchDriver, &lgfxModule, &lvglModule};
@@ -88,6 +93,9 @@ Resident::Sandbox sandbox{makeConfig()};
 
 void setup() {
   TlsInPsram::begin();
+#ifdef BENCH_PROFILE
+  Serial.setRxBufferSize(32768);  // an app arrives over serial while a frame may be drawing
+#endif
   Serial.begin(115200);
   BootGuard::begin();
   Serial.println();
@@ -100,11 +108,18 @@ void setup() {
 
   // Panel and the full-frame canvas first, so Resident's first status has
   // somewhere to go.
+#ifdef BENCH_PROFILE
+  uint32_t spinBefore = Profiler::spin();
+#endif
   if (!Lcd::begin()) {
     Serial.println("[lcd] panel scan or canvas allocation FAILED");
     while (true) delay(1000);
   }
   printMemory("after the canvas");
+#ifdef BENCH_PROFILE
+  Serial.printf("[prof] spin %u us before the scan, %u us with it\n", (unsigned)spinBefore, (unsigned)Profiler::spin());
+  Profiler::begin();
+#endif
 
   sandbox.setIdleScreenTitle(BootGuard::holding() ? "Saved app crashed" : "Connected");
 
@@ -144,6 +159,9 @@ void loop() {
   uint32_t t0 = micros();
   sandbox.loop();
   BootGuard::loop();
+#ifdef BENCH_PROFILE
+  Profiler::loop([](const char* code) { sandbox.loadApp(code); });
+#endif
   uint32_t us = micros() - t0;
   loops++;
   loopUs += us;

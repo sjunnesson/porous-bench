@@ -40,6 +40,9 @@ static volatile uint32_t s_scans = 0;
 static float s_backlight = 1.0f;
 static int s_rotation = 0;
 static uint16_t* s_fb = nullptr;     // the frame being scanned, once found (findFrameBuffer)
+static int s_frames = 1;
+static const uint16_t* volatile s_shown = nullptr;   // the frame show() last named: on the glass, or about to be
+static const uint16_t* volatile s_scanned = nullptr; // the frame the refill interrupt is reading
 static uint16_t* s_strip = nullptr;  // WIDTH x STRIP pixels for draw_bitmap, only if the frame wasn't found
 
 static void spiWord(bool data, uint8_t v) {
@@ -129,6 +132,15 @@ static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, esp_lcd_rgb_panel_event_dat
   s_scans = s_scans + 1;  // not ++: C++20 (core 3.x) deprecates it on a volatile
   return false;
 }
+
+#if ESP_IDF_VERSION_MAJOR >= 5
+// The refill interrupt has copied the last rows of a frame out, and takes the next frame's from
+// whichever show() named last: the one it was reading is free to draw into.
+static bool IRAM_ATTR onFrameRead(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
+  s_scanned = s_shown;
+  return false;
+}
+#endif
 
 // A turned picture is fastest turned straight into the frame (34 ms a frame,
 // against 36 through a strip in internal RAM, 2026-10-26), but IDF 4.4 has no
@@ -222,6 +234,7 @@ static bool startScan() {
   // every such frame shifted: the picture jumped about (2026-11-02, on the board). 19 KB of
   // internal RAM; 480 x 480 is 48 of them.
   cfg.bounce_buffer_size_px = WIDTH * 10;
+  cfg.num_fbs = s_frames;
 #else
   cfg.psram_trans_align = 64;
 #endif
@@ -245,11 +258,17 @@ static bool startScan() {
   // A scan ends at each vertical sync (IDF 5 takes the callback here, not in the config).
   esp_lcd_rgb_panel_event_callbacks_t cbs = {};
   cbs.on_vsync = onScan;
+#if ESP_IDF_VERSION_MAJOR >= 6
+  cbs.on_frame_buf_complete = onFrameRead;
+#else
+  cbs.on_bounce_frame_finish = onFrameRead;
+#endif
   esp_lcd_rgb_panel_register_event_callbacks(s_panel, &cbs, nullptr);
 #endif
   esp_lcd_panel_reset(s_panel);
   esp_lcd_panel_init(s_panel);  // starts the scan, which never stops on its own
   s_fb = findFrameBuffer();
+  s_shown = s_scanned = s_fb;
   if (!haveStrip()) s_rotation = 0;
   return true;
 }
@@ -262,7 +281,8 @@ static void setBacklightRaw(uint32_t duty) {
 #endif
 }
 
-bool begin() {
+bool begin(int frames) {
+  s_frames = constrain(frames, 1, 3);
   // Backlight off while the panel starts, so the power-on garbage never shows.
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
   ledcAttach(PIN_BL, BL_HZ, BL_BITS);  // core 3.x: the pin is the channel's handle
@@ -280,10 +300,22 @@ bool begin() {
 
 // Inside beginBatch()..endBatch() the frame rows written are noted and written
 // back from the cache once, at the end, instead of after each rectangle.
+//
+// With bounce buffers (IDF 5 and later here) nothing is written back at all: the interrupt that
+// refills them reads the frame with the CPU, through the same cache the CPU wrote it through, as
+// esp_lcd's own draw_bitmap notes. Only a DMA reading PSRAM itself (IDF 4.4) needs PSRAM up to date.
+// Writing back anyway walked every cache line of the rows between the first and last tile drawn,
+// on each push.
 static int s_batch = 0;
 static int s_backLo = HEIGHT, s_backHi = -1;
+#if ESP_IDF_VERSION_MAJOR >= 5
+static constexpr bool WRITE_BACK = false;
+#else
+static constexpr bool WRITE_BACK = true;
+#endif
 
 static void written(int fy0, int fy1) { // frame rows fy0..fy1 changed in the cache
+  if (!WRITE_BACK) return;
   if (s_batch) {
     s_backLo = min(s_backLo, fy0);
     s_backHi = max(s_backHi, fy1);
@@ -296,7 +328,7 @@ void beginBatch() { s_batch++; }
 
 void endBatch() {
   if (s_batch == 0 || --s_batch > 0) return;
-  if (s_fb && s_backHi >= 0) {
+  if (WRITE_BACK && s_fb && s_backHi >= 0) {
     Cache_WriteBack_Addr((uint32_t)(s_fb + s_backLo * WIDTH), (s_backHi - s_backLo + 1) * WIDTH * 2);
   }
   s_backLo = HEIGHT;
@@ -371,6 +403,34 @@ bool restart() {
 }
 
 bool writesDirect() { return s_fb; }
+
+int frames(uint16_t** out, int max) {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  void* fb[3] = {};
+  int n = min(max, s_frames);
+  if (!s_panel || n < 1) return 0;
+  esp_err_t err = n == 1 ? esp_lcd_rgb_panel_get_frame_buffer(s_panel, 1, &fb[0])
+                : n == 2 ? esp_lcd_rgb_panel_get_frame_buffer(s_panel, 2, &fb[0], &fb[1])
+                         : esp_lcd_rgb_panel_get_frame_buffer(s_panel, 3, &fb[0], &fb[1], &fb[2]);
+  if (err != ESP_OK) return 0;
+  for (int i = 0; i < n; i++) out[i] = (uint16_t*)fb[i];
+  return n;
+#else
+  return 0;
+#endif
+}
+
+// A pointer into one of its own frames tells the driver to scan that one from the next frame on:
+// nothing is copied, and with bounce buffers nothing needs writing back from the cache. s_shown
+// follows the call: an interrupt between the two leaves the frame it was reading marked in use for
+// one scan more, and never a frame free that's on the glass.
+void show(const uint16_t* frame) {
+  if (!s_panel) return;
+  esp_lcd_panel_draw_bitmap(s_panel, 0, 0, WIDTH, HEIGHT, frame);
+  s_shown = frame;
+}
+
+bool inUse(const uint16_t* frame) { return frame == s_shown || frame == s_scanned; }
 
 void setBacklight(float v) {
   s_backlight = constrain(v, 0.0f, 1.0f);

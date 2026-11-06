@@ -18,6 +18,11 @@ a USB Serial/JTAG port, and auto-reset flashes it without touching a key (BOOT a
 case). Give it a supply that holds 5 V: Wi-Fi's current spikes brown it out on a weak laptop port.
 On the relay versions, don't feed 5 V into header H1 and the USB-C at the same time.
 
+Stage 3's first build compiles ESP-IDF to rebuild the Arduino core with its own settings (about
+five minutes; see "Speed and memory"). It rebuilds the libraries inside the shared `~/.platformio`
+framework package, so building another board's project afterwards reinstalls the prebuilt ones, and
+the next build here compiles its own again. Build one project at a time.
+
 Stage 3 connects to `resident.inanimate.tech`. For a self-hosted relay on the same wire (a
 Cloudflare Worker), give its host at build time; a plain upload puts the board back on the hosted one:
 
@@ -38,9 +43,10 @@ flashed.
 
 `screen` (M5Stick verbs), `lgfx` (LovyanGFX-style), `lvgl` (LVGL 9 via luavgl), `touchscreen`
 (GT911: `read()`, `touch_*` events), `button` (no keys: Bench's taps while it mirrors an app),
-`screens` (`"main"`: 480×480, 16-bit, dark, brightness). Lua, LVGL and both frames (the canvas apps
-draw in and the frame the panel is scanned from, 450 KB each) live in the 8 MB PSRAM. Bench's board
-entry (`guition-esp32-s3-4848s040`: screen, lgfx, lvgl, 8192 KB) matches.
+`screens` (`"main"`: 480×480, 16-bit, dark, brightness). The 8 MB PSRAM holds the firmware's own
+code (2.7 MB, copied there at boot), three 450 KB frames and Lua: about 3.9 MB is free with an app
+running. Bench's board entry (`guition-esp32-s3-4848s040`: screen, lgfx, lvgl, 8192 KB) names the
+chip's PSRAM, as for every board with PSRAM; no app comes near what's left.
 
 `lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
 `setClipRect` / `clearClipRect` (Resident's fork, branch `lgfx-pushimage`). The canvas writes both
@@ -98,69 +104,53 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   Arduino core 2.0.17) owns a 450 KB frame buffer in PSRAM and streams it at a 12 MHz pixel clock,
   with Arduino_GFX's porches for this init sequence (H 10/8/50, V 10/8/20): 548 × 518 clocks a
   frame, 42.3 frames a second. Pixels go out in RGB565 as the chip stores them; no byte swap.
-- **Apps draw into a canvas of their own.** `screen`, `lgfx` and the status text draw into a second
-  480×480 canvas; a flip copies what was drawn since the last one into the scanned frame. Drawing
-  straight into the scanned frame would show every half-drawn frame. LVGL's flushes land in the
-  canvas and its frame goes out whole when LVGL says it's done.
-- **A flip copies 16×16 tiles, not rows** (since 2026-10-26, `Lcd::Canvas`). The canvas notes a bit
-  for each tile anything is drawn on, and a flip copies the runs of drawn tiles along each band of
-  16 rows as rectangles (`RgbPanel::drawRect`), then writes the cache back once. Copying every row
-  from the topmost thing drawn to the bottommost, as it did, pushed most of the frame for five koi
-  spread over the pond: 17-24 ms a flip; their tiles are ~20% of it, ~6.5 ms.
-- **Lines and pixels go straight into the canvas.** Adafruit GFX draws a line pixel by pixel through
+- **Three frames, and apps draw straight into one that isn't on the glass** (since 2026-11-06,
+  `Lcd::Canvas`). The driver keeps three frame buffers (`num_fbs = 3`). `screen`, `lgfx`, LVGL's
+  flushes and the status text all draw into one that is neither being scanned nor about to be, and a
+  flip names it to the driver (`esp_lcd_panel_draw_bitmap` with a pointer into its own frame), which
+  scans it from the next vertical sync. Nothing is copied, the glass never shows a half-drawn frame,
+  and no frame is shown torn. `on_frame_buf_complete` says when the refill interrupt has left a
+  frame, so it's free again. Two frames would do, but the one just swapped out stays on the glass
+  until the vertical sync, up to 24 ms in which nothing could be drawn: 5 ms a frame for Patterns,
+  measured. The third costs 450 KB of PSRAM.
+- **Tiles say what a frame lacks.** A frame taken up for the next picture is two pictures old. Each
+  16×16 tile drawn on is noted, and at the flip those are tiles the other two frames now lack. A
+  lacking tile is copied from the newest frame just before something is drawn on part of it, or at
+  the flip if nothing was; one about to be covered whole (a clear, a big rectangle, an image, the
+  middle of an LVGL flush) isn't copied at all. An app that redraws everything copies nothing; one
+  that moves a sprite copies the tiles round it, a few hundred bytes each.
+- **The picture is drawn turned.** With `SCREEN_ROTATION` set, every pixel, rectangle, line and
+  image goes into the frame where the turn puts it (`Canvas::toFrame`), and `RgbPanel::toImage`
+  turns the GT911's points back, so no app needs to know. Turned 90° or 270°, a picture row is a
+  frame column: images and LVGL's flushes are written 16 frame rows at a time, reading the source
+  along its rows 16 pixels at a time, so both stay in the cache.
+- **Checked by hash, not by eye.** `Profiler.h`'s `h` prints a hash of the picture, in the picture's
+  own coordinates, after each flip. Two test apps (16 scenes through `screen` and `lgfx`: fills,
+  lines in every direction, text, circles, both kinds of image, a clip, partial redraws; 9 LVGL
+  scenes) gave the same hashes drawn this way as through the canvas it replaced. What the hash can't
+  see is the scan itself: look at the glass after changing `RgbPanel` or `Lcd`.
+- **Lines and pixels go straight into the frame.** Adafruit GFX draws a line pixel by pixel through
   two virtual calls and GFXcanvas16's checks, ~0.55 us a pixel on the board; `Canvas::drawLine` is
-  its own Bresenham (a 40 px diagonal: 26 us down to 12), and `drawPixel`/`writePixel` write the
-  buffer themselves, which circles and text go through (a 30 px circle: 65 us down to 40). A call
-  from Lua costs ~3 us before it draws anything; `fillRect` ~0.05 us a pixel.
-- **Rectangles fill row by row** (since 2026-10-27, as on the C6). Adafruit GFX fills a rectangle
-  a column at a time, each column through two virtual calls and its own tile marking, so wide,
-  short ones cost most. Measured here: a 60×2 span from 42 us to 10 (2×60: 13 to 12), a 60×40 koi
-  wipe 133 to 60, a 70×16 rounded box 90 to 43, 200×200 4.6 ms to 3.1, the whole 480×480 26.1 ms
-  to 16.8, as fast as `fillScreen` (writing the PSRAM is the limit). Koi Pond, which wipes 15
-  rectangles a frame and spends the rest on lines and Lua: 33-37.5 ms a frame to 33-35.
-- **The picture is turned as it's copied.** With `SCREEN_ROTATION` set, `RgbPanel::drawRect` turns
-  each rectangle into the scanned frame, and `RgbPanel::toImage` turns the GT911's points back, so
-  no drawing path and no app needs to know. Turned 90° or 270°, a rectangle's canvas rows are frame
-  columns: the CPU reads it along the canvas rows, 16 pixels (one 32-byte cache line) at a time, and
-  writes it straight into the scanned frame, 16 frame rows at a time. IDF 4.4 has no call that
-  returns the frame buffer (IDF 5 adds one), so `findFrameBuffer()` looks for the pointer among the
-  driver's private fields: a PSRAM pointer under which two pixels drawn through `draw_bitmap` read
-  back. If none does, turned rectangles go through a 15 KB strip in internal RAM and `draw_bitmap`.
-  The canvas starts on a 64-byte boundary, so each 32-byte read is a single cache line.
-- **PSRAM bandwidth is what a push costs.** Measured on the board (2026-10-26), a whole 480×480
-  frame:
-
-  | | ms |
-  |---|---|
-  | `draw_bitmap`, not turned (`memcpy` takes the same: PSRAM is the limit) | 26.2 |
-  | reading 450 KB of PSRAM / writing 450 KB, through the cache | 11.1 / 16.9 |
-  | turning 270° with the CPU, both sides in internal RAM | 5.0 |
-  | turned 270° through a strip and `draw_bitmap`, canvas not aligned | 43.7 |
-  | turned 270° through a strip, canvas aligned | 36 |
-  | turned 270° straight into the frame (shipped) | 34 |
-
-  In the apps, the same build turned and not (2026-10-26, two 30 s windows each):
-
-  | | not turned | turned 270° |
-  |---|---|---|
-  | `driver-check`, the whole screen every tick | 19.1 fps (26.8 ms push, 52.3 ms a frame) | 16.8 fps (34.0 ms push, 59.5 ms a frame) |
-  | `lvgl-check`, a sliding box (41-row bands) | 26.5 fps (2.4 ms a push) | 28.0 fps (4.1 ms a push) |
-
-  The app's own drawing takes the same 25.5 ms either way: turning costs a full-screen app 7.2 ms a
-  frame, 12%. An app that redraws a band stays under the 33 ms tick either way, and the tick sets
-  its rate.
-
-  With tiles and the faster lines (turned, 2026-10-26): `driver-check` 17.7 fps (every tile, 30.5
-  ms a flip); `lvgl-check`'s box 2% of the frame, 0.4 ms a flip; Koi Pond (five koi drawn as lines,
-  wiped by `fillRect`s) from ~22 fps to ~29, its flips 6.4-6.9 ms, so it keeps up with the tick.
+  its own Bresenham, touching only the tiles it crosses, and `drawPixel`/`writePixel` write the
+  frame themselves, which circles and text go through. Rectangles fill a frame row at a time
+  (Adafruit fills a column at a time, each through two virtual calls).
+- **What it replaced: a canvas, copied into the one scanned frame at each flip** (2026-10-26 to
+  2026-11-05). Apps drew into a 450 KB canvas, and a flip copied the 16×16 tiles drawn on into the
+  frame, turning them on the way. PSRAM's bandwidth set the price: a whole frame took 26.2 ms to
+  copy and 30.5-34.5 ms turned, however it was done (through a strip in internal RAM: 36; reading
+  450 KB of PSRAM alone: 11.1; writing it: 16.9). A full-screen app paid for the picture three times
+  over: drawn into the canvas, read back out, written into the frame. A profile of `driver-check`
+  had 52% of the app's core in that copy and 32% clearing the canvas; Little devil, hopping, 44% in
+  the copy chain; an untuned LVGL screen 29%. `driver-check` ran at 15 fps and now runs at 30.
 - **Not by DMA.** GDMA (`esp_async_memcpy`, which IDF 4.4 lets write PSRAM) writes the frame past the
   cache, about twice as fast: 8.2 ms for a frame from internal RAM, 15.3 from the canvas, 19-21 ms
   turned with the CPU turning the next strip while the DMA writes the last. But it takes so much of
   PSRAM that the LCD's own DMA runs dry: the picture slipped again and again, several shifted copies
   ghosting across the glass, while the `[perf]` scan count stayed at 42.2. A slip doesn't show in
   the log; only on the glass.
-- **Flash writes and the scan.** Writing flash stops the cache, and the PSRAM the scan reads from
-  with it. On these RGB boards that is known to make the picture flicker or scroll (users of Tasmota
+- **Flash writes and the scan** (as seen on 2.0.17; not looked at again since the code moved to
+  PSRAM, which keeps the cache running through a flash write). Writing flash stops the cache, and
+  the PSRAM the scan reads from with it. On these RGB boards that is known to make the picture flicker or scroll (users of Tasmota
   and ESPHome report it during OTA and saves), and IDF 4.4 has no bounce buffers to carry the scan
   through it. On this board the picture glitches while flash is written and comes back by itself,
   in place: stage 1's FLASH wrote 256 KB seven times (0.8 to 2.5 s each) and the border was intact
@@ -193,63 +183,94 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   fps). On this board `lvgl-check`, which moves its box in `on_tick`, pushes 28 frames a second:
   the tick is what holds it. Bench's profile for the display ticks at 33 too (`tickMs`).
 
-## Speed and memory: what the firmware does for LVGL (2026-11-05)
+## Speed and memory
 
-Measured with Patterns and the other bundled apps, passes of LVGL's timer a second (Bench's firmware
-caps a pass at 66, and the apps draw at most 33 frames a second). "Old" is Patterns as it was before
-it was rewritten for a board: an app nobody has tuned.
+Measured on a second board (`240a901b`, 2026-11-06), the same apps before and after, in passes of
+LVGL's timer a second for LVGL apps (capped at 66; the apps draw at most 33 frames a second) and
+frames a second for the rest (the tick is 30). "Untuned" is Patterns as it was before it was
+rewritten for a board, and Rainbow as Resident ships it: apps nobody has tuned.
 
-| | before | now |
-|---|---|---|
-| Patterns: Orbits, first / rebuilt | 33 / 23 | 41-44 / 30-31 |
-| Patterns: Rings, first / rebuilt | 32 / 29 | 38-47 / 38-39 |
-| Patterns: Spinner | 36-58 | 44-60 |
-| Old Patterns: Orbits / Rings / Bars / Spinner | 7.9 / 8.1 / 6.5 / 11.2 | 9.8 / 8.8 / 11.2 / 11.6 |
-| Internal RAM free: at boot / running Orbits | 253 / 90 KB | 229 / 111 KB |
+| | 2026-11-05 | own heap | code in PSRAM | three frames | bigger caches |
+|---|---|---|---|---|---|
+| Patterns: Orbits | 41.8 | 50.5 | 60.2 | 61.0 | 62.4 |
+| Patterns: Bars | 33.2 | 33.1 | 49.1 | 48.0 | 55.6 |
+| Untuned Orbits | 10.1 | 19.1 | 23.4 | 23.7 | 29.3 |
+| Untuned Bars | 12.1 | 12.5 | 15.1 | 16.4 | 22.0 |
+| Little devil, hopping | 7.1 | 7.2 | 8.8 | 10.2 | 12.7 |
+| Untuned Rainbow (every pixel, in 4 px strips) | 8.4 | 8.5 | 8.7 | 20.0 | 30.3 |
+| `driver-check` (the whole screen every tick) | 15.2 | 15.0 | 15.5 | 30.3 | 30.3 |
 
-These move between boots with what's where in memory, hence the ranges. All hold 30 frames a second or
-better. So the firmware gives a tuned app its margin, and an untuned one little: most of what an app costs is
-what it makes LVGL repaint (`docs/resident/DEVICE-SKILL.md`, "Speed on a real board").
+Each column adds to the one before. As shipped, over the relay: Patterns 57-62 on every screen (a
+second visit to Orbits the same as the first), untuned Orbits / Rings / Bars / Spinner 29 / 10.5 /
+22 / 14.5, Little devil 60 at rest and 13.7 hopping, Koi Pond, Birdie, Water Sim and the logo at
+the tick's 30. One LVGL `set` costs 109 us where it cost 278 (a new table each call: 189, was 739).
 
-- **LVGL's hot drawing code is in IRAM** (`LV_ATTRIBUTE_FAST_MEM`). Flash and PSRAM share a bus with
-  the panel's scan, so a cache miss costs more here than on any other board. That took more than
-  anything else: it's the difference above in Orbits and Rings.
+Internal RAM free went from 229 KB at boot to 202, and from ~110 KB with Patterns running to ~75
+(lowest 66). With an LVGL app at 62 KB free, Wi-Fi was dropped three times and the relay's
+connection came back each time.
+
+- **Profile first.** Build with `PLATFORMIO_BUILD_FLAGS=-DBENCH_PROFILE` and `Profiler.h` samples
+  where the app's core is, 1000 times a second with two callers; `../prof.py firmware.elf log`
+  names the addresses. The same build takes an app over serial (`L<bytes>`, no Wi-Fi needed),
+  prints the picture's hash after each flip (`h`) and drops Wi-Fi on request (`k`). Every change
+  below came out of a profile, and two guesses didn't survive one: the panel's refill interrupt
+  takes 6% of the core, not the third of it the arithmetic suggested, and the time in the ROM was
+  a lock, not `memcpy`.
+- **LVGL's memory in pools of its own** (`LvglAlloc.c`). LVGL allocates two blocks for every shape
+  it draws. Through the system heap each took the heap's lock with interrupts off: Patterns had the
+  core waiting on it 7.5% of the time. 32 KB chunks of internal RAM, each a heap with no lock
+  (`multi_heap_register`), taken only once an app uses LVGL and only above a floor of 48 KB free;
+  past that, PSRAM. luavgl's `lvgl.Font()` frees an `lv_strdup` with `free()`, which then lands in
+  the wrong heap and crashes the board in LVGL's styles: `../../core3.py` compiles luavgl's `free`
+  as `lv_free`, which takes either kind of block.
+- **A rebuilt core: code in PSRAM, bigger caches** (`custom_sdkconfig` in `platformio.ini`, ~5
+  minutes the first build). The octal PSRAM answers a cache miss faster than the quad flash, and the
+  profiles had 76-88% of LVGL's time in code read from flash: `CONFIG_SPIRAM_XIP_FROM_PSRAM` costs
+  2.7 MB of PSRAM and no internal RAM. The scan alone pulls 19 MB a second of frame through the data
+  cache: 64 KB with 64-byte lines (32 KB of internal RAM) is what took strided full-screen fills
+  from 20 fps to 30, and a 32 KB instruction cache (16 KB) gives LVGL screens 16-23%.
+- **LVGL's hot code is no longer in IRAM** (`LV_ATTRIBUTE_FAST_MEM`). While code ran from flash it
+  was worth 20-45% and cost 25 KB; since, the benchmark set is within 1% with or without.
+- **Nothing is written back from the cache after a flip.** With bounce buffers the refill
+  interrupt reads the frame with the CPU, through the same cache it was written through. Writing
+  back walked every cache line between the first and last row drawn, on every flip.
+- **A 32-row draw buffer for LVGL** (was 40): a whole number of 16-pixel tiles, so a strip of a full
+  repaint never leaves a tile half drawn to be copied first, as a third of them were. 48 rows were
+  6-8% faster for screens of arcs and cost 15 KB of internal RAM more.
 - **Only the colour formats in use** (`LV_DRAW_SW_SUPPORT_*`: RGB565 for the screen, ARGB8888 for
-  LVGL's layers, A8 for fonts). As shipped, IRAM cost 63 KB; 38 KB of it was blending to formats
-  nothing here draws to. No app can reach the others: luavgl's images take a file path, and every
-  filesystem driver is off.
+  LVGL's layers, A8 for fonts): 38 KB of code nothing reaches. luavgl's images take a file path, and
+  every filesystem driver is off.
 - **TLS in PSRAM** (`TlsInPsram.h`). The prebuilt core has mbedTLS allocate from internal RAM, about
-  40 KB for a session. `mbedtls_platform_set_calloc_free` moves it at run time, with no core rebuild.
-  With too little internal RAM a board can't connect at all (`mbedtls_ssl_setup returned -0x008D`
-  at 57 KB free, largest block 31 KB) and stays off the relay.
-- **A floor under LVGL's use of internal RAM** (`LvglAlloc.c`, `LV_STDLIB_CUSTOM`). Small blocks are
-  internal down to 48 KB free and PSRAM past it: 900 objects stopped at 46 KB free, relay still up.
+  40 KB for a session. `mbedtls_platform_set_calloc_free` moves it at run time. With too little
+  internal RAM a board can't connect at all (`mbedtls_ssl_setup returned -0x008D` at 57 KB free,
+  largest block 31 KB, before this) and stays off the relay.
 - **A 16 KB loop stack.** LVGL draws on Arduino's loop task, which has 8 KB. Patterns' old Tiles (72
-  objects with `transform_scale`) needed 8.3 KB and rebooted the board; `[perf]` now reports what's
+  objects with `transform_scale`) needed 8.3 KB and rebooted the board; `[perf]` reports what's
   left. Layers nested inside layers can still overflow it, which is what `BootGuard.h` is for.
 - **`BootGuard.h`.** Two crashes in a row, each within a minute of booting, and the next boot leaves the
   saved app out: "Saved app crashed" on the idle screen, connected, and a new push runs as usual.
-  Before, a crashing saved app rebooted the board for ever. Tested with an app built to overflow the
-  stack.
 - **`LUAI_MAXCCALLS` 25.** Lua allows 200 nested C calls: a recursive `pcall` or `__index` overflowed even
   the 16 KB stack at ~30 levels and panicked the board. Now the app gets a Lua error, `C stack overflow`.
-  Lua's parser counts its nesting against the same limit: every bundled app and everything in `my-apps`
-  compiled under 25, measured on the XIAO. Here 24 levels of `pcall` left 2.5 KB of the stack, so it's about
-  as high as 16 KB allows.
-- **`LV_INV_BUF_SIZE` 64.** Past that many changed areas in a frame LVGL repaints the whole screen,
-  which on this board means ~100 ms. At the default 32, 16 objects changing `y` and `h` tip it over.
-- **The draw buffer stays at 40 rows.** 80 gave 8% on full-screen repaints (Rings 8.8 to 9.8) for 25 KB
-  of internal RAM.
-- **Not it:** a bigger circle cache (64 changed nothing), or waiting on the scan (a push doesn't).
-- **Not known:** why Orbits' guide lines take about twice as long after some garbage collections, with
-  the same area painted and the same push time. Hiding the lines gets it back, and the S3-Touch-LCD-2,
-  with no scan on its bus, doesn't do it. A cache effect is the best guess, not a finding. IRAM lifted
-  that state from 23 to 30-31. A bigger cache needs a core rebuild (`CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB`:
-  the prebuilt core has 16 KB) and hasn't been tried.
-- **Not tested:** a reconnect to the relay while an app has internal RAM down at the floor.
+  Every bundled app and everything in `my-apps` compiles under 25; 24 levels of `pcall` left 2.5 KB
+  of the stack.
+- **`LV_INV_BUF_SIZE` 64.** Past that many changed areas in a frame LVGL repaints the whole screen.
+- **What's left** is LVGL's own drawing. A profile of the untuned Rings (five full-circle arcs turned by
+  `rotation`, 11 fps): 17% blending, 12% arc masks, 25% writing its strips into the frame, 12% copying
+  tiles its strips left half drawn (where an area doesn't start on a tile), 7% Resident's flush
+  swapping bytes that are swapped back as they're written.
+- **Not tried:** the refill interrupt on the other core (6% of this one, and Wi-Fi shares that one),
+  PSRAM at 120 MHz (half as much bandwidth again; the timing is tuned for one temperature), IDF itself
+  at `-O2`.
+- **No longer seen:** Orbits' guide lines taking twice as long after some garbage collections
+  (2026-11-05). It went with the code out of flash and the bigger caches, so a cache it was; which
+  part of it wasn't isolated.
 - **After changing `lv_conf.h`, delete LVGL's objects** (`rm -rf .pio/build/guition-4848/lib*/lvgl`).
   LVGL includes it through a macro, which PlatformIO's dependency scan doesn't follow: it says SUCCESS
   and flashes the old LVGL. A real build of LVGL shows as a minute more.
+- **The 2026-11-05 round** (the first board, `107497c7`): IRAM for LVGL's blending (Rings 32 passes a
+  second to 38-47), the colour formats, TLS in PSRAM, a floor under LVGL's internal RAM, the stack, the
+  guard and the two limits. A bigger circle cache changed nothing, and an 80-row draw buffer gave 8%
+  for 25 KB.
 
 ## What bring-up found
 

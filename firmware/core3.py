@@ -42,6 +42,13 @@ def _sources(env, node):
     # makes a keyword: its C is C17.
     if "/QRCode/" in path and path.endswith(".c"):
         c = c + ["-std=gnu17"]
+    # luavgl's lvgl.Font() takes a string from lv_strdup and gives it back with free(): two allocators
+    # that are one and the same until LVGL has pools of its own (LvglAlloc.c), and then the block goes
+    # back to the wrong heap and corrupts it: the board crashed in LVGL's styles, with a heap canary
+    # for a pointer, as soon as an app asked for a font. lv_free takes either kind of block, so every
+    # free() in luavgl becomes one (it's compiled as a single file, luavgl.c, that includes the rest).
+    if "/luavgl/" in path and path.endswith(".c"):
+        c = c + ["-Dfree=lv_free"]
     if not OPTIMIZE and not cxx and not c:
         return node
     return env.Object(node, CCFLAGS=env["CCFLAGS"] + OPTIMIZE, CXXFLAGS=env["CXXFLAGS"] + cxx, CFLAGS=env["CFLAGS"] + c)

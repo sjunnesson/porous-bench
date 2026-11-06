@@ -62,7 +62,7 @@ screen.triangle(x0, y0, x1, y1, x2, y2, r, g, b)
 screen.fill_triangle(x0, y0, x1, y1, x2, y2, r, g, b)
 screen.qr(x, y, text[, scale = 4[, r, g, b]])   -- QR v3..v10, ECC low, black modules by default:
                                                 -- clear a white square behind it; v3 is 29 modules
-screen.flip()                                   -- copies the rows drawn into the scanned frame
+screen.flip()                                   -- shows what was drawn, from the next vertical sync
 screen.set_brightness(0..255)                   -- the backlight
 screen.width()   screen.height()                -- 480, 480
 ```
