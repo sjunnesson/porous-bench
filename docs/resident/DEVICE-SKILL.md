@@ -121,11 +121,12 @@ what drawing it costs.
   - Don't create closures or tables in a loop that runs each frame: they're garbage in a small heap.
   - Fewer, bigger draw calls: merge rows of one colour into one `fillRect`, and step soft
     things (glows, gradients) 4 rows at a time.
-- **ESP32-S3 with LVGL (S3-Touch-LCD-2, Bench's firmware):** each `obj:set{}` costs ~0.3-0.6 ms,
-  and LVGL repaints everything under whatever changed: a flame of 25 moving gradient ovals over
-  three translucent glow ovals ran at 3.4 fps (12 once the glow was opaque and still). The same
-  flame drawn row by row with `lgfx`, redrawing only where it moved, runs at 28. For many moving
-  shapes use `lgfx`; for LVGL, few objects, opaque ones, and leave big ones still.
+- **ESP32-S3 with LVGL (S3-Touch-LCD-2, Bench's firmware):** each `obj:set{}` costs ~0.1-0.15 ms
+  (0.3-0.6 before its firmware of 2026-11-06), and LVGL repaints everything under whatever changed:
+  on the earlier firmware a flame of 25 moving gradient ovals over three translucent glow ovals ran
+  at 3.4 fps (12 once the glow was opaque and still), and the same flame drawn row by row with
+  `lgfx`, redrawing only where it moved, at 28. For many moving shapes use `lgfx`; for LVGL, few
+  objects, opaque ones, and leave big ones still.
 - **What holds 30 fps with LVGL** (measured on the Guition 4848S040, 480×480, and the S3-Touch-LCD-2,
   240×320, with Patterns: from 6.5-11 fps to 32-33 on the Guition, and from 16-33 to 33 on the S3):
   - **One Anim per pattern or screen, not one per object**, and move everything from it by the clock,
@@ -157,13 +158,16 @@ what drawing it costs.
   - **To change little of something tall, leave it still.** An object repaints whole when it changes,
     so an equaliser's bar is a still gradient under opaque covers in the background's colour, in fixed
     sections, and only the cover at the level changes.
-  - **Costs on a board, per call:** Guition / S3-LCD-2: `set` of translate (same table) 109 / 220 µs,
-    `w, h` 170 / 289, `bg_opa` 134 / 198, arc's two angles 201 / 388, `style:set` 67 / 61,
+  - **Costs on a board, per call:** Guition / S3-LCD-2: `set` of translate (same table) 109 / 95 µs,
+    `w, h` 170 / 136, `bg_opa` 134 / 96, arc's two angles 201 / 173, `style:set` 67 / 65,
     `math.sin` + `math.cos` 31 / 29. Lua's maths is cheap on an S3; LVGL's calls and repaints aren't.
-    (The Guition's are with its firmware since 2026-11-06; before, they cost 2.5-4 times as much.)
+    (Both with their firmware since 2026-11-06; before, the Guition's cost 2.5-4 times as much and
+    the S3's about twice.)
   - **The firmware only gets an untuned screen part of the way.** With the Guition's firmware since
     2026-11-06, Patterns as it was before these rules runs at 29 passes a second on Orbits, 22 on
     Bars, 14.5 on Spinner and 10.5 on Rings (it was 6.5-11 on all of them), and as it is now at 57-62.
+    On the S3-LCD-2, with half the pixels, the same four run at 42, 48, 45 and 34 (they were 16, 29,
+    34 and 27), and as it is now at 60-65.
   - **A saved app that crashes the board twice in a row isn't loaded again** on Bench's firmware: the
     screen says "Saved app crashed" and the board stays connected. Push a fixed one; a reset or power
     cycle tries the saved one again. An ordinary Lua error never gets that far.
