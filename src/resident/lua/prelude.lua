@@ -127,16 +127,14 @@ local LGFX = {
 -- the palette's end isn't drawn. The host reads Lua strings as UTF-8, which raw bytes aren't, so
 -- each byte goes across as the code point 256 + byte (two UTF-8 bytes, never NUL); of an indexed
 -- block only the part inside the clip and the display goes across (a scene's backdrop pushed for
--- every 16 px cell would be 230 KB a time). This runs as the board's C would: not counted.
-local sbyte, ssub, uchar = string.byte, string.sub, utf8.char
+-- every 16 px cell would be 230 KB a time). This runs as the board's C would: not counted. The
+-- swap is string.gsub's, byte by byte from a table, in C: done in a Lua loop it took most of a
+-- tick (19 ms of a 720 px Platter's 28, for its label's 192 pushImage calls a frame).
+local sbyte, ssub, gsub = string.byte, string.sub, string.gsub
+local ACROSS = {}
+for b = 0, 255 do ACROSS[string.char(b)] = utf8.char(256 + b) end
 local function across(data)
-  local parts = {}
-  for i = 1, #data, 2048 do
-    local bytes = { sbyte(data, i, math.min(i + 2047, #data)) }
-    for k = 1, #bytes do bytes[k] = bytes[k] + 256 end
-    parts[#parts + 1] = uchar(unpack(bytes))
-  end
-  return concat(parts)
+  return (gsub(data, ".", ACROSS))
 end
 -- Errors at level 3: this function <- g.pushImage's own (called, not tail-called) <- the app.
 local function pushIndexed(x, y, w, h, data, palette, transparent, clip)

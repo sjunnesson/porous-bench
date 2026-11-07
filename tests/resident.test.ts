@@ -147,6 +147,29 @@ describe('Resident sandbox', () => {
     expect(t.logs[0]).toContain("expected w * h * 2 bytes of RGB565, big-endian");
   });
 
+  it('carries every byte value across, as RGB565 and as palette indices', async () => {
+    // Row 0: pixel k is the bytes 2k, 2k + 1. Rows 1 and 2: index k into a palette whose colour k
+    // is the bytes 255 - k, 255 - k.
+    const t = await boot(`local g = lgfx.bind("main")
+      function init(ctx)
+        local bytes, pal = {}, {}
+        for b = 0, 255 do
+          bytes[#bytes + 1] = string.char(b)
+          pal[#pal + 1] = string.char(255 - b, 255 - b)
+        end
+        bytes = table.concat(bytes)
+        g:pushImage(0, 0, 128, 1, bytes)
+        g:pushImage(0, 1, 128, 2, bytes, table.concat(pal))
+        g:flip()
+      end`);
+    expect(t.error).toBeUndefined();
+    await run(t, 50);
+    const rgb = Array.from({ length: 128 }, (_, k) => t.display.getPixel(k, 0));
+    expect(rgb).toEqual(Array.from({ length: 128 }, (_, k) => ((2 * k) << 8) | (2 * k + 1)));
+    const indexed = Array.from({ length: 256 }, (_, k) => t.display.getPixel(k % 128, 1 + (k >> 7)));
+    expect(indexed).toEqual(Array.from({ length: 256 }, (_, k) => ((255 - k) << 8) | (255 - k)));
+  });
+
   it('pushes an image through a palette, clipped, and clears the clip for the next app', async () => {
     // Indices into red, green, blue: index 1 is transparent and 3 is past the palette's end.
     const t = await boot(`local g = lgfx.bind("main")
