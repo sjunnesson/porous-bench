@@ -278,7 +278,7 @@ connection came back each time.
   saved app out: "Saved app crashed" on the idle screen, connected, and a new push runs as usual.
 - **`LUAI_MAXCCALLS` 25.** Lua allows 200 nested C calls: a recursive `pcall` or `__index` overflowed even
   the 16 KB stack at ~30 levels and panicked the board. Now the app gets a Lua error, `C stack overflow`.
-  Every bundled app and everything in `my-apps` compiles under 25; 24 levels of `pcall` left 2.5 KB
+  Every bundled app and everything in `bench-apps` compiles under 25; 24 levels of `pcall` left 2.5 KB
   of the stack.
 - **`LV_INV_BUF_SIZE` 64.** Past that many changed areas in a frame LVGL repaints the whole screen.
 - **What's left** is LVGL's own drawing. A profile of the untuned Rings (five full-circle arcs turned by

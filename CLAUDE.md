@@ -24,9 +24,11 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   `src/resident/run.ts` as Bench runs them but without touching the visitor's storage or sending
   Bench's events (it counts page views only).
 - `firmware/`: Resident firmware Bench ships for real boards (PlatformIO; Resident pinned by commit).
-- `my-apps/`: the user's own apps. Ignored by this repo and its own git repo (`npm run my-apps`).
-- `apple/`: the native app (macOS, iPhone, iPad). Ignored by this repo and its own private git repo; when
-  it's there, read its `CLAUDE.md` before changing the Resident runtime, the display pipeline or `remote.lua`.
+- `../bench-apps/`: the user's own apps, its own git repo next to this checkout (anyone else's go in
+  `my-apps/`, which `npm run my-apps` sets up and this repo ignores).
+- `../bench-apple/`: the native app (macOS, iPhone, iPad), its own private git repo next to this
+  checkout, built from this one's `src/`; when it's there, read its `CLAUDE.md` before changing the
+  Resident runtime, the display pipeline or `remote.lua`.
 
 ## Commands
 
@@ -42,9 +44,9 @@ apps; it can also mirror an app onto a real Resident board. Live at https://benc
   for LED apps; `-- @needs motion color touch WxH` for what the code can't show (animates / colour
   only / needs a touch panel / smallest screen its fixed layout fits). Libraries and memory are read from the code
   (`needs.ts`). Tests fail if an app runs nowhere or doesn't boot wrapped for a real device.
-- **Apps someone writes for themselves go in `my-apps/`**, not `src/resident-apps/` or the repo
-  root, and are committed in that repo (`git -C my-apps …`), never in Bench's. Only apps meant to
-  ship with Bench are bundled.
+- **Apps someone writes for themselves go in `../bench-apps/`** (`my-apps/` in anyone else's
+  checkout), not `src/resident-apps/` or the repo root, and are committed in that repo
+  (`git -C ../bench-apps …`), never in Bench's. Only apps meant to ship with Bench are bundled.
 - **A new output or board** goes in `src/sim/devices/` or `src/sim/boards.ts` with its libraries
   and its app memory: the PSRAM size on a board with PSRAM, otherwise *measured*
   (`heap_caps_get_free_size(MALLOC_CAP_8BIT)` after Wi-Fi + TLS, not `ESP.getFreeHeap()`);

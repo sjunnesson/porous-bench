@@ -114,7 +114,7 @@ Brought up and tested on hardware 2026-10-12: device type `s3-lcd2`, firmware `s
 
 ## Speed: the flame from 3.4 to 29 fps
 
-Mirroring `my-apps/flame.lua` (then 34 LVGL ovals, gradients, shadows and a translucent glow) ran
+Mirroring `bench-apps/flame.lua` (then 34 LVGL ovals, gradients, shadows and a translucent glow) ran
 at 3.4 fps here against 30 on Bench. Measured over serial with a frame counter in the app and the
 firmware's `[perf]` line (pushes a second, rows a push, push time, loop time):
 
@@ -248,7 +248,7 @@ Pi's IP address (the board doesn't resolve `.local`), and keep the webhook ID ou
 only thing guarding the hook. The POST runs on its own task, so a slow or absent Home Assistant
 never stalls the app. Without the file the firmware is unchanged.
 
-An automation for La Linea (`my-apps/la-linea.lua`, which sends `lamp` `{on, level}`):
+An automation for La Linea (`bench-apps/la-linea.lua`, which sends `lamp` `{on, level}`):
 
 ```yaml
 alias: La Linea switches the room
