@@ -6,6 +6,7 @@ import type { Button } from '../sim/inputs/button';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Climate } from '../sim/inputs/climate';
 import type { Co2 } from '../sim/inputs/co2';
+import type { Haptic } from '../sim/inputs/haptic';
 import type { Imu } from '../sim/inputs/imu';
 import type { IrReceiver } from '../sim/inputs/ir';
 import type { SimInput } from '../sim/inputs/input';
@@ -13,6 +14,7 @@ import type { Joystick } from '../sim/inputs/joystick';
 import type { Keypad } from '../sim/inputs/keypad';
 import type { Knob } from '../sim/inputs/knob';
 import type { LD2410 } from '../sim/inputs/ld2410';
+import type { LedRing } from '../sim/inputs/ledring';
 import type { LightSensor } from '../sim/inputs/light';
 import type { Mic } from '../sim/inputs/mic';
 import type { Pir } from '../sim/inputs/pir';
@@ -30,12 +32,14 @@ import { ButtonWidget } from './widgets/ButtonWidget';
 import { BuzzerWidget } from './widgets/BuzzerWidget';
 import { ClimateWidget } from './widgets/ClimateWidget';
 import { Co2Widget } from './widgets/Co2Widget';
+import { HapticWidget } from './widgets/HapticWidget';
 import { ImuWidget } from './widgets/ImuWidget';
 import { IrWidget } from './widgets/IrWidget';
 import { JoystickWidget } from './widgets/JoystickWidget';
 import { KeypadWidget } from './widgets/KeypadWidget';
 import { keyLabel } from './widgets/keys';
 import { KnobWidget } from './widgets/KnobWidget';
+import { LedRingWidget } from './widgets/LedRingWidget';
 import { LightWidget } from './widgets/LightWidget';
 import { MicWidget } from './widgets/MicWidget';
 import { PirWidget } from './widgets/PirWidget';
@@ -146,6 +150,10 @@ function Widget({ input }: { input: SimInput }) {
       return <SwitchWidget input={input as Switch} />;
     case 'knob':
       return <KnobWidget input={input as Knob} />;
+    case 'haptic':
+      return <HapticWidget input={input as Haptic} />;
+    case 'leds':
+      return <LedRingWidget input={input as LedRing} />;
     case 'pot':
       return <PotWidget input={input as Pot} />;
     case 'joystick':

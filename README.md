@@ -124,6 +124,7 @@ counts page views with Vercel Web Analytics: no cookies, and nothing about your 
 | Waveshare ESP32-S3-Touch-AMOLED-1.32 | AMOLED, CO5300, round, touch (CST820) | 466×466 | QSPI 40 MHz |
 | Seeed Studio Round Display for XIAO (on a XIAO ESP32S3) | IPS LCD, GC9A01, round, touch (CHSC6X) | 240×240 | SPI 80 MHz |
 | Guition ESP32-S3-4848S040 (4″ wall panel) | IPS LCD, ST7701S, touch (GT911), no buttons | 480×480 | 16-bit RGB 12 MHz |
+| SmartKnob View (ESP32-S3 base) | IPS LCD, GC9A01, round, on a motor knob (`haptic`), its press button A, eight LEDs round it (`leds`) | 240×240 | SPI 40 MHz |
 | Espressif ESP-Mosaico (ESP32-S31) | AMOLED, CO5300, rounded corners, touch (CST9220), IMU | 480×480 | QSPI 40 MHz |
 | Waveshare ESP32-S3-AMOLED-1.91 (and -Touch-, FT3168) | AMOLED, RM67162, IMU | 240×536 (536×240 landscape) | QSPI 40 MHz |
 | M5StickC Plus2 | LCD, ST7789V2 | 135×240 | SPI 40 MHz |
@@ -320,7 +321,17 @@ Resident boards add hardware through drivers: a Lua module plus events into `on_
 | `thermal.read()` → `{ pixels, thermistor, max, warm, hot_x, hot_y }`, `thermal.pixels()` | `warm` `{ warm, x, y }` |
 | `co2.read()` → `{ co2, temperature, humidity }`, `co2.ppm()` | `co2` `{ co2, temperature, humidity }` every 5 s |
 | `pulse.read()` → `{ finger, bpm, ir, red }`, `pulse.bpm()`, `pulse.samples()` | `finger` `{ on }`, `beat` `{ bpm }` |
-| `leds`: see [LED outputs](#led-outputs) | |
+| `haptic.config({ min, max, width, detent, endstop, snap, magnets, … })`, `haptic.read()` → `{ position, sub, angle, pressed, … }`, `haptic.position()`, `haptic.click()`: the SmartKnob View's knob only | `haptic` `{ position, delta }` on each move |
+| `leds`: see [LED outputs](#led-outputs); on the SmartKnob View, its LEDs round the knob | |
+
+The SmartKnob View ([scottbez1/smartknob](https://github.com/scottbez1/smartknob)) is a round
+screen on a knob with a motor in it: the app decides how turning it feels, from free spinning to
+ends, detents fine or coarse, a two-way switch, a spring back to the middle or magnetic detents, as
+the SmartKnob's own config does. Drag the knob round on the desk (or in its widget, or press ← →):
+a browser can't push back on a hand, so past an end it gives less and less and springs back when
+let go, and let go between detents it settles to the nearest. **Knob modes** goes through the
+SmartKnob's own demo. It's modelled from the SmartKnob's firmware and printed parts, not measured on
+one, on the pins of the firmware's ESP32-S3 build; Bench has no firmware for it yet.
 
 The LD2410 is simulated at the UART level: the virtual sensor sends real 23-byte report frames at
 10 Hz and `read()` parses them. Drag the character around the radar (speed decides "moving" vs

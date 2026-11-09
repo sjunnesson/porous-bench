@@ -435,6 +435,20 @@ function joystick.x() return joystick.read().x end
 function joystick.y() return joystick.read().y end
 function joystick.pressed() return joystick.read().pressed end
 
+-- haptic: a knob turned by a motor that makes the detents and ends the app asks for (the SmartKnob's;
+-- drivers.ts), only on a board that has one. config(opts) takes a whole config, as the SmartKnob
+-- does: whatever it leaves out goes back to its default. Turning it raises `haptic` { position,
+-- delta }; pressing it is button A (tap and hold events).
+local function haptic_call(fname)
+  return function(arg)
+    if H.sensor_read("haptic") == nil then error("haptic: this board has no haptic knob", 2) end
+    local err = H.sensor_call("haptic", fname, arg)
+    if err then error(err, 2) end
+  end
+end
+haptic = { read = sensor("haptic"), config = haptic_call("config"), click = haptic_call("click") }
+function haptic.position() return haptic.read().position end
+
 -- touchscreen: Bench driver for a touch panel over the display. Defined only on a display that has
 -- one, so apps can check `if touchscreen then`. Gestures arrive as driver events: touch_down,
 -- touch_move, touch_up and touch_tap, each with { x, y } in the coordinates apps draw in.

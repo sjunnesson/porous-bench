@@ -10,10 +10,13 @@
 //    layout fits.
 //
 // Inputs are never a reason to leave an app out: every control and sensor is on the bench, and a real
-// device gets them from Bench through the mirror's shim.
+// device gets them from Bench through the mirror's shim. The one exception is a part only a board has
+// built in, which Bench can't put on another's desk: an app that turns the SmartKnob's knob
+// (`haptic`) needs that board. Its LEDs beside the display bring `leds` with them.
 
 import { type Board, type Library } from '../sim/boards';
 import type { DeviceProfile } from '../sim/devices/types';
+import { minifyLua } from './minify';
 import { remoteApp } from './remote';
 
 export type OutputTarget = 'display' | 'strip' | 'matrix';
@@ -24,6 +27,8 @@ export interface AppNeeds {
   motion: boolean;
   color: boolean;
   touch: boolean;
+  /** It uses `haptic`, the SmartKnob's motor knob. */
+  haptic: boolean;
   /** Smallest screen its layout fits, as apps see it. */
   min?: { w: number; h: number };
   /** Peak heap to receive, compile and start it on a real board (KB, estimated). */
@@ -40,6 +45,8 @@ export interface OutputCaps {
   motion: boolean;
   /** A touch panel over the screen. */
   touch: boolean;
+  /** A motor knob built in (the SmartKnob's). */
+  haptic: boolean;
   libraries: Library[];
   appRamKb?: number;
 }
@@ -79,6 +86,8 @@ export function appNeeds(code: string): AppNeeds {
     motion: words.includes('motion'),
     color: words.includes('color') || words.includes('colour'),
     touch: words.includes('touch'),
+    // Named in the code itself, not in a comment.
+    haptic: /\bhaptic\.\w+/.test(minifyLua(code)),
     min: size ? { w: Number(size[1]), h: Number(size[2]) } : undefined,
     ramKb,
   };
@@ -91,7 +100,7 @@ export function outputCaps(profile: DeviceProfile, board: Board | undefined): Ou
   const [w, h] = turned ? [profile.height, profile.width] : [profile.width, profile.height];
   const drawing: Library[] = [...(board?.libraries ?? ['screen', 'lgfx', 'lvgl'])];
   // LEDs aren't a screen: a strip has only `leds`; a matrix is also an lgfx display.
-  const libraries: Library[] = !leds ? drawing : leds.layout === 'grid' && drawing.includes('lgfx') ? ['leds', 'lgfx'] : ['leds'];
+  const libraries: Library[] = !leds ? [...drawing, ...(profile.ring ? (['leds'] as const) : [])] : leds.layout === 'grid' && drawing.includes('lgfx') ? ['leds', 'lgfx'] : ['leds'];
   return {
     output: leds ? (leds.layout === 'grid' ? 'matrix' : 'strip') : 'display',
     w,
@@ -99,6 +108,7 @@ export function outputCaps(profile: DeviceProfile, board: Board | undefined): Ou
     color: profile.tech === 'lcd' || profile.tech === 'amoled' || profile.tech === 'led',
     motion: profile.tech !== 'epaper',
     touch: !!profile.touch,
+    haptic: !!profile.builtins?.includes('haptic'),
     libraries,
     appRamKb: board?.appRamKb,
   };
@@ -112,6 +122,7 @@ export function misfits(needs: AppNeeds, caps: OutputCaps): string[] {
   if (needs.motion && !caps.motion) why.push('animates');
   if (needs.color && !caps.color) why.push('needs colour');
   if (needs.touch && !caps.touch) why.push('needs a touchscreen');
+  if (needs.haptic && !caps.haptic) why.push('needs a haptic knob');
   if (needs.min && (caps.w < needs.min.w || caps.h < needs.min.h)) why.push(`needs ${needs.min.w}×${needs.min.h}`);
   if (caps.appRamKb !== undefined && needs.ramKb > caps.appRamKb * USABLE) why.push(`needs ~${needs.ramKb} KB`);
   return why;

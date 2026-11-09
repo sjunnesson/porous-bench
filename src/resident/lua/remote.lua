@@ -1,6 +1,6 @@
 -- porous.systems Bench remote: this app's inputs come from Bench (bench.porous.systems), which sends
 -- their state over the relay as "bench" events. Bench's drivers (dial, trigger, light, pir,
--- climate, touch, ld2410, imu, and a silent buzzer) are defined here only where this firmware has
+-- climate, touch, ld2410, imu, haptic, and a silent buzzer and LED ring) are defined here only where this firmware has
 -- none. Each sits between "@@part <module> [<module> …]" and "@@end" lines: Bench sends only the
 -- parts the app names, since every line here costs compile memory on the device. Bench's buttons A and B arrive
 -- as the taps and holds Bench recognised, and touches on Bench's screen as touch_* events. The
@@ -232,6 +232,21 @@ end
 -- @@part buzzer
 if not buzzer then
   buzzer = { beep = function() end, tone = function() end, stop = function() end }
+end
+-- @@end
+-- @@part haptic
+if not haptic then
+  -- The SmartKnob's knob as Bench turns it. Bench runs this app too, so its config and clicks reach
+  -- Bench's knob there; here they do nothing.
+  haptic = { read = sensor("haptic", { position = 0, sub = 0, angle = 0, pressed = false, min = 0, max = -1, width = 18, detent = 1, endstop = 1, snap = 1.1, magnets = {}, text = "" }),
+    config = function() end, click = function() end }
+  function haptic.position() return haptic.read().position end
+end
+-- @@end
+-- @@part leds
+if not leds then
+  -- LEDs beside the display (the SmartKnob's ring) on a board without any: none to light.
+  leds = setmetatable({ count = function() return 0 end }, { __index = function() return function() return 0 end end })
 end
 -- @@end
 

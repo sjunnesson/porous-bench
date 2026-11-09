@@ -292,6 +292,9 @@ export const MODULES: Record<PartKind, Module> = {
     ],
     notes: ['Passive: the board makes the tone (`tone()` or `ledcWriteTone`).'],
   },
+  // Only ever built into a board (BUILT_IN_ONLY): nothing to wire.
+  haptic: { name: 'Motor knob (built into the SmartKnob)', pins: [] },
+  leds: { name: 'LEDs beside the display (built in)', pins: [] },
 };
 
 /** A touch pad on a chip without touch sensing (the ESP32-C6): a TTP223 module does the sensing. */
@@ -554,6 +557,18 @@ export const PINOUTS: Record<string, Pinout> = {
       'Power it from H1\'s 5V or the USB-C, never both at once.',
     ],
     source: 'ESPHome device config for the Guition-ESP32-S3-4848S040 and its photo of the board\'s connectors',
+  },
+  'smartknob-view': {
+    // The SmartKnob's ESP32-S3 base isn't published: its firmware build names only the pins it uses
+    // (the screen, motor, encoder, strain gauge, LEDs, I2C), so the only ones Bench hands out are the
+    // I2C bus's, for a sensor to share. Whether even those reach a connector isn't known.
+    pins: pins([15, 8]),
+    i2c: { sda: 15, scl: 8 },
+    notes: [
+      'The SmartKnob\'s ESP32-S3 base isn\'t published, so Bench knows no free pin on it: its firmware build uses 1–7, 9, 12–14, 17–21, 37 and 38 for the screen, motor, encoder, strain gauge and LEDs.',
+      'Only an I2C sensor fits, sharing the base\'s bus on 15 (SDA) and 8 (SCL), if they reach a connector.',
+    ],
+    source: "the SmartKnob firmware's brushknight_esp32s3 build (platformio.ini)",
   },
   'espressif-esp-mosaico': {
     // The two 2×10 module slots on the sides, left (H2) then right (H1), by pin number. Both carry the

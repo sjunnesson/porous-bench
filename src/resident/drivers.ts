@@ -7,6 +7,7 @@
 import type { PartKind } from '../sim/controls/bench';
 import type { Climate } from '../sim/inputs/climate';
 import type { Co2 } from '../sim/inputs/co2';
+import { type Haptic, type HapticConfig, MAX_MAGNETS, MAX_TEXT } from '../sim/inputs/haptic';
 import type { EventLog, SimInput } from '../sim/inputs/input';
 import { type IrReceiver, REMOTE_ADDRESS, REMOTE_KEYS } from '../sim/inputs/ir';
 import type { Joystick } from '../sim/inputs/joystick';
@@ -195,7 +196,92 @@ const thermal = driver<Thermal>({
   mirror: (p) => ({ p: pack(p.pixels(), -20, 0.25), ...thermalFrame(p) }),
 });
 
-export const DRIVERS: Partial<Record<PartKind, PartDriver>> = { light, pir, climate, touch, joystick, switch: toggle, mic, ir, keypad, rfid, tof, co2, pulse, thermal };
+/** A config as the app gave it (a Lua table), checked as the SmartKnob's firmware checks one: an error's text, or the config. */
+export function hapticConfig(arg: unknown): Partial<HapticConfig> | string {
+  if (arg === undefined || arg === null) return {};
+  if (typeof arg !== 'object' || Array.isArray(arg)) return 'haptic.config: a table expected';
+  const t = arg as Record<string, unknown>;
+  const known = ['position', 'nonce', 'min', 'max', 'width', 'detent', 'endstop', 'snap', 'bias', 'magnets', 'text'];
+  const other = Object.keys(t).find((k) => !known.includes(k));
+  if (other) return `haptic.config: no option '${other}' (${known.join(', ')})`;
+  const c: Partial<HapticConfig> = {};
+  for (const k of ['position', 'nonce', 'min', 'max', 'width', 'detent', 'endstop', 'snap', 'bias'] as const) {
+    const v = t[k];
+    if (v === undefined) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v)) return `haptic.config: ${k} must be a number`;
+    if (['position', 'nonce', 'min', 'max'].includes(k) && !Number.isInteger(v)) return `haptic.config: ${k} must be a whole number`;
+    c[k] = v;
+  }
+  if (c.width !== undefined && !(c.width > 0 && c.width <= 360)) return 'haptic.config: width is the degrees a position takes, more than 0 and up to 360';
+  if ((c.detent ?? 0) < 0) return 'haptic.config: detent cannot be negative';
+  if ((c.endstop ?? 0) < 0) return 'haptic.config: endstop cannot be negative';
+  if (c.snap !== undefined && c.snap < 0.5) return 'haptic.config: snap below 0.5 would jump between two positions; 0.55 makes a switch, 1.1 holds a detent';
+  if (c.nonce !== undefined && (c.nonce < 0 || c.nonce > 255)) return 'haptic.config: nonce must be 0-255';
+  if (t.magnets !== undefined) {
+    const m = t.magnets;
+    // An empty Lua table arrives as an empty object, not an array.
+    const list = Array.isArray(m) ? m : m && typeof m === 'object' && Object.keys(m).length === 0 ? [] : null;
+    if (!list || !list.every((v) => Number.isInteger(v))) return 'haptic.config: magnets must be a list of whole-number positions';
+    if (list.length > MAX_MAGNETS) return `haptic.config: at most ${MAX_MAGNETS} magnets (send the nearest ${MAX_MAGNETS} as the knob turns)`;
+    c.magnets = list as number[];
+  }
+  if (t.text !== undefined) {
+    if (typeof t.text !== 'string') return 'haptic.config: text must be a string';
+    if (t.text.length > MAX_TEXT) return `haptic.config: text is at most ${MAX_TEXT} characters`;
+    c.text = t.text;
+  }
+  return c;
+}
+
+/** The knob as an app reads it: where it is, and the config it has. */
+function hapticState(p: Haptic, places: number) {
+  const c = p.config;
+  return {
+    position: p.position(),
+    sub: round(p.sub(), places),
+    angle: round(p.angle(), 1),
+    pressed: p.isPressed(),
+    min: c.min,
+    max: c.max,
+    width: c.width,
+    detent: c.detent,
+    endstop: c.endstop,
+    snap: c.snap,
+    magnets: c.magnets,
+    text: c.text,
+  };
+}
+const haptic = driver<Haptic>({
+  read: (p) => hapticState(p, 3),
+  calls: {
+    // The whole config, every option left out at its default, as the SmartKnob takes one. Nil, or what's wrong with it.
+    config(p, arg) {
+      const c = hapticConfig(arg);
+      if (typeof c === 'string') return c;
+      p.configure(c);
+      return undefined;
+    },
+    click(p, arg) {
+      p.click(arg === true);
+      return undefined;
+    },
+  },
+  // Each move to another position: `haptic` { position, delta }, several positions at once in one.
+  events(p, memo) {
+    const now = p.position();
+    if (typeof memo.last !== 'number') {
+      memo.last = now;
+      return [];
+    }
+    if (memo.last === now) return [];
+    const delta = now - memo.last;
+    memo.last = now;
+    return [{ name: 'haptic', data: { position: now, delta } }];
+  },
+  mirror: (p) => hapticState(p, 2),
+});
+
+export const DRIVERS: Partial<Record<PartKind, PartDriver>> = { light, pir, climate, touch, joystick, switch: toggle, mic, ir, keypad, rfid, tof, co2, pulse, thermal, haptic };
 
 /** The sensors' modules an app's code names (not in a comment): the ones whose readings it can use. */
 export function modulesNamed(app: string): Set<PartKind> {

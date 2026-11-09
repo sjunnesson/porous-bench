@@ -9,6 +9,7 @@ import { Button } from '../inputs/button';
 import { Buzzer } from '../inputs/buzzer';
 import { Climate } from '../inputs/climate';
 import { Co2 } from '../inputs/co2';
+import { Haptic } from '../inputs/haptic';
 import { Imu } from '../inputs/imu';
 import type { SimInput } from '../inputs/input';
 import { IrReceiver, REMOTE_KEYS } from '../inputs/ir';
@@ -16,6 +17,7 @@ import { Joystick } from '../inputs/joystick';
 import { Keypad, KEYPAD_KEYS } from '../inputs/keypad';
 import { Knob } from '../inputs/knob';
 import { LD2410 } from '../inputs/ld2410';
+import { LedRing } from '../inputs/ledring';
 import { LightSensor } from '../inputs/light';
 import { Mic } from '../inputs/mic';
 import { Pir } from '../inputs/pir';
@@ -28,7 +30,9 @@ import { Tof } from '../inputs/tof';
 import { Touch } from '../inputs/touch';
 import { PINOUTS } from '../wiring';
 
-export type PartKind = 'button' | 'switch' | 'knob' | 'pot' | 'joystick' | 'keypad' | 'ir' | 'rfid' | 'imu' | 'mic' | 'ld2410' | 'tof' | 'thermal' | 'light' | 'pir' | 'climate' | 'co2' | 'pulse' | 'touch' | 'buzzer';
+export type PartKind = 'button' | 'switch' | 'knob' | 'pot' | 'joystick' | 'keypad' | 'ir' | 'rfid' | 'imu' | 'mic' | 'ld2410' | 'tof' | 'thermal' | 'light' | 'pir' | 'climate' | 'co2' | 'pulse' | 'touch' | 'buzzer' | 'haptic' | 'leds';
+/** Parts only a board has built in (the SmartKnob's motor knob, LEDs beside a display): never added, saved or wired. */
+export const BUILT_IN_ONLY: ReadonlySet<PartKind> = new Set(['haptic', 'leds']);
 
 /** What you can add, in menu order. */
 export const PART_KINDS: { kind: PartKind; label: string }[] = [
@@ -55,7 +59,7 @@ export const PART_KINDS: { kind: PartKind; label: string }[] = [
 ];
 const SHORT: Record<PartKind, string> = {
   button: 'Button', switch: 'Switch', knob: 'Encoder', pot: 'Slide pot', joystick: 'Joystick', touch: 'Touch pad', keypad: 'Keypad', ir: 'IR', rfid: 'RFID', imu: 'IMU', mic: 'Mic', ld2410: 'Radar', tof: 'Distance', thermal: 'Thermal',
-  pir: 'PIR', light: 'Light', climate: 'Climate', co2: 'CO₂', pulse: 'Pulse', buzzer: 'Buzzer',
+  pir: 'PIR', light: 'Light', climate: 'Climate', co2: 'CO₂', pulse: 'Pulse', buzzer: 'Buzzer', haptic: 'Knob', leds: 'LED ring',
 };
 
 /**
@@ -128,6 +132,12 @@ export const CHANNELS: Record<PartKind, Channel[]> = {
     { id: 'finger', label: 'finger on it', kind: 'momentary' },
   ],
   buzzer: [],
+  // The SmartKnob's knob: positions turned as an encoder's clicks, and a press on it.
+  haptic: [
+    { id: 'rotate', label: 'turn', kind: 'relative' },
+    { id: 'push', label: 'press', kind: 'momentary' },
+  ],
+  leds: [],
 };
 
 export interface Connection {
@@ -189,6 +199,10 @@ export function createPart(kind: PartKind, label: string, clock: SimClock): SimI
       return new Pulse({ label }, clock);
     case 'buzzer':
       return new Buzzer({ label }, clock);
+    case 'haptic':
+      return new Haptic({ label }, clock);
+    case 'leds':
+      return new LedRing(8, { label });
   }
 }
 
@@ -207,7 +221,12 @@ export function boardBench(device: DeviceProfile, clock: SimClock, saved: PartSp
     if (!k.onBoard || (k.output && k.output !== device.id) || b.builtinButton(i)) return;
     b.addBuiltin(`builtin-button-${i}`, new Button({ label: `Button ${'AB'[i] ?? i}` }, clock), i);
   });
-  for (const k of device.builtins ?? []) b.addBuiltin(`builtin-${k}`, createPart(k, { imu: 'IMU', buzzer: 'Buzzer', mic: 'Microphone' }[k], clock));
+  for (const k of device.builtins ?? []) {
+    // A knob that's the board's only control (the SmartKnob's): pressing it is button A.
+    if (k === 'haptic') b.addBuiltin('builtin-haptic', new Haptic({ label: 'Knob' }, clock), b.builtinButton(0) ? undefined : 0);
+    else b.addBuiltin(`builtin-${k}`, createPart(k, { imu: 'IMU', buzzer: 'Buzzer', mic: 'Microphone' }[k], clock));
+  }
+  if (device.ring) b.addBuiltin('builtin-leds', new LedRing(device.ring.count));
   b.load(saved);
   return b;
 }
@@ -264,7 +283,7 @@ export class Bench {
   /** Restore saved parts (ids and labels kept). */
   load(specs: PartSpec[]): void {
     for (const s of specs) {
-      if (this.list.some((e) => e.id === s.id) || !CHANNELS[s.kind]) continue;
+      if (this.list.some((e) => e.id === s.id) || !CHANNELS[s.kind] || BUILT_IN_ONLY.has(s.kind)) continue;
       const part = createPart(s.kind, s.label, this.clock);
       part.name = s.id;
       this.list.push({ id: s.id, part });
@@ -352,13 +371,15 @@ export class Bench {
       if (prefer.part && o.connection.part === prefer.part) s += 200;
       if (prefer.builtin !== undefined) s += builtinIndex(o.connection.part) === prefer.builtin ? 100 : 0;
       if (prefer.kind && o.part.kind === prefer.kind) s += 20;
+      // A knob with a motor in it is an encoder too, and the board's own before one on the desk: it's the knob in your hand.
+      if (prefer.kind === 'knob' && o.part.kind === 'haptic') s += 22;
       if (prefer.channel && o.channel.id === prefer.channel) s += 10;
       if (prefer.external && o.builtin) s -= 50;
       // A free part beats a busy one of the kind asked for: two "next" buttons shouldn't share one.
       if (inUse(o.connection)) s -= 30;
       // Short of the kind asked for, controls take the plain controls first: buttons, encoders, pots;
       // and your own parts before the board's (its IMU or mic isn't a second dial).
-      if (o.part.kind !== prefer.kind && ['button', 'knob', 'pot', 'touch'].includes(o.part.kind)) s += 2;
+      if (o.part.kind !== prefer.kind && ['button', 'knob', 'haptic', 'pot', 'touch'].includes(o.part.kind)) s += 2;
       if (o.builtin && prefer.builtin === undefined) s -= 1;
       return s;
     };

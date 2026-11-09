@@ -7,11 +7,13 @@
 import type { LuaFactory } from 'wasmoon';
 import type { Display } from '../sim/display';
 import { dial, trigger } from '../sim/controls/controls';
-import type { PartKind } from '../sim/controls/bench';
+import { BUILT_IN_ONLY, type PartKind } from '../sim/controls/bench';
 import type { Buzzer } from '../sim/inputs/buzzer';
+import type { Haptic } from '../sim/inputs/haptic';
 import type { Imu } from '../sim/inputs/imu';
 import type { SimInput } from '../sim/inputs/input';
 import type { LD2410 } from '../sim/inputs/ld2410';
+import type { LedRing } from '../sim/inputs/ledring';
 import { defineSketch, type Sketch } from '../sim/sketch';
 import { type ResidentBoard, ResidentHost, resetScreen, type SendResult } from './host';
 import { luaFactory } from './lua';
@@ -76,6 +78,9 @@ export function appSketch(app: ResidentAppSource, env: ResidentEnv): Sketch {
         return part;
       };
       display.setRotation(device.firmwareRotation ?? 0);
+      // A new app finds the board's knob as its firmware leaves it (an encoder's feel) and its LEDs dark.
+      bench.first<Haptic>('haptic')?.reset();
+      bench.first<LedRing>('leds')?.reset();
       await resetScreen(display);
       const board: ResidentBoard = {
         display,
@@ -89,10 +94,15 @@ export function appSketch(app: ResidentAppSource, env: ResidentEnv): Sketch {
         get buzzer() {
           return bench.first<Buzzer>('buzzer');
         },
+        // LEDs the board has beside its display (the SmartKnob's ring), for `leds`.
+        get ring() {
+          return bench.first<LedRing>('leds');
+        },
         dial: (name, opts) => declare(name, dial(opts)),
         trigger: (name, opts) => declare(name, trigger(opts)),
         radar: (opts) => sensor<LD2410>('ld2410', (r) => opts.mode && r.setMode(opts.mode)),
-        sensor: (kind) => sensor(kind),
+        // A part only a board has built in (the SmartKnob's knob) is never put on the bench for an app.
+        sensor: (kind) => (BUILT_IN_ONLY.has(kind) ? bench.first(kind) : sensor(kind)),
         present: (kind) => bench.first(kind),
         libraries,
         store: new AppStore(app.storeNs || 'app', env.persistStore ?? false, (key) => { // no namespace, or an empty one: the shared slot, as on the board

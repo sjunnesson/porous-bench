@@ -19,11 +19,27 @@ export interface ModelButton {
   normal: THREE.Vector3;
 }
 
+/** A knob standing round the screen (the SmartKnob's): it turns, the screen under its glass doesn't. */
+export interface ModelKnob {
+  /** Everything of the knob, to leave out of the body you grab the device by. */
+  root: THREE.Group;
+  /** What turns: rotate it about z. */
+  rotor: THREE.Group;
+  /** Grab these to turn it (its side and the rim round the glass), and the glass to press it. */
+  grips: THREE.Mesh[];
+  glass: THREE.Mesh;
+  /** Where its top is, in the model: turning follows the pointer round this point. */
+  top: THREE.Vector3;
+}
+
 export interface BuiltModel {
   group: THREE.Group;
   screen: THREE.Mesh;
   texture: THREE.CanvasTexture;
   buttons: ModelButton[];
+  knob?: ModelKnob;
+  /** LEDs beside the display (the SmartKnob's ring), LED 0 at the top, clockwise: colour them. */
+  ring?: THREE.Mesh[];
   radius: number;
   dispose(): void;
 }
@@ -135,6 +151,48 @@ function faceNormal(face: Face): THREE.Vector3 {
   }[face];
 }
 
+/** Grooves round a knob's side: with only its rims drawn, a turning cylinder would look still. */
+const KNURLS = 36;
+
+/**
+ * A knob standing `d` mm off the front at `z0`, round `at`: its side and grooves, the rim round its
+ * glass and a mark on it (the rotor, which turns), with invisible surfaces to grab it by.
+ */
+function buildKnob(k: { r: number; d: number; glass: number }, at: { x: number; y: number }, z0: number, track: <T extends { dispose(): void }>(x: T) => T): ModelKnob {
+  const root = new THREE.Group();
+  root.position.set(at.x, at.y, z0);
+  const rotor = new THREE.Group();
+  root.add(rotor);
+  const side = slab(k.r * 2, k.r * 2, k.d, k.r, 0);
+  side.position.z = k.d / 2;
+  rotor.add(side);
+  const grooves: THREE.Vector3[] = [];
+  for (let i = 0; i < KNURLS; i++) {
+    const a = (i / KNURLS) * Math.PI * 2;
+    const [x, y] = [Math.cos(a) * k.r, Math.sin(a) * k.r];
+    grooves.push(new THREE.Vector3(x, y, 1), new THREE.Vector3(x, y, k.d - 1));
+  }
+  rotor.add(new THREE.LineSegments(track(new THREE.BufferGeometry().setFromPoints(grooves)), GHOST_DIM));
+  const rim = circle(k.glass, GHOST);
+  rim.position.z = k.d + 0.02;
+  rotor.add(rim);
+  // The mark: a notch on the rim at the top, where the knob points.
+  const mark = new THREE.Mesh(track(new THREE.PlaneGeometry(1.2, k.r - k.glass - 1)), track(new THREE.MeshBasicMaterial({ color: 0x1b4b7a, transparent: true, opacity: 0.8 })));
+  mark.position.set(0, (k.r + k.glass) / 2, k.d + 0.03);
+  rotor.add(mark);
+
+  const hidden = () => track(new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  const tube = new THREE.Mesh(track(new THREE.CylinderGeometry(k.r, k.r, k.d, 48, 1, true)), hidden());
+  tube.rotation.x = Math.PI / 2;
+  tube.position.z = k.d / 2;
+  const top = new THREE.Mesh(track(new THREE.RingGeometry(k.glass, k.r, 48)), hidden());
+  top.position.z = k.d;
+  const glass = new THREE.Mesh(track(new THREE.CircleGeometry(k.glass, 48)), hidden());
+  glass.position.z = k.d + 0.1;
+  root.add(tube, top, glass);
+  return { root, rotor, grips: [tube, top], glass, top: new THREE.Vector3(at.x, at.y, z0 + k.d) };
+}
+
 export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasElement): BuiltModel {
   const enc = enclosureOf(profile);
   const { body } = enc;
@@ -157,6 +215,13 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
 
   // Display module on a bare board
   let frontZ = body.d / 2;
+  // A knob on the front, the screen on top of it under the glass.
+  let knob: ModelKnob | undefined;
+  if (enc.knob) {
+    knob = buildKnob(enc.knob, enc.screen, body.d / 2, track);
+    group.add(knob.root);
+    frontZ = body.d / 2 + enc.knob.d - 1.5;
+  }
   if (enc.module) {
     const m = enc.module;
     const mod = slab(m.w, m.h, m.d, m.r, 0);
@@ -208,6 +273,20 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
       pkg.position.set(enc.screen.x + Math.cos(a) * leds.radiusMm, enc.screen.y - Math.sin(a) * leds.radiusMm, frontZ + 0.05);
       pkg.rotation.z = -a;
       group.add(pkg);
+    }
+  }
+
+  // LEDs beside the display: a glow each, coloured as the app shows them, dim while off.
+  let ring: THREE.Mesh[] | undefined;
+  if (profile.ring) {
+    ring = [];
+    const n = profile.ring.count;
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (i / n) * Math.PI * 2; // LED 0 at the top, clockwise
+      const glow = new THREE.Mesh(track(new THREE.CircleGeometry(1.6, 16)), track(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })));
+      glow.position.set(enc.screen.x + Math.cos(a) * profile.ring.radiusMm, enc.screen.y - Math.sin(a) * profile.ring.radiusMm, body.d / 2 + 0.06);
+      group.add(glow);
+      ring.push(glow);
     }
   }
 
@@ -284,13 +363,15 @@ export function buildModel(profile: DeviceProfile, screenCanvas: HTMLCanvasEleme
   }
 
   // As deep as the module in front or whatever stands furthest off a face (a board plugged in behind).
-  const reach = Math.max(enc.module?.d ?? 0, ...(enc.parts ?? []).map((p) => (p.kind === 'block' ? (p.z ?? 0) + p.d : 0)));
+  const reach = Math.max(enc.module?.d ?? 0, enc.knob?.d ?? 0, ...(enc.parts ?? []).map((p) => (p.kind === 'block' ? (p.z ?? 0) + p.d : 0)));
   const radius = 0.5 * Math.hypot(body.w, body.h, body.d + reach * 2);
   return {
     group,
     screen,
     texture,
     buttons,
+    knob,
+    ring,
     radius,
     dispose() {
       group.traverse((o) => {

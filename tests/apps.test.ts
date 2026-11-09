@@ -4,7 +4,7 @@ import { ResidentHost, resetScreen, type ResidentBoard } from '../src/resident/h
 import { AppStore } from '../src/resident/store';
 import { Zone } from '../src/resident/zone';
 import { SimClock } from '../src/sim/clock';
-import { Bench, DEFAULT_PARTS, PART_KINDS, type PartSpec } from '../src/sim/controls/bench';
+import { boardBench, BUILT_IN_ONLY, DEFAULT_PARTS, PART_KINDS, type PartSpec } from '../src/sim/controls/bench';
 import { Dial, Trigger } from '../src/sim/controls/controls';
 import { findDevice } from '../src/sim/devices';
 import type { DeviceProfile } from '../src/sim/devices/types';
@@ -15,13 +15,14 @@ import { benchApp } from '../src/sim/generate';
 import { ledProfile, MATRIX_SIZES } from '../src/sim/leds';
 import { Imu } from '../src/sim/inputs/imu';
 import { LD2410 } from '../src/sim/inputs/ld2410';
+import type { LedRing } from '../src/sim/inputs/ledring';
 import { FIRST_APP, FIRST_DISPLAY } from '../src/start';
 
 // Every bundled app must boot and run without a Lua error on each kind of output it's written for:
 // display apps on a colour LCD in landscape and portrait, a portrait touch LCD, a round AMOLED, a small round touch LCD, a large square touch LCD, a landscape touch AMOLED,
-// a tiny 1-bit OLED and e-paper; strip apps on a strip and a ring; matrix apps on every matrix size.
+// the SmartKnob's round screen on its knob, a tiny 1-bit OLED and e-paper; strip apps on a strip and a ring; matrix apps on every matrix size.
 const OUTPUTS: Record<'display' | 'strip' | 'matrix', DeviceProfile[]> = {
-  display: ['m5stickc-plus2', 'waveshare-esp32-c6-lcd-1.47', 'waveshare-esp32-s3-touch-lcd-2', 'waveshare-esp32-s3-touch-amoled-1.32', 'seeed-xiao-round-display', 'guition-esp32-s3-4848s040', 'waveshare-esp32-s3-touch-amoled-1.91', 'ssd1306-128x32', 'waveshare-epd-2.13-v4'].map(
+  display: ['m5stickc-plus2', 'waveshare-esp32-c6-lcd-1.47', 'waveshare-esp32-s3-touch-lcd-2', 'waveshare-esp32-s3-touch-amoled-1.32', 'seeed-xiao-round-display', 'guition-esp32-s3-4848s040', 'waveshare-esp32-s3-touch-amoled-1.91', 'smartknob-view', 'ssd1306-128x32', 'waveshare-epd-2.13-v4'].map(
     (id) => findDevice(id)!,
   ),
   strip: [ledProfile({ kind: 'strip', count: 30 }), ledProfile({ kind: 'ring', count: 12 })],
@@ -40,15 +41,16 @@ async function runApp(code: string, device: DeviceProfile, ms: number, parts: Pa
   clock.paused = true;
   const display = new Display(device, clock);
   display.setRotation(device.firmwareRotation ?? 0);
-  const bench = new Bench(clock);
-  bench.load(parts);
+  // As Bench builds it: the board's own parts (its buttons, the SmartKnob's knob and LEDs), then these.
+  const bench = boardBench(device, clock, parts, boardsFor(device)[0]?.id);
   const problems: string[] = [];
   const board: ResidentBoard = {
     display,
     now: () => clock.now(),
     zone: () => new Zone('Europe/Stockholm'),
     buttons: [new Trigger({}, bench), new Trigger({}, bench)],
-    imu: new Imu({}, clock),
+    imu: bench.first<Imu>('imu') ?? new Imu({}, clock),
+    ring: bench.first<LedRing>('leds'),
     store: new AppStore('apps-test', false),
     libraries,
     dial: (_name, opts) => {
@@ -62,7 +64,7 @@ async function runApp(code: string, device: DeviceProfile, ms: number, parts: Pa
       return t;
     },
     radar: (opts) => new LD2410(opts, clock),
-    sensor: (kind) => bench.ensure(kind).part,
+    sensor: (kind) => (BUILT_IN_ONLY.has(kind) ? bench.first(kind) : bench.ensure(kind).part),
     log: (level, text) => level === 'error' && problems.push(text),
     telemetry: () => {},
     publish: () => 'sent',
@@ -94,6 +96,7 @@ describe('bundled apps', () => {
       const needs = appNeeds(app.code);
       for (const device of OUTPUTS[app.target]) {
         if (needs.touch && !device.touch) continue; // listed only where there's a touch panel
+        if (needs.haptic && !device.builtins?.includes('haptic')) continue; // only where there's a motor knob
         // With only the libraries of a board that has what it binds, as Bench runs it.
         const libraries = boardsFor(device)
           .map((b) => outputCaps(device, b).libraries)

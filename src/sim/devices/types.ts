@@ -33,6 +33,11 @@ export interface Enclosure {
   module?: { w: number; h: number; d: number; r: number; x: number; y: number };
   /** Centre of the active area relative to the body centre. */
   screen: { x: number; y: number };
+  /**
+   * A knob standing on the front round the screen (the SmartKnob's): its radius and height in mm, and
+   * its glass's radius. The screen sits on top, under the glass, and stays still while the knob turns.
+   */
+  knob?: { r: number; d: number; glass: number };
   parts?: EnclosurePart[];
 }
 
@@ -71,8 +76,14 @@ export interface DeviceProfile {
   flip?: { tile: number };
   /** The boards (ids in src/sim/boards.ts) that can drive it, the default first. Unset: any generic board. */
   boards?: string[];
-  /** Hardware built into the board besides its buttons (those come from the enclosure). */
-  builtins?: ('imu' | 'buzzer' | 'mic')[];
+  /**
+   * Hardware built into the board besides its buttons (those come from the enclosure). `haptic`: a
+   * knob turned by a motor that makes the detents the app asks for (the SmartKnob's); pressing it is
+   * button A on a board with no button of its own.
+   */
+  builtins?: ('imu' | 'buzzer' | 'mic' | 'haptic')[];
+  /** Addressable LEDs round the display, numbered from the top clockwise, driven by `leds` beside the screen. */
+  ring?: { count: number; radiusMm: number };
   /** Function → GPIO on boards with a built-in display. */
   wiring?: Record<string, number>;
   /** Things a driver must get right on real hardware. */

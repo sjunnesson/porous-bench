@@ -828,6 +828,39 @@ details.raw p.hex {
   fill: var(--now);
   stroke: var(--now);
 }
+/* The SmartKnob's knob: its detents as the app set them, the ends darker, magnets longer. */
+.knob.haptic .tick.end {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  opacity: 0.9;
+}
+.knob.haptic .tick.magnet {
+  stroke: var(--blue);
+  stroke-width: 1.5;
+  opacity: 1;
+}
+.knob.haptic.clicked .knob-body {
+  stroke: var(--now);
+  stroke-width: 2;
+}
+
+/* LEDs beside a display (the SmartKnob's ring). */
+.ledring {
+  flex: none;
+}
+.ledring-ring {
+  fill: none;
+  stroke: var(--control);
+  stroke-width: 1;
+}
+.ledring-led {
+  fill: var(--paper);
+  stroke: var(--control);
+  stroke-width: 1;
+}
+.ledring-led.on {
+  stroke: none;
+}
 
 /* The IR remote and the keypad: a grid of small keys. */
 .remote {

@@ -92,6 +92,12 @@ export const BOARDS: Board[] = [
     note: '8 MB octal PSRAM: Lua and LVGL live there.',
   },
   {
+    id: 'smartknob-view',
+    name: 'ESP32-S3 (on the board)',
+    libraries: ['screen', 'lgfx', 'lvgl'],
+    note: 'Not measured: Bench has no firmware for it yet, and the base\'s module isn\'t published (GPIO 37 carries the encoder, so it has quad PSRAM or none). The libraries are what Bench\'s firmware gives every ESP32-S3 board.',
+  },
+  {
     id: 'guition-esp32-s3-4848s040',
     name: 'ESP32-S3 N16R8 (on the board)',
     libraries: ['screen', 'lgfx', 'lvgl'],

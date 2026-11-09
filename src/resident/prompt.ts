@@ -48,6 +48,9 @@ const MODULE: Partial<Record<PartKind, string>> = {
   thermal: '`thermal.pixels()` (64 temperatures, row by row), `thermal.read()` for `warm`, `hot_x`, `hot_y`, plus a `warm` event',
   co2: '`co2.ppm()` (nil in its first 5 s), plus a `co2` event with each measurement (every 5 s)',
   pulse: '`pulse.bpm()` (nil until it has a rate), `pulse.samples()`, plus `finger` and `beat` events',
+  haptic:
+    '`haptic.config({ min, max, width, detent, endstop, snap, magnets, position })` makes the detents and ends the app wants (width in degrees a position; a whole config each time, as the device skill says), `haptic.position()` / `haptic.read()`, `haptic.click()`, plus a `haptic` event (`position`, `delta`) on each move; pressing it is button A (`tap` / `hold`, index 0)',
+  leds: '`leds.set(i, rgb)`, `leds.hsv(h, s, v)`, `leds.brightness(0..255)`, then `leds.show()`: the LEDs round the screen, LED 0 at the top, clockwise',
 };
 
 /** The board driving the output, and what that means for the app. */
@@ -115,6 +118,12 @@ function outputSection(p: DeviceProfile, board?: Board): string[] {
       `- It has a touch panel (${p.touch.controller}), one finger: \`touchscreen.read()\` gives \`{ pressed, x, y }\`, and \`on_event\` gets \`touch_down\`, \`touch_move\`, \`touch_up\` and \`touch_tap\` (released within 500 ms, moved under 10 px), each with \`e.data.x\` / \`e.data.y\` in the coordinates the app draws in. In Bench I tap by clicking the screen. Hit-test your own layout; LVGL widgets don't receive touches.`,
     );
   }
+  if (p.builtins?.includes('haptic')) {
+    lines.push(
+      '- The screen sits on a knob with a motor in it, and the app decides how turning it feels (detents, ends, a two-way switch, a spring back to the middle, magnetic detents) with `haptic.config`. Pressing the knob is its only button, A. In Bench I turn it by dragging it round, or with ← →.',
+    );
+  }
+  if (p.ring) lines.push(`- ${p.ring.count} LEDs light a ring round the knob: \`leds\` drives them beside the screen (LED 0 at the top, clockwise), nothing lights until \`leds.show()\`.`);
   if (p.tech === 'amoled') lines.push('- AMOLED: every pixel emits its own light and black is off, so a black background looks like no screen at all; it suits dark, high-contrast designs.');
   if (!color && p.tech !== 'epaper') lines.push('- 1-bit: use pure white on black; colours become lit or unlit at 50% brightness.');
   if (p.epaper) lines.push(`- E-paper: every \`flip()\` is a refresh (about ${p.epaper.fullRefreshMs / 1000} s full, ${p.epaper.partialRefreshMs / 1000} s partial). Change the screen rarely and don't animate.`);

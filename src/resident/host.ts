@@ -12,6 +12,7 @@ import type { Library } from '../sim/boards';
 import type { Display } from '../sim/display';
 import type { Buzzer } from '../sim/inputs/buzzer';
 import type { Imu } from '../sim/inputs/imu';
+import type { LedRing } from '../sim/inputs/ledring';
 import { chainIndex, chainPoint } from '../sim/leds';
 import { CHANNELS, type PartKind } from '../sim/controls/bench';
 import type { SimInput } from '../sim/inputs/input';
@@ -57,6 +58,8 @@ export interface ResidentBoard {
   buttons: Pressable[];
   imu?: Imu;
   buzzer?: Buzzer;
+  /** LEDs beside the display (the SmartKnob's ring): `leds` drives them when the output isn't an LED chain. */
+  ring?: LedRing;
   store: AppStore;
   /**
    * The drawing modules the board's firmware has for this output (Bench's Boards). The others aren't
@@ -68,7 +71,7 @@ export interface ResidentBoard {
   trigger?(name: string, opts: TriggerOptions): Trigger;
   radar?(opts: LD2410Options): LD2410;
   /** Bench drivers for the other sensors (drivers.ts): the part of that kind on the bench (added if missing). */
-  sensor?(kind: PartKind): SimInput;
+  sensor?(kind: PartKind): SimInput | undefined;
   /** The part of that kind on the bench now, if there is one (none is added). Its driver's events
    *  reach the app whether or not the app reads it, as a real board's drivers' do. */
   present?(kind: PartKind): SimInput | undefined;
@@ -765,19 +768,25 @@ export class ResidentHost {
 
       // leds: the LED chain when the output is one (strip, ring, matrix), in chain order: on a matrix
       // the chain runs through the grid as the panel is wired (leds.ts), and xy finds an LED in it.
-      led_size: () => (d.tech === 'led' ? [d.width(), d.height()] : undefined),
-      led_xy: (x: number, y: number) => chainIndex(d.profile, x, y),
+      // Beside a display, the board's own LEDs (the SmartKnob's ring), a row of them.
+      led_size: () => (d.tech === 'led' ? [d.width(), d.height()] : b.ring ? [b.ring.count, 1] : undefined),
+      led_xy: (x: number, y: number) => (d.tech !== 'led' && b.ring ? (y === 0 && x >= 0 && x < b.ring.count ? x : -1) : chainIndex(d.profile, x, y)),
       led_set: (i: number, c: number) => {
-        if (i >= 0 && i < d.width() * d.height()) d.drawPixelRgb(...chainPoint(d.profile, i), c);
+        if (d.tech !== 'led' && b.ring) b.ring.set(i, c);
+        else if (i >= 0 && i < d.width() * d.height()) d.drawPixelRgb(...chainPoint(d.profile, i), c);
       },
       // What leds.set wrote, 8 bits a channel (a WS2812 has no fewer).
-      led_get: (i: number) => (i < 0 || i >= d.width() * d.height() ? 0 : d.getPixelRgb(...chainPoint(d.profile, i))),
+      led_get: (i: number) => {
+        if (d.tech !== 'led' && b.ring) return b.ring.get(i);
+        return i < 0 || i >= d.width() * d.height() ? 0 : d.getPixelRgb(...chainPoint(d.profile, i));
+      },
       led_fill: (c: number, from: number, count: number) => {
+        if (d.tech !== 'led' && b.ring) return b.ring.fill(c, from, count);
         const n = d.width() * d.height();
         for (let i = Math.max(0, from); i < Math.min(n, from + count); i++) d.drawPixelRgb(...chainPoint(d.profile, i), c);
       },
-      led_show: () => this.present(),
-      led_brightness: (v: number) => d.setBrightness((Math.min(255, Math.max(0, v)) / 255) * 100),
+      led_show: () => (d.tech !== 'led' && b.ring ? b.ring.show() : this.present()),
+      led_brightness: (v: number) => (d.tech !== 'led' && b.ring ? b.ring.setBrightness(v) : d.setBrightness((Math.min(255, Math.max(0, v)) / 255) * 100)),
 
       // The touch panel over the glass: undefined on a display without one.
       touch_read: () => {

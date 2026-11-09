@@ -52,6 +52,8 @@ function controlsFor(p: PartSpec, many: boolean): Control[] {
     co2: [value(named('CO₂'), 'co2', { min: 400, max: 2000, step: 10, start: 600, unit: ' ppm' }), moment(named('Stuffy'), 'stuffy')],
     pulse: [value(named('Heart rate'), 'bpm', { min: 40, max: 180, step: 1, start: 70, unit: ' bpm' }), moment(named('Heartbeat'), 'beat')],
     buzzer: [],
+    haptic: [value(p.label, 'rotate', { min: 0, max: 100, step: 1, start: 50, unit: '' }), moment(`${p.label} press`, 'push')],
+    leds: [],
   };
   return kinds[p.kind] ?? [];
 }

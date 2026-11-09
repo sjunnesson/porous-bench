@@ -40,9 +40,9 @@ describe('analytics events', () => {
   });
 
   it('count each reason misfits() gives, and leave out an app made for another output', () => {
-    const caps: OutputCaps = { output: 'display', w: 128, h: 64, color: false, motion: false, touch: false, libraries: ['screen'], appRamKb: 40 };
-    const needs: AppNeeds = { output: 'display', libraries: ['lvgl'], motion: true, color: true, touch: true, min: { w: 240, h: 240 }, ramKb: 200 };
-    expect(misfits(needs, caps).map(misfitKind)).toEqual(['lib:lvgl', 'motion', 'colour', 'touch', 'size', 'memory']);
+    const caps: OutputCaps = { output: 'display', w: 128, h: 64, color: false, motion: false, touch: false, haptic: false, libraries: ['screen'], appRamKb: 40 };
+    const needs: AppNeeds = { output: 'display', libraries: ['lvgl'], motion: true, color: true, touch: true, haptic: true, min: { w: 240, h: 240 }, ramKb: 200 };
+    expect(misfits(needs, caps).map(misfitKind)).toEqual(['lib:lvgl', 'motion', 'colour', 'touch', 'haptic', 'size', 'memory']);
     expect(misfits({ ...needs, output: 'strip' }, caps).map(misfitKind)).toEqual([null]);
   });
 });

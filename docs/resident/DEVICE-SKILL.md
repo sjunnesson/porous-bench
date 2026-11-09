@@ -26,6 +26,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 | Waveshare ESP32-S3-Touch-LCD-2 | 240×320 | 16 | dark | touch panel (`touchscreen`); IMU |
 | Waveshare ESP32-S3-Touch-AMOLED-1.32 | 466×466 | 16 | dark | round (`shape = "round"`): only the circle of radius 233 shows; AMOLED, black is off; touch panel (`touchscreen`) |
 | Seeed Studio Round Display for XIAO | 240×240 | 16 | dark | round (`shape = "round"`): only the circle of radius 120 shows; touch panel (`touchscreen`) |
+| SmartKnob View | 240×240 | 16 | dark | round (`shape = "round"`): only the circle of radius 120 shows, on top of a knob with a motor in it that makes the detents and ends the app asks for (`haptic`); pressing the knob is button A, and there's no B or touch panel; eight LEDs light a ring round the knob (`leds`). Modelled from the SmartKnob's firmware, not measured on one |
 | Guition ESP32-S3-4848S040 | 480×480 | 16 | dark | 4" wall panel; touch panel (`touchscreen`); no buttons, so drive the app by touch; a `flip()` sends only the 16×16 squares drawn on since the last |
 | Espressif ESP-Mosaico | 480×480 | 16 | dark | AMOLED, black is off; rounded corners: keep ~70 px clear; touch panel (`touchscreen`); IMU |
 | Waveshare ESP32-S3-AMOLED-1.91 | 536×240 (landscape) | 16 | dark | AMOLED, black is off; IMU; the Touch version adds a touch panel (`touchscreen`) |
@@ -35,7 +36,7 @@ local s = screens.get("main")   -- { name, w, h, shape, depth = 16 | 1, scheme =
 
 On 1-bit screens use pure white for marks on a dark scheme, pure black on a light one.
 
-**Buttons**: two, indices 0 (key A) and 1 (key B). Gestures arrive in `on_event`: `tap`
+**Buttons**: two, indices 0 (key A) and 1 (key B); the SmartKnob View has only A, a press on its knob. Gestures arrive in `on_event`: `tap`
 (`e.data.index`, `e.data.count`) on a release before 500 ms, `hold` (`e.data.held = true` at 500 ms,
 `false` on release). A legacy `button` event fires alongside `tap`.
 
@@ -60,8 +61,9 @@ the header:
 - `motion`: it animates (so not e-paper). `color`: it means nothing in 1-bit. `touch`: it needs a
   touch panel. `WxH`: the smallest screen, as apps see it, that its fixed layout fits. An app that adapts through `screens.get`
   needs none of these.
-- Bench reads the rest from the code: the libraries it binds (`lvgl.bind` needs a board with LVGL)
-  and its size (the memory it takes on a real board).
+- Bench reads the rest from the code: the libraries it binds (`lvgl.bind` needs a board with LVGL),
+  its size (the memory it takes on a real board), and `haptic`, which only the SmartKnob View has.
+  Every other input is on the bench for any output, so it never keeps an app out.
 
 ## Boards: libraries and memory
 
@@ -73,10 +75,11 @@ The board driving the output decides what an app gets. Bench shows it under the 
 | M5StickC Plus2, M5StickS3, ESP32-S3 DevKitC-1 N16R8, Seeed Studio XIAO ESP32S3 (on its own or behind the Round Display), Waveshare ESP32-S3-Touch-LCD-2, Waveshare ESP32-S3-Touch-AMOLED-1.32, Waveshare ESP32-S3-AMOLED-1.91 and its Touch version, Guition ESP32-S3-4848S040, Espressif ESP-Mosaico (ESP32-S31) | `screen`, `lgfx`, `lvgl` | PSRAM (MBs) |
 | ESP32 without PSRAM (Waveshare ESP32 e-Paper Driver Board, ESP32 DevKitC) | `screen`, `lgfx`; no `lvgl` | ~52 KB |
 | Waveshare ESP32-C6-LCD-1.47 | `screen`, `lgfx`; no `lvgl` | ~84 KB |
+| SmartKnob View (its ESP32-S3 base) | `screen`, `lgfx`, `lvgl`, as on Bench's other ESP32-S3 boards | not measured (no Bench firmware for it yet): Bench doesn't check |
 
 A library the board's firmware doesn't have isn't there at all: on a board without LVGL the global
 `lvgl` is nil, so `lvgl.bind` fails with "attempt to index a nil value (global 'lvgl')", on Bench as
-on the board (Bench adds why). The same goes for `leds` on a display and `screen` on LED outputs, and
+on the board (Bench adds why). The same goes for `leds` on a display (but the SmartKnob View's, whose LEDs it drives) and `screen` on LED outputs, and
 `lgfx` on a strip or ring (a matrix keeps it). `if lvgl then … end` is how an app checks.
 
 On a board without PSRAM, draw with `lgfx` (or `screen`) and keep the app small: receiving and
@@ -208,8 +211,9 @@ Bench's Real device panel pushes the open app to a Resident device and drives it
 
 - The app travels wrapped in a small shim (only the stand-ins it uses, minified) that defines
   `dial`, `trigger`, `light`, `pir`, `climate`, `touch`, `switch`, `joystick`, `keypad`, `ir`, `rfid`,
-  `mic`, `tof`, `thermal`, `co2`, `pulse`, `ld2410`, `imu`, `touchscreen` and a silent `buzzer` where
-  the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
+  `mic`, `tof`, `thermal`, `co2`, `pulse`, `ld2410`, `imu`, `touchscreen`, `haptic` (the knob as Bench
+  turns it; its config and clicks act on Bench's knob, which runs the app too), a silent `buzzer` and
+  an empty `leds` where the firmware has none, fed by `bench` events from Bench. Write against the API and it runs
   unchanged: the readings (the IMU's rotation rate included) and the driver events arrive as they do
   in Bench. A sensor's events (a key, a tag, a clap, a beat, `motion`, `touch` …) reach an app with
   an `on_event` in the order Bench raised them, each once, and each trigger press carries its own `code`.
@@ -282,7 +286,8 @@ everything after `#share=` (`1.` and the rest).
   `trigger.new`, to `"part:channel"` or `"none"`. `{}` leaves it to the app's `connect` and `via`
   options, as when the app is opened any other way. The board's own parts are `builtin-button-0`
   (A), `builtin-button-1` (B), `builtin-imu`, `builtin-buzzer` and `builtin-mic` (the M5StickC Plus2
-  and the ESP-Mosaico), on boards that have them.
+  and the ESP-Mosaico), `builtin-haptic` and `builtin-leds` (the SmartKnob View: its knob, whose
+  `push` is button A, and its LEDs), on boards that have them.
 - `app`: `{ name, code, description? }` for an app you wrote; `{ bundled: "<id>" }` for one of
   Bench's own (its file name in `src/resident-apps`, less `.lua`).
 
@@ -296,6 +301,7 @@ everything after `#share=` (`1.` and the rest).
 | Waveshare ESP32-S3-AMOLED-1.91 | `waveshare-esp32-s3-amoled-1.91` | `waveshare-esp32-s3-amoled-1.91` |
 | Waveshare ESP32-S3-Touch-AMOLED-1.91 | `waveshare-esp32-s3-touch-amoled-1.91` | `waveshare-esp32-s3-amoled-1.91` |
 | Seeed Studio Round Display for XIAO | `seeed-xiao-round-display` | `seeed-xiao-esp32s3-round-display` |
+| SmartKnob View | `smartknob-view` | `smartknob-view` |
 | Guition ESP32-S3-4848S040 | `guition-esp32-s3-4848s040` | `guition-esp32-s3-4848s040` |
 | Espressif ESP-Mosaico | `espressif-esp-mosaico` | `espressif-esp-mosaico` |
 | 1.3" ST7789 240×240 | `generic-st7789-240x240` | a dev board |
@@ -330,6 +336,8 @@ A dial connects to a channel that turns or measures, a trigger to one that fires
 | `co2` (400–2000 ppm) | `co2` | `stuffy` |
 | `pulse` (40–180 bpm) | `bpm` | `beat`, `finger` |
 | `buzzer` | | |
+| `haptic` (the SmartKnob View's knob: built in, never on the bench) | `rotate` | `push` |
+| `leds` (LEDs beside a display: built in) | | |
 
 Opening a link replaces the setup in that browser, and Bench offers **Back to my bench** until the
 user keeps the new one. An id that Bench doesn't know is left out and named.
@@ -402,7 +410,7 @@ app is written for one particular bench.
 ```lua
 local speed = dial.new("speed", { min = 1, max = 10, step = 1, start = 3 })
 --   options: label, min, max, step, start, wrap,
---            via = "encoder" | "pot" | "joystick-x" | "joystick-y" | "imu-x" | "imu-y" | "radar" | "distance"
+--            via = "encoder" | "knob" (the SmartKnob's; "encoder" takes it too) | "pot" | "joystick-x" | "joystick-y" | "imu-x" | "imu-y" | "radar" | "distance"
 --                | "heat-x" | "heat-y" | "light" | "sound" | "temperature" | "humidity" | "co2" | "pulse",
 --            connect = "pot-1:position" (one specific part and channel, as Connections names them),
 --            keys = { down = "ArrowLeft", up = "ArrowRight" }
@@ -410,7 +418,7 @@ speed:value()   speed:delta()   -- steps since the last call   speed:fraction() 
 
 local fire = trigger.new("fire", { key = "Space" })
 --   options: label, key (a KeyboardEvent.code), connect = "button-1:press",
---            via = "button" | "external-button" | "switch" | "encoder-push" | "joystick-press" | "touch"
+--            via = "button" | "external-button" | "switch" | "encoder-push" | "knob-press" | "joystick-press" | "touch"
 --                | "keypad" | "ir" | "rfid" | "shake" | "presence" | "near" | "warm" | "motion" | "dark"
 --                | "clap" | "stuffy" | "heartbeat" | "finger",
 --            code = "ok" (on a part with several keys or tags, the one to ask for by its id: "5", "ok", "star", "card-a"; any other is an error)
@@ -520,11 +528,47 @@ touchscreen.pressed()
 
 LVGL widgets don't receive touches: hit-test your own layout.
 
-### leds (Bench driver, LED outputs)
+### haptic (Bench driver, the SmartKnob View's knob)
+
+The SmartKnob's knob is a gimbal motor under a magnetic encoder: it makes whatever detents and ends
+the app asks for, so the knob feels like the thing it sets. Only the SmartKnob View has it (an app
+that uses it is listed for that display only). Until an app configures it, it feels like a rotary
+encoder (20 detents a turn, no ends), so `dial.new(..., { via = "encoder" })` turns with it.
+
+```lua
+haptic.config({          -- a whole config, as the SmartKnob takes one: anything left out is its default
+  min = 0, max = 10,     -- the ends (max < min: none; default 0 and -1)
+  width = 10,            -- degrees a position (default 18)
+  detent = 1,            -- how hard it pulls to each position, 0..1 (0: turns freely; default 1)
+  endstop = 1,           -- how hard the ends push back (default 1)
+  snap = 1.1,            -- how far past a detent the position moves on, in positions: 1.1 holds a
+                         --   detent, 0.55 makes a two-way switch (default 1.1, at least 0.5)
+  magnets = { 0, 5 },    -- detents only at these positions (up to 5), turning freely between
+  bias = 0,              -- extra turn to move away from 0 than back towards it, in positions
+  position = 3,          -- sets the position when it differs from the last config's (or `nonce` does)
+  nonce = 0,             -- change it (0-255) to set the same position again
+  text = "Volume",       -- yours, echoed in read()
+})
+haptic.read()       -- { position, sub (-snap..snap past the detent), angle (degrees), pressed, min, max,
+                    --   width, detent, endstop, snap, magnets, text }
+haptic.position()
+haptic.click()      -- the motor plays a click; haptic.click(true) is the strong one a press gets
+```
+
+Turning it raises `haptic` `{ position, delta }` driver events (several positions at once in one).
+Pressing it is button A: `tap` and `hold` events with `index` 0, and a strong click. Configs don't
+add up: call `config` again with every option for the next mode, or a `position` to move it there.
+On Bench you drag the knob round (or press ← →); it can't push back on a hand, so past an end it
+gives less and less and springs back when let go, and let go between detents it settles to the
+nearest, faster the stronger the detent.
+
+### leds (Bench driver, LED outputs and LEDs beside a display)
 
 When the user picks an LED strip, ring or matrix as the output (instead of a display), the board
 drives a WS2812B chain. Start the file with `-- @output strip` (strips and rings) or
-`-- @output matrix` so it's listed for that output.
+`-- @output matrix` so it's listed for that output. On the SmartKnob View, `leds` drives its eight
+LEDs round the knob instead, LED 0 at the top, clockwise, beside the screen: a display app that uses
+them is listed for that display only.
 
 ```lua
 leds.count()  leds.width()  leds.height()  leds.xy(x, y)   -- LEDs from 0 in chain order; xy finds one on a matrix

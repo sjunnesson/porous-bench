@@ -15,8 +15,8 @@ import type { Pir } from '../src/sim/inputs/pir';
 
 const factory = new LuaFactory();
 
-/** A real Resident device, as far as the shim can tell: none of Bench's drivers. */
-const FIRMWARE = 'dial, trigger, light, pir, climate, touch, ld2410 = nil, nil, nil, nil, nil, nil, nil\n';
+/** A real Resident device, as far as the shim can tell: none of Bench's drivers, no SmartKnob knob, no LEDs beside its screen. */
+const FIRMWARE = 'dial, trigger, light, pir, climate, touch, ld2410, haptic, leds = nil, nil, nil, nil, nil, nil, nil, nil, nil\n';
 
 /** `wrap: false` runs the app as Bench itself does, without the mirror's shim. */
 async function device(app: string, firmware = FIRMWARE, displayId = 'waveshare-esp32-c6-lcd-1.47', wrap = true) {
@@ -313,6 +313,18 @@ describe('remote mirror', () => {
     const imu = reader.read([speed, a], bench, { a }).s.imu as number[];
     expect(imu).toHaveLength(6);
     expect(imu[2]).toBeCloseTo(1, 1); // face up: 1 g on z
+  });
+
+  it("runs a SmartKnob app on another board, the knob's readings and moves from Bench", async () => {
+    const t = await device(`
+      function init(ctx) haptic.config({ min = 0, max = 10 }) haptic.click() leds.set(0, 0xFF0000) leds.show() end
+      function on_event(ctx, e) if e.name == "haptic" then log.info("moved", e.data.position, haptic.position()) end end`);
+    expect(t.error).toBeUndefined();
+    send(t.host, { s: { haptic: { position: 2 } }, g: [[0, 0, 0], [0, 0, 0]], ev: [[1, 'haptic', { position: 2, delta: 2 }]] });
+    await t.run(50);
+    send(t.host, { s: { haptic: { position: 3 } }, g: [[0, 0, 0], [0, 0, 0]], ev: [[2, 'haptic', { position: 3, delta: 1 }]] });
+    await t.run(50);
+    expect(t.logs).toEqual(['moved\t3\t3']);
   });
 
   it('boots every bundled display app wrapped for a real device', async () => {

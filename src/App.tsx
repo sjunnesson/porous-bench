@@ -14,6 +14,7 @@ import { onBoard } from './sim/wiring';
 import { SimClock } from './sim/clock';
 import { boardBench, DEFAULT_PARTS, type PartSpec } from './sim/controls/bench';
 import { benchApp } from './sim/generate';
+import type { Haptic } from './sim/inputs/haptic';
 import { MATRIX_SIZES, type Output, type OutputKind, RING_COUNTS, STRIP_COUNTS } from './sim/leds';
 import { devices, outputDevice } from './sim/devices';
 import { type LogLine, SketchRun } from './sim/runner';
@@ -111,6 +112,16 @@ const bundled: Entry[] = residentApps.map((a) => ({
   code: a.code,
   needs: a.needs,
 }));
+
+/** The SmartKnob's knob from the keyboard: its arrows turn it a position, its key presses it. */
+function hapticKey(knob: Haptic | undefined, code: string, down: boolean): boolean {
+  if (!knob) return false;
+  if (code === knob.keys.press) knob.press.setDown(down);
+  else if (code === knob.keys.left || code === knob.keys.right) {
+    if (down) knob.turn(code === knob.keys.right ? 1 : -1);
+  } else return false;
+  return true;
+}
 
 /** `shared`: what a share link opened, until you keep it or go back (a string: why a link didn't open). */
 export default function App({ shared = null }: { shared?: Opened | string | null }) {
@@ -265,6 +276,8 @@ export default function App({ shared = null }: { shared?: Opened | string | null
     const press = (code: string, down: boolean) => {
       let handled = false;
       for (const control of run.controls) if (control.handleKey(code, down)) handled = true;
+      // The board's own knob (the SmartKnob's) takes the keys no control did: an app that reads `haptic` declares none.
+      if (!handled) handled = hapticKey(bench.first<Haptic>('haptic'), code, down);
       if (handled && down) held.add(code);
       if (!down) held.delete(code);
       return handled;

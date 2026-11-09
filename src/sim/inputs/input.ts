@@ -33,6 +33,8 @@ export type InputKind =
   | 'co2'
   | 'pulse'
   | 'thermal'
+  | 'haptic'
+  | 'leds'
   | 'dial'
   | 'trigger';
 

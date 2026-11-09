@@ -22,7 +22,7 @@ export const EVENTS = {
   app_error: ['app', 'stage'],
   /** An app booted cleanly after an error earlier in the visit. */
   recovered: ['app'],
-  /** An app this output and board can't run, and why: motion, colour, touch, size, memory or lib:<name>. */
+  /** An app this output and board can't run, and why: motion, colour, touch, haptic, size, memory or lib:<name>. */
   wont_fit: ['app', 'reason'],
   /** A part put on the bench, by the visitor (user) or by an app that asked for it (app). */
   part_added: ['kind', 'by'],
@@ -99,6 +99,7 @@ export function misfitKind(why: string): string | null {
   if (why === 'animates') return 'motion';
   if (why === 'needs colour') return 'colour';
   if (why === 'needs a touchscreen') return 'touch';
+  if (why === 'needs a haptic knob') return 'haptic';
   if (/^needs \d+×\d+$/.test(why)) return 'size';
   if (/^needs ~\d+ KB$/.test(why)) return 'memory';
   const lib = /^needs ([\w-]+)$/.exec(why);

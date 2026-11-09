@@ -43,6 +43,33 @@ SOFTWARE.
 for its constants, default-theme values and animation paths (the `overshoot` and `bounce` curves use the
 control points from LVGL's `lv_anim.c`).
 
+## SmartKnob
+
+`src/sim/devices/smartknob-view.ts` and `src/sim/inputs/haptic.ts` carry facts from Scott Bezek's
+[SmartKnob](https://github.com/scottbez1/smartknob): the pins and panel settings of its firmware's
+`brushknight_esp32s3` build (`platformio.ini`), how its motor loop makes detents, ends and magnetic
+detents (`firmware/src/motor_task.cpp`), the config it takes (`proto/smartknob.proto`), and
+`src/resident-apps/knob-modes.lua` its demo configs (`firmware/src/interface_task.cpp`), used under
+its Apache License 2.0. The case and knob dimensions are measured off the SmartKnob View's printed
+parts (mechanical release v185), under its Creative Commons Attribution 4.0 license. No source is
+copied.
+
+```
+smartknob - Copyright 2022 Scott Bezek
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
 ## Waveshare
 
 `src/sim/devices/waveshare-esp32-c6-lcd-1.47.ts` carries the panel init values from Waveshare's ESP32-C6-LCD-1.47

@@ -13,6 +13,7 @@ import { CHANNEL_PPM, type Co2 } from '../inputs/co2';
 import type { Imu } from '../inputs/imu';
 import type { IrReceiver } from '../inputs/ir';
 import { type InputContext, type InputSpec, SimInput } from '../inputs/input';
+import type { Haptic } from '../inputs/haptic';
 import type { Knob } from '../inputs/knob';
 import type { Joystick } from '../inputs/joystick';
 import type { Keypad } from '../inputs/keypad';
@@ -32,6 +33,7 @@ import { type Bench, type Connection, connectionId, parseConnection, type Prefer
 /** Hardware a dial asks for first (`via`). Any absolute or relative channel on the bench will do. */
 export const DIAL_VIA: Record<string, Preference> = {
   encoder: { kind: 'knob', channel: 'rotate' },
+  knob: { kind: 'haptic', channel: 'rotate' },
   pot: { kind: 'pot', channel: 'position' },
   'joystick-x': { kind: 'joystick', channel: 'x' },
   'joystick-y': { kind: 'joystick', channel: 'y' },
@@ -54,6 +56,7 @@ export const TRIGGER_VIA: Record<string, Preference> = {
   'external-button': { kind: 'button', external: true },
   switch: { kind: 'switch', channel: 'on' },
   'encoder-push': { kind: 'knob', channel: 'push' },
+  'knob-press': { kind: 'haptic', channel: 'push' },
   'joystick-press': { kind: 'joystick', channel: 'press' },
   touch: { kind: 'touch' },
   ir: { kind: 'ir', channel: 'any' },
@@ -120,6 +123,7 @@ const IO: Partial<Record<SimInput['kind'], ChannelIO>> = {
   keypad: { pushable: (p, ch) => (p as Keypad).keys.get(ch) },
   rfid: { pushable: (p, ch) => (p as RfidReader).keys.get(ch) },
   knob: { pushable: (p, ch) => (ch === 'push' ? (p as Knob).button : undefined) },
+  haptic: { pushable: (p, ch) => (ch === 'push' ? (p as Haptic).press : undefined) },
   pot: {
     absolute: (p) => (p as Pot).value,
     setAbsolute: (p, _, f) => (p as Pot).set(f),
@@ -250,6 +254,12 @@ const levelOn = (part: SimInput, channel: string): boolean => !!IO[part.kind]?.l
 
 // ---- dial ----------------------------------------------------------------------------------
 
+/** What a relative channel turns in: clicks counted so far, and turning it from the keyboard (an encoder, the SmartKnob's knob). */
+interface Clicks {
+  readonly clicks: number;
+  turn(n: number): void;
+}
+
 export interface DialOptions {
   label?: string;
   min?: number;
@@ -280,7 +290,7 @@ export class Dial extends SimInput {
   private readonly start: number;
   private pending = 0;
   /** The encoder it reads, and its click count as far as this dial has taken it. */
-  private knobBase: Knob | null = null;
+  private knobBase: Clicks | null = null;
   private knobSeen = 0;
 
   constructor(
@@ -332,7 +342,7 @@ export class Dial extends SimInput {
     this.bench.link(this, c, auto);
     const hw = this.bench.resolve(c);
     // An encoder steps from where it is now.
-    this.knobBase = hw?.channel.kind === 'relative' ? (hw.part as Knob) : null;
+    this.knobBase = hw?.channel.kind === 'relative' ? (hw.part as unknown as Clicks) : null;
     this.knobSeen = this.knobBase?.clicks ?? 0;
     // A pot or a sensor reads where it is from the start: a step nobody took isn't one.
     const f = hw && hw.channel.kind === 'absolute' ? absolute(hw.part, hw.channel.id) : null;
@@ -365,7 +375,7 @@ export class Dial extends SimInput {
     const hw = this.bench.resolve(this.connection);
     if (!hw) return;
     if (hw.channel.kind === 'relative') {
-      const knob = hw.part as Knob;
+      const knob = hw.part as unknown as Clicks;
       if (knob !== this.knobBase) {
         this.knobBase = knob; // reconnected to another encoder: count from here
         this.knobSeen = knob.clicks;
@@ -383,7 +393,7 @@ export class Dial extends SimInput {
   private nudge(steps: number) {
     const hw = this.bench.resolve(this.connection);
     if (!hw) this.stepBy(steps);
-    else if (hw.channel.kind === 'relative') (hw.part as Knob).turn(steps);
+    else if (hw.channel.kind === 'relative') (hw.part as unknown as Clicks).turn(steps);
     else {
       const { span } = this.range();
       const io = IO[hw.part.kind];

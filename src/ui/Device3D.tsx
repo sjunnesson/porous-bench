@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import type { Board } from '../sim/boards';
 import type { SimClock } from '../sim/clock';
+import type { Haptic } from '../sim/inputs/haptic';
 import type { Imu } from '../sim/inputs/imu';
+import { glow, type LedRing } from '../sim/inputs/ledring';
 import type { SketchRun } from '../sim/runner';
 import { drawLeds, ledCells } from '../sim/leds';
 import { touchByModule } from '../sim/wiring';
@@ -133,8 +135,9 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
     const bodyBox = new THREE.Box3();
     model.group.updateMatrixWorld(true);
     for (const child of model.group.children) {
-      // Precise (vertex) bounds: the quick ones inflate rotated parts by many millimetres.
-      if (!model.buttons.some((b) => b.mesh === child)) bodyBox.expandByObject(child, true);
+      // Precise (vertex) bounds: the quick ones inflate rotated parts by many millimetres. A knob is
+      // turned and pressed, not grabbed.
+      if (!model.buttons.some((b) => b.mesh === child) && child !== model.knob?.root) bodyBox.expandByObject(child, true);
     }
     const deviceHandle = new THREE.Mesh(
       new THREE.BoxGeometry(...bodyBox.getSize(new THREE.Vector3()).toArray()),
@@ -163,6 +166,9 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
     const inputFor = (b: ModelButton) => (b.input === undefined ? undefined : run.bench.builtinButton(b.input));
     const onDevice = new Set(hardware.filter((p) => run.bench.isBuiltin(p)));
     const imu = hardware.find((i) => i.kind === 'imu' && onDevice.has(i)) as Imu | undefined;
+    // The SmartKnob's knob, turned by dragging round it, pressed by clicking its glass; its LEDs.
+    const haptic = model.knob && (hardware.find((i) => i.kind === 'haptic' && onDevice.has(i)) as Haptic | undefined);
+    const ring = model.ring && (hardware.find((i) => i.kind === 'leds' && onDevice.has(i)) as LedRing | undefined);
 
     // External parts on the desk, plus wires back to the device. A bare module or an LED chain
     // can't read them itself: its dev board stands first on the desk, the parts wired to it and it
@@ -194,6 +200,9 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
     let panning: { x: number; y: number } | null = null;
     let moving: { key: string; obj: THREE.Object3D; start: THREE.Vector3; from: THREE.Vector3 } | null = null;
     let pressed: ModelButton | null = null;
+    // Turning the knob: the pointer's last angle round it (degrees). Pressing it: its glass held.
+    let turning: number | null = null;
+    let pressingKnob = false;
     // A touch panel: the pointer on the screen mesh, in native pixels via its texture coordinates.
     const touchPanel = run.display.touch;
     let touching = false;
@@ -500,7 +509,21 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
       return hit ? content.worldToLocal(hit) : null;
     };
 
+    /** The pointer's angle round the knob's axis, in degrees anticlockwise as seen from the front. */
+    const knobAngle = (e: { clientX: number; clientY: number }): number | null => {
+      const k = model.knob!;
+      setRay(e);
+      k.root.updateMatrixWorld(true);
+      const n = new THREE.Vector3(0, 0, 1).transformDirection(k.root.matrixWorld);
+      const p = model.group.localToWorld(k.top.clone());
+      const hit = ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, p), new THREE.Vector3());
+      if (!hit) return null;
+      const local = k.root.worldToLocal(hit);
+      return (Math.atan2(local.y, local.x) * 180) / Math.PI;
+    };
+
     type Hit =
+      | { kind: 'knob'; press: boolean }
       | { kind: 'button'; button: ModelButton }
       | { kind: 'part'; part: Peripheral; object: THREE.Object3D }
       | { kind: 'move'; key: string; obj: THREE.Object3D };
@@ -508,6 +531,7 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
     const pick = (e: { clientX: number; clientY: number }, moveAnything = false): Hit | null => {
       setRay(e);
       const targets: THREE.Object3D[] = [
+        ...(haptic ? [...model.knob!.grips, model.knob!.glass] : []),
         ...model.buttons.map((b) => b.mesh),
         ...parts.flatMap((p) => [...p.targets, ...p.handles]),
         deviceHandle,
@@ -515,6 +539,10 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
       const [first] = ray.intersectObjects(targets, false);
       if (!first) return null;
       const o = first.object;
+      if (haptic && (o === model.knob!.glass || model.knob!.grips.includes(o as THREE.Mesh))) {
+        if (moveAnything) return { kind: 'move', key: 'device', obj: deskGroup };
+        return { kind: 'knob', press: o === model.knob!.glass };
+      }
       const button = model.buttons.find((b) => b.mesh === o);
       if (button || o === deviceHandle) {
         if (moveAnything || !button) return { kind: 'move', key: 'device', obj: deskGroup };
@@ -551,6 +579,17 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
         }
       }
       const hit = pick(e, e.altKey);
+      if (hit?.kind === 'knob' && haptic) {
+        if (hit.press) {
+          pressingKnob = true;
+          haptic.press.setDown(true);
+        } else {
+          turning = knobAngle(e);
+          haptic.grab();
+          el.style.cursor = 'grabbing';
+        }
+        return;
+      }
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
         if (input) {
@@ -609,6 +648,16 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
         grab.move(ray.ray);
         return;
       }
+      if (turning !== null && haptic) {
+        const a = knobAngle(e);
+        if (a === null) return;
+        let d = a - turning;
+        if (d > 180) d -= 360;
+        if (d < -180) d += 360;
+        turning = a;
+        haptic.turnBy(-d); // anticlockwise on screen is the knob turning down
+        return;
+      }
       if (tilting && imu) {
         const t = imu.getTilt();
         imu.setTilt(t.x + (e.clientX - tilting.x) * 0.006, t.y + (e.clientY - tilting.y) * 0.006);
@@ -622,6 +671,15 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
         return;
       }
       const hit = pick(e, e.altKey);
+      if (hit?.kind === 'knob') {
+        const id = run.bench.idOf(haptic!);
+        const drives = run.controls.filter((c) => c.connection?.part === id).map((c) => c.label);
+        el.style.cursor = hit.press ? 'pointer' : 'grab';
+        el.title = hit.press
+          ? 'Click the glass to press the knob (button A)'
+          : `Drag round the knob to turn it${drives.length ? ` → ${drives.join(', ')}` : ''} · scroll to step it`;
+        return;
+      }
       if (hit?.kind === 'button') {
         const input = inputFor(hit.button);
         const id = input && run.bench.idOf(input);
@@ -655,6 +713,10 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
         moving = null;
       }
       if (pressed) inputFor(pressed)?.setDown(false);
+      if (turning !== null) haptic?.release();
+      if (pressingKnob) haptic?.press.setDown(false);
+      turning = null;
+      pressingKnob = false;
       if (touching) touchPanel?.release();
       touching = false;
       grab?.up();
@@ -702,6 +764,10 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const hit = pick(e);
+      if (hit?.kind === 'knob' && haptic && !e.ctrlKey) {
+        haptic.turn(e.deltaY > 0 ? -1 : 1); // scrolling over the knob steps it
+        return;
+      }
       if (hit?.kind === 'part' && hit.part.wheel && !e.ctrlKey) {
         hit.part.wheel(hit.object, e.deltaY); // scrolling over the encoder turns it
         return;
@@ -758,6 +824,22 @@ export function Device3D({ run, clock, board, mount, onCanvas }: Props) {
         (b.mesh.material as THREE.MeshBasicMaterial).color.copy(b.color).multiplyScalar(down ? 1.25 : 1);
       }
       for (const p of parts) p.update();
+      if (haptic) {
+        const k = model.knob!;
+        // It turns as the knob does and sinks a little while pressed; the screen under the glass stays put.
+        k.rotor.rotation.z = (-haptic.angle() * Math.PI) / 180;
+        k.rotor.position.z = haptic.isPressed() ? -PRESS_MM : 0;
+      }
+      if (ring) {
+        const lit = ring.colours();
+        model.ring!.forEach((m, i) => {
+          // Its hue, as strong as it shines; off, a faint mark where it sits.
+          const mat = m.material as THREE.MeshBasicMaterial;
+          const { hue, level } = glow(lit[i]);
+          mat.color.setHex(level ? hue : 0x1b4b7a, THREE.SRGBColorSpace);
+          mat.opacity = level ? 0.2 + 0.8 * level : 0.12;
+        });
+      }
 
       // The IMU tilts the device: right on the tilt pad lowers its right edge, down lowers the bottom.
       if (imu) {
