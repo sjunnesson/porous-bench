@@ -9,7 +9,7 @@ app to a real device. Bench can also join the Resident relay as a device.
 
 **Try it: [bench.porous.systems](https://bench.porous.systems)**
 
-![Bench running the porous.systems logo app on a Waveshare ESP32-C6-LCD-1.47, wired to an encoder, a slide pot and a button](docs/images/app.png)
+![Bench running the porous.systems logo app on a Guition ESP32-S3-4848S040, wired to an encoder, a slide pot and a button](docs/images/app.png)
 
 <table>
   <tr>
@@ -167,13 +167,15 @@ Like the device, `on_tick` runs 10 times a second, so animation runs at 10 FPS; 
 motion so speeds are right whatever the timing. A tap or other event can redraw between ticks.
 Coordinates are checked like `luaL_checkinteger`, so `math.floor` anything computed.
 
-Bench opens on **Porous systems**: the porous.systems logo, its spokes sweeping in around the ring
-over 1.5 seconds and the words fading in, drawn anti-aliased with `lgfx` on any display (e-paper gets
-the finished logo in one refresh). The encoder moves the hollow spoke around the ring, Button 1
-stamps a hollow one where it is (again to make it solid), and the slide pot colours the background,
-black through the colour wheel to white, with the ink switching to stay readable; touch the screen
-or tap A to start again. It needs a board with PSRAM (or the C6). Its shapes come from the logo's
-SVG: `node scripts/logo-app.mjs <logo.svg>` writes a new logo into it.
+Bench opens on **Porous systems** on the Guition ESP32-S3-4848S040: the porous.systems logo, its
+spokes sweeping in around the ring over 1.5 seconds and the words fading in, drawn anti-aliased with
+`lgfx` on any display (e-paper gets the finished logo in one refresh). The encoder moves the hollow
+spoke around the ring, Button 1 stamps a hollow one where it is (again to make it solid), and the
+slide pot colours the background, black through the colour wheel to white, with the ink switching to
+stay readable; touch the screen or tap A to start again. It needs a board with PSRAM: on the
+C6-LCD-1.47, the e-paper driver board or a plain ESP32 DevKitC it needs more memory than an app gets,
+so the App menu greys it out there. Its shapes come from the logo's SVG:
+`node scripts/logo-app.mjs <logo.svg>` writes a new logo into it.
 
 Included, from Bench, all drawn with LVGL and moved by `lvgl.Anim` (see [LVGL](#lvgl-smooth-animation)):
 **Hello display** (device facts and a DVD-style bouncing ball; adapts to every display type),
@@ -506,8 +508,7 @@ the Waveshare ESP32 e-Paper Driver Board (or an ESP32-S3 DevKitC-1 N16R8) it's t
 [`firmware/epd213/`](firmware/epd213/), built and tested on the driver board; the S3 build compiles
 but hasn't run on hardware yet. For the Waveshare ESP32-C6-LCD-1.47 it's
 [`firmware/c6-lcd147/`](firmware/c6-lcd147/), tested on the board. For the Guition ESP32-S3-4848S040
-it's [`firmware/guition-4848s040/`](firmware/guition-4848s040/), which compiles but hasn't run on
-hardware yet. For other boards it follows Resident's
+it's [`firmware/guition-4848s040/`](firmware/guition-4848s040/), tested on the board. For other boards it follows Resident's
 [start-building guide](https://github.com/inanimate-tech/resident/blob/main/docs/start-building.md)
 in stages (bring-up, then Resident, then drivers), using the pins, offsets and quirks Bench knows
 for the part and the platform it needs (pioarduino for the ESP32-C6), plus what bringing up the
