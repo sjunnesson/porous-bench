@@ -8,6 +8,7 @@ import { residentSketch } from './resident/sketch';
 import { appHeader, residentApps } from './resident-apps';
 import { type AppNeeds, appNeeds, misfits, outputCaps } from './resident/needs';
 import { noteRunning, recoverFromFreeze } from './freeze';
+import { FIRST_APP, FIRST_DISPLAY } from './start';
 import { boardsFor } from './sim/boards';
 import { onBoard } from './sim/wiring';
 import { SimClock } from './sim/clock';
@@ -99,7 +100,6 @@ function saveBinding(sketchId: string, control: string, source: string) {
   }
 }
 
-const FIRST_APP = 'resident:porous-systems';
 /** The app the page froze on last time, if it did: Bench starts on FIRST_APP instead (see freeze.ts). */
 const frozeOn = recoverFromFreeze(FIRST_APP);
 
@@ -117,7 +117,7 @@ export default function App({ shared = null }: { shared?: Opened | string | null
   const clock = useMemo(() => new SimClock(), []);
   const { paused, speed } = useClockState(clock);
   const [sketchId, setSketchId] = usePersisted('sketch', FIRST_APP);
-  const [deviceId, setDeviceId] = usePersisted('device', 'waveshare-esp32-c6-lcd-1.47');
+  const [deviceId, setDeviceId] = usePersisted('device', FIRST_DISPLAY);
   // The output: a display module, or an LED strip, ring or matrix (kept in this browser).
   const [outputKind, setOutputKind] = usePersisted<OutputKind>('output-kind', 'display');
   const [stripCount, setStripCount] = usePersisted('output-strip', 30);

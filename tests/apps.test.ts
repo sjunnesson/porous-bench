@@ -15,6 +15,7 @@ import { benchApp } from '../src/sim/generate';
 import { ledProfile, MATRIX_SIZES } from '../src/sim/leds';
 import { Imu } from '../src/sim/inputs/imu';
 import { LD2410 } from '../src/sim/inputs/ld2410';
+import { FIRST_APP, FIRST_DISPLAY } from '../src/start';
 
 // Every bundled app must boot and run without a Lua error on each kind of output it's written for:
 // display apps on a colour LCD in landscape and portrait, a portrait touch LCD, a round AMOLED, a small round touch LCD, a large square touch LCD, a landscape touch AMOLED,
@@ -110,6 +111,14 @@ describe('the porous.systems logo', () => {
     const app = apps.find((a) => a.name === 'porous-systems.lua')!;
     for (const device of OUTPUTS.display) expect(await runApp(app.code, device, 2500), device.id).toEqual([]);
   }, 60_000);
+
+  // Otherwise Bench passes over it for someone new and starts the first app that fits.
+  it("is what Bench opens on, and fits the first display's board", () => {
+    const app = apps.find((a) => a.name === 'porous-systems.lua')!;
+    expect(FIRST_APP).toBe('resident:porous-systems');
+    const device = findDevice(FIRST_DISPLAY)!;
+    expect(misfits(appNeeds(app.code), outputCaps(device, boardsFor(device)[0]))).toEqual([]);
+  });
 });
 
 describe('apps generated from the bench', () => {

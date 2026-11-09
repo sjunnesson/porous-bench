@@ -175,7 +175,7 @@ export function Guide() {
           <Step n={1}>
             <p>
               <a href="/">Open Bench</a>. It starts on an example called <Ui>Porous systems</Ui>: a logo drawing itself on a
-              small screen, sitting on a desk next to a knob, a slider and a button. The page has three columns:
+              square touch screen, sitting on a desk next to a knob, a slider and a button. The page has three columns:
             </p>
             <ul>
               <li>
