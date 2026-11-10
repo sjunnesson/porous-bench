@@ -10,18 +10,19 @@ export default {
   name: 'Guition ESP32-S3-4848S040',
   tech: 'lcd',
   touch: { controller: 'GT911', i2cAddress: 0x5d },
-  // 30 FPS (SandboxConfig::tickIntervalMs in Bench's firmware): the panel shows about 46 frames a
+  // 30 FPS: Bench's firmware ticks on every second scan of the panel, which it scans 60 times a
   // second, and Plenum's surfaces redraw only what moves.
   tickMs: 33,
   width: 480,
   height: 480,
   controller: 'ST7701S',
-  // 16-bit RGB at 12 MHz, as ESPHome runs it: no panel RAM, the chip scans a frame out of PSRAM,
-  // 42.3 times a second with the porches Bench's firmware uses (measured). The firmware keeps three
+  // 16-bit RGB at 17 MHz (12 as ESPHome runs it, and Bench's firmware did until 2026-11-10: 42.3
+  // scans a second): no panel RAM, the chip scans a frame out of PSRAM, 60.0 times a second with
+  // the porches Bench's firmware uses (measured). The firmware keeps three
   // such frames and draws into one that isn't on the glass: a flip shows it from the next vertical
   // sync and copies only tiles that frame lacked, ~0.5 ms measured (firmware/guition-4848s040/README.md).
   // Until 2026-11-06 a flip copied every tile drawn into the one scanned frame: 30.5 ms for them all.
-  bus: { kind: 'rgb', hz: 12_000_000, flipMs: 0.5, scanHz: 42.3 },
+  bus: { kind: 'rgb', hz: 17_030_000, flipMs: 0.5, scanHz: 60 },
   // Bench's firmware turns the picture 270° (SCREEN_ROTATION), so up is away from a USB-C facing down.
   firmwareRotation: 3,
   // and a flip costs by the 16×16 tiles drawn on since the last one.

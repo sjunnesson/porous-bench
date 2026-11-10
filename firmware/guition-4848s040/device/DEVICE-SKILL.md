@@ -227,9 +227,12 @@ end
 - **Text**: lgfx/screen use the built-in 6x8 font in whole multiples (size 2 fits 40 characters
   across, size 4 fits 20, size 6 fits 13); LVGL has Montserrat up to 48 px. Both are ASCII only.
   Read from a step back, size 3 or more (lgfx) or 24 px or more (LVGL) reads best.
-- **Frame rate**: the panel is scanned from PSRAM ~42 times a second, so no app shows more frames
-  than that. `on_tick` runs every 33 ms (~30 fps): move things by `dt_ms`, and a tick that takes
-  longer delays the next. `flip()` copies only the 16×16 tiles drawn on since the last flip into
+- **Frame rate**: the panel is scanned from PSRAM 60 times a second, and everything keeps step with
+  it. `on_tick` runs as every second scan starts (30 a second, `dt_ms` 33 or 34), and a frame an
+  app flips stays on the glass for two scans, each as long as the last: move things by `dt_ms`, and
+  a tick that takes longer than 33 ms holds its frame a scan more. LVGL moves its animations and
+  draws as each scan starts: an `Anim` shows 60 frames a second if a frame draws in under 16 ms,
+  30 if not, and an `lvgl.Timer` of 33 ms runs on every second scan. `flip()` copies only the 16×16 tiles drawn on since the last flip into
   the scanned frame, and a whole 480×480 frame is 450 KB: flipping all of it takes ~30 ms and
   clearing it (`fillScreen`) ~17 ms, so an app that repaints the whole screen every tick runs at
   ~17 fps, while five fish of lines spread over the screen flip ~20% of it in ~6.5 ms. Redraw only

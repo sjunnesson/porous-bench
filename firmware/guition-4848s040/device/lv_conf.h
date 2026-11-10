@@ -64,7 +64,7 @@
 
 /*Default display refresh, input device read and animation step period.*/
 #define LV_INV_BUF_SIZE 64  /* Bench: past 32 changed areas a frame LVGL repaints the whole screen; 24 bars went from 7.4 fps to 12.4 */
-#define LV_DEF_REFR_PERIOD  15      /*[ms]*/  /* Bench: Resident runs LVGL every 5 ms, so 15 gives ~66 fps (16 waits for 20: 50); 33 capped it at 30 */
+#define LV_DEF_REFR_PERIOD  15      /*[ms]*/  /* Bench: the Guition's main.cpp sets the refresh and animation timers never to come due and draws as each scan of the panel starts (60 a second); this is what they start with */
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  *(Not so important, you can adjust it to modify default sizes and spaces)*/

@@ -46,7 +46,7 @@ local LOOP = lvgl.ANIM_REPEAT_INFINITE
 -- its root calls it at most every FRAME ms, however many objects there are. An Anim per object would
 -- run Lua for each one 66 times a second on a board whose LVGL refreshes every 15 ms. It follows the
 -- clock, so a frame that ran late only moves things further. E-paper gets the frame at `still`.
-local FRAME = 30
+local FRAME, GRID = 31, 4
 local function drive(root, frame, still)
   if paper then return frame(still or 0) end
   frame(0)
@@ -55,8 +55,11 @@ local function drive(root, frame, still)
     exec_cb = function()
       local now = ticks()
       local d = ticks_diff(now, last)
-      if d + late >= FRAME then -- this comes on a 5 ms grid: what a frame ran over comes off the next
-        last, late, t = now, math.min(d + late - FRAME, FRAME), t + d * curSpeed
+      -- This comes on a 5 ms grid, so what a frame ran over comes off the next, but no more than a step
+      -- of that grid: on a panel scanned 60 times a second it comes as each scan starts, and a frame
+      -- every second scan must never come a scan early.
+      if d + late >= FRAME then
+        last, late, t = now, math.min(d + late - FRAME, GRID), t + d * curSpeed
         frame(t // 6)
       end
     end }

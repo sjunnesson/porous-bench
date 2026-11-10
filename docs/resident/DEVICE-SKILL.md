@@ -103,7 +103,8 @@ defining `on_event` inside `init`, changes nothing. Each call gets a fresh `ctx`
 Bench runs Lua 50 to 100 times faster than a board, so an animation that is smooth on Bench can
 crawl on the glass. `on_tick` comes every 100 ms by default; Bench's firmware for the
 S3-Touch-LCD-2, the XIAO Round Display, the C6-LCD-1.47 and the Guition 4848S040 ticks every 33 ms
-(~30 fps, `SandboxConfig::tickIntervalMs`). Move things by `dt_ms`, not a fixed step a tick, so an
+(~30 fps, `SandboxConfig::tickIntervalMs`; the Guition on every second scan of its panel's 60 a
+second, so each frame stays on the glass as long as the one before). Move things by `dt_ms`, not a fixed step a tick, so an
 app runs at the same speed on either. A tick that takes longer than the interval (its Lua plus
 the `flip()` that pushes the frame) delays the next one, and the frame rate drops with it. On the
 S3-Touch-LCD-2, the XIAO and the C6 a `flip()` sends only the 16×16 squares drawn on since the last

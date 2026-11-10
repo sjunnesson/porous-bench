@@ -140,6 +140,19 @@ inline void loop(void (*load)(const char*)) {
       WiFi.disconnect(false, false);
       delay(500);
       WiFi.reconnect();
+    } else if (c == 'c') {  // "c17000000\n": the pixel clock, from the next vertical sync
+      uint32_t hz = Serial.parseInt();
+      Serial.read();
+      RgbPanel::setPixelClock(hz);
+      Serial.printf("[prof] pixel clock %u Hz\n", (unsigned)hz);
+    } else if (c == 'f') {  // how long frames stayed on the glass since the last 'f'
+      static uint32_t lastMs = 0, lastScans = 0;
+      uint32_t held[5], ms = millis(), scans = RgbPanel::scans();
+      Lcd::takeHeld(held);
+      Serial.printf("[pace] %.1f s, scanned %.2f/s; frames held 0/1/2/3/4+ scans: %u %u %u %u %u\n", (ms - lastMs) / 1000.0f,
+                    (scans - lastScans) * 1000.0f / (ms - lastMs), (unsigned)held[0], (unsigned)held[1], (unsigned)held[2],
+                    (unsigned)held[3], (unsigned)held[4]);
+      lastMs = ms, lastScans = scans;
     } else if (c == 's') {
       Serial.printf("[prof] spin %u us\n", (unsigned)spin());
     } else if (c == 'L') {

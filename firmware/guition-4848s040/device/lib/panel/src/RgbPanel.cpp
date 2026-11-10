@@ -29,7 +29,11 @@ static constexpr int PIN_BL = 38;
 // Timing as Arduino_GFX runs this board with the same init sequence (ESPHome
 // uses 8/10/20 and 8/10/10 with its own). Line: 480 + 10 + 8 + 50 clocks;
 // frame: 480 + 10 + 8 + 20 lines; at 12 MHz, 42.3 frames a second.
+#if ESP_IDF_VERSION_MAJOR >= 5
+static constexpr uint32_t PCLK_HZ = 17030000;  // 60 frames a second, with bounce buffers (stage 3)
+#else
 static constexpr uint32_t PCLK_HZ = 12000000;
+#endif
 // The backlight's PWM: 20 kHz, above hearing. ESPHome runs it at 150 Hz,
 // others at 100 Hz; at 150 Hz it whines faintly when dim, and at 20 kHz it
 // fades as smoothly (2026-10-26, on the board).
@@ -186,8 +190,12 @@ static bool IRAM_ATTR onScan(esp_lcd_panel_handle_t, esp_lcd_rgb_panel_event_dat
 #if ESP_IDF_VERSION_MAJOR >= 5
 // The refill interrupt has copied the last rows of a frame out, and takes the next frame's from
 // whichever show() named last: the one it was reading is free to draw into.
+static volatile uint32_t s_latches = 0;
+static volatile bool s_showing = false;  // the driver also calls this from show() itself, where no frame has ended
 static bool IRAM_ATTR onFrameRead(esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void*) {
+  if (s_showing) return false;
   s_scanned = s_shown;
+  s_latches = s_latches + 1;
   return false;
 }
 #endif
@@ -479,9 +487,27 @@ int frames(uint16_t** out, int max) {
 // one scan more, and never a frame free that's on the glass.
 void show(const uint16_t* frame) {
   if (!s_panel) return;
+  s_showing = true;
   esp_lcd_panel_draw_bitmap(s_panel, 0, 0, WIDTH, HEIGHT, frame);
+  s_showing = false;
   s_shown = frame;
 }
+
+uint32_t latches() {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  return s_latches;
+#else
+  return s_scans;
+#endif
+}
+
+#ifdef BENCH_PROFILE
+void setPixelClock(uint32_t hz) {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  if (s_panel) esp_lcd_rgb_panel_set_pclk(s_panel, hz);
+#endif
+}
+#endif
 
 bool inUse(const uint16_t* frame) { return frame == s_shown || frame == s_scanned; }
 

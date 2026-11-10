@@ -27,6 +27,12 @@ bool begin(int frames = 1);
 int frames(uint16_t** out, int max);
 void show(const uint16_t* frame);
 bool inUse(const uint16_t* frame);
+// How many times the scan has started on a frame: it takes the one show() named last, ~1.7 ms before
+// each vertical sync (as the last rows of the frame before are read out).
+uint32_t latches();
+#ifdef BENCH_PROFILE
+void setPixelClock(uint32_t hz);  // from the next vertical sync
+#endif
 
 // Copy the rectangle x0..x1, y0..y1 (inclusive) of a 480x480 RGB565 image, in
 // the chip's own byte order, into the frame the panel is scanned from, turned

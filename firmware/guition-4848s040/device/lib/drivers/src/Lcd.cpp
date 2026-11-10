@@ -28,6 +28,8 @@ uint32_t Canvas::hash() const {
 #endif
 static uint32_t _lastPushUs = 0;
 static uint32_t _frames = 0, _pixels = 0, _pushUs = 0;
+static uint32_t _held[5] = {};  // frames by the scans they stayed on the glass: none (never shown), 1, 2, 3, more
+static bool _shownOnce = false;
 
 bool begin() {
   if (!RgbPanel::begin(Canvas::FRAMES)) return false;  // ST7701S init, the scan and its three frames, the backlight
@@ -51,14 +53,21 @@ bool Canvas::begin(int rotation) {
 // (of three, one always is free), the one that lacks least. Taken up at the first thing drawn after a
 // flip, by when the vertical sync has usually freed the frame the picture before last was in.
 void Canvas::open() {
+  service();  // a frame still waiting its turn goes out before the next is begun
   int best = -1, fewest = 0;
-  for (int i = 0; i < FRAMES; i++) {
-    if (RgbPanel::inUse(frame_[i])) continue;
-    int lacks = 0;
-    for (int band = 0; band < TILES_Y; band++) lacks += __builtin_popcount(stale_[i][band]);
-    if (best < 0 || lacks < fewest) best = i, fewest = lacks;
+  for (uint32_t t0 = millis();;) {
+    for (int i = 0; i < FRAMES; i++) {
+      if (i == newest_ || RgbPanel::inUse(frame_[i])) continue;  // the newest may still be waiting its turn (service)
+      int lacks = 0;
+      for (int band = 0; band < TILES_Y; band++) lacks += __builtin_popcount(stale_[i][band]);
+      if (best < 0 || lacks < fewest) best = i, fewest = lacks;
+    }
+    // None free: one on the glass, one named to follow it and the newest waiting behind that. The next
+    // scan frees the first; it only comes to this when something draws outside a tick.
+    if (best >= 0 || millis() - t0 > 100) break;
+    service();
   }
-  back_ = best < 0 ? (newest_ + 1) % FRAMES : best;  // never, with three
+  back_ = best < 0 ? (newest_ + 1) % FRAMES : best;
   buf_ = frame_[back_];
   open_ = true;
 }
@@ -241,8 +250,8 @@ void Canvas::pushIndexed(int x, int y, int w, int h, const uint8_t* idx, const u
   put(x, y, w, x0, y0, x1, y1, idx, 1, [table](const uint8_t* p) { return table[*p]; });
 }
 
-// What this frame still lacks comes over from the newest, then it goes on the glass at the next
-// vertical sync and is the newest itself. The tiles drawn in it are what the other two now lack.
+// What this frame still lacks comes over from the newest, and it is the newest itself: the caller has
+// it shown (presentDirty). The tiles drawn in it are what the other two now lack.
 uint32_t Canvas::flip() {
   uint32_t any = 0;
   for (int band = 0; band < TILES_Y; band++) any |= dirty_[band];
@@ -254,15 +263,39 @@ uint32_t Canvas::flip() {
     pixels += __builtin_popcount(dirty_[band]) * TILE * TILE;
     dirty_[band] = 0;
   }
-  RgbPanel::show(buf_);
   newest_ = back_;
   open_ = false;
   return pixels;
 }
 
-void present() { presentDirty(); }
+// When a frame goes on the glass. The scan takes whichever frame was named last as it starts a new
+// pass (RgbPanel::latches counts those), 60 times a second, and a frame should stay there as many
+// scans as the one before it: an app that ticks 30 times a second, two. So a frame is named at once
+// if the scan that takes it comes `scans` or more after the one that took the frame before, and
+// otherwise waits for the scan before that one (service). A frame drawn early waits, one drawn late
+// goes straight out, and after one late frame the app's frames all wait a scan and stay in step.
+static bool _waiting = false;   // the newest frame hasn't been named to the panel yet
+static uint32_t _due = 0;       // the scan that should take it
+static uint32_t _taken = 0;     // the scan that took, or will take, the frame last named
 
-void presentDirty() {
+static void showNewest() {
+  RgbPanel::show(static_cast<Canvas*>(canvas)->newest());
+  uint32_t takes = RgbPanel::latches() + 1;
+  if (_shownOnce) _held[min(takes - _taken, (uint32_t)4)]++;  // how long the frame before stayed
+  _shownOnce = true;
+  _taken = takes;
+  _waiting = false;
+}
+
+void service() {
+  if (_waiting && (int32_t)(RgbPanel::latches() + 1 - _due) >= 0) showNewest();
+}
+
+// Status text: at once. It is drawn from setup() too, where no loop comes round to send out a frame
+// that waits.
+void present() { presentDirty(1); }
+
+void presentDirty(int scans) {
   uint32_t t0 = micros();
   uint32_t pixels = static_cast<Canvas*>(canvas)->flip();
   if (!pixels) return;
@@ -272,10 +305,25 @@ void presentDirty() {
     Serial.printf("[hash] %d %08x\n", ++n, (unsigned)static_cast<Canvas*>(canvas)->hash());
   }
 #endif
+  if (_waiting) _held[0]++;  // the frame that was waiting is never shown: this one replaces it
+  else _due = _taken + scans;
+  _waiting = true;
+  service();
   _lastPushUs = micros() - t0;
   _frames++;
   _pixels += pixels;
   _pushUs += _lastPushUs;
+}
+
+// Resident's tick, in step with the scan: as a scan starts, TICK_SCANS after the one the last tick
+// started on, or as soon after that as the loop comes round. 250 ms without one means the scan has
+// stopped, and the app still ticks.
+bool tickDue(unsigned long elapsedMs) {
+  static uint32_t last = 0;
+  uint32_t now = RgbPanel::latches();
+  if (now - last < (uint32_t)TICK_SCANS && elapsedMs < 250) return false;
+  last = now;
+  return true;
 }
 
 void setBrightness(float v) { RgbPanel::setBacklight(v); }
@@ -291,12 +339,16 @@ void takeStats(uint32_t& frames, uint32_t& pixels, uint32_t& pushUs) {
   _frames = _pixels = _pushUs = 0;
 }
 
+void takeHeld(uint32_t held[5]) {
+  for (int i = 0; i < 5; i++) held[i] = _held[i], _held[i] = 0;
+}
+
 // LVGL's flushes come in the panel's wire order, as pushImage's pixels do, and ignore lgfx's clip.
 void Panel::blit(int32_t x, int32_t y, int32_t w, int32_t h, const uint16_t* px) {
   static_cast<Canvas*>(canvas)->pushBE(x, y, w, h, (const uint8_t*)px, false);
 }
 
 // LVGL's frame is whole: show it.
-void Panel::frameDone() { presentDirty(); }
+void Panel::frameDone() { presentDirty(1); }
 
 }  // namespace Lcd

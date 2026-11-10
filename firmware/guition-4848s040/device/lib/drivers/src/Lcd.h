@@ -26,6 +26,10 @@
 namespace Lcd {
 
 constexpr int WIDTH = RgbPanel::WIDTH, HEIGHT = RgbPanel::HEIGHT;
+// The panel is scanned 60 times a second and apps tick on every second scan: 30 a second.
+constexpr int TICK_SCANS = 2;
+
+void service();
 
 // Everything Adafruit GFX draws (text and shapes included) comes down to the pixels, rectangles and
 // lines here, in the picture's own coordinates; each lands in the frame at 0: (x, y), 90: (H-1-y, x),
@@ -79,6 +83,7 @@ public:
   // Show what has been drawn since the last flip, from the next vertical sync on.
   // Returns the pixels in the tiles drawn (0: nothing was, and nothing happens).
   uint32_t flip();
+  const uint16_t* newest() const { return frame_[newest_]; }  // the last frame flipped, complete
 #ifdef BENCH_PROFILE
   uint32_t hash() const;  // of the newest picture, in the picture's own coordinates
 #endif
@@ -129,14 +134,21 @@ inline uint16_t rgb565(uint32_t rgb888) {
 }
 
 bool begin();                  // panel, backlight, canvas; false if either didn't start
-void present();                // show what has been drawn (the same as presentDirty: nothing is copied)
-void presentDirty();           // show what has been drawn since the last flip (lgfx and screen flips)
+void present();                // show what has been drawn from the next scan (status text)
+// Show what has been drawn since the last flip, for at least `scans` of the panel after the frame
+// before it gets its own: 2 for screen and lgfx flips (apps tick every second scan), 1 for LVGL.
+void presentDirty(int scans = TICK_SCANS);
+void service();                // name a frame that was waiting its turn; every loop pass
+bool tickDue(unsigned long elapsedMs);  // Resident's SandboxConfig::tickDue: a tick every TICK_SCANS scans
 void setBrightness(float v);   // backlight, 0..1 (PWM duty)
 float brightness();
 uint32_t lastPushUs();
 // Since the last call: frames shown, pixels in the tiles drawn, and the time flips took in total
 // (bringing tiles over; the swap itself costs nothing), for the heartbeat.
 void takeStats(uint32_t& frames, uint32_t& pixels, uint32_t& pushUs);
+// Since the last call: how many frames stayed on the glass for no scan at all (the next one came before
+// the panel took it), 1, 2, 3, and more. Motion is even when they all stay as long.
+void takeHeld(uint32_t held[5]);
 
 // The panel as Resident's screens registry sees it ("main"). blit() takes RGB565 big-endian
 // rectangles (LVGL's flushes) into the frame being drawn; frameDone() flips, so the glass shows

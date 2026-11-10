@@ -12,6 +12,9 @@
 #include <Resident.h>
 #include <ResidentLgfxModule.h>
 #include <ResidentLvglModule.h>
+#include <lvgl.h>
+#include <src/core/lv_refr_private.h>
+#include <src/misc/lv_timer_private.h>
 #include "Lcd.h"
 #include "ScreenDriver.h"
 #include "CanvasLgfxTarget.h"
@@ -69,6 +72,7 @@ static Resident::SandboxConfig makeConfig() {
   cfg.deviceType = "guition-4848";
   cfg.firmwareVersion = "guition-4848-0.1";
   cfg.tickIntervalMs = 33;  // on_tick at ~30 FPS, not Resident's 10: the panel keeps up (README)
+  cfg.tickDue = Lcd::tickDue;  // on every second scan of the panel, so each frame stays on the glass as long
   // Plenum's iso surfaces (~430 KB) decode their backdrop and sprites before init: over Resident's
   // 1 s guard on the S3, so the app was aborted before it started. Report what runs past 100 ms.
   cfg.executionDeadlineMs = 8000;
@@ -165,10 +169,36 @@ void setup() {
   printMemory("after Resident");
 }
 
+// LVGL draws as a scan starts, not every 15 ms: its own two timers (animations, the refresh) are set
+// never to come due, and each scan the animations are moved to now and what changed is drawn, after
+// the app's tick. A frame that takes under a scan is on the glass from the next one, every time; drawn
+// on LVGL's own clock, frames reached a 42 Hz panel 33 to 60 times a second, some for one scan, some
+// for two, some never. The refresh timer paused is LVGL with nothing to draw, or Resident holding it
+// while an overlay has the screen.
+static void lvglOnScan() {
+  static uint32_t last = 0;
+  if (!lv_is_initialized()) return;
+  lv_display_t* disp = lv_display_get_default();
+  lv_timer_t* refresh = disp ? lv_display_get_refr_timer(disp) : nullptr;
+  if (!refresh) return;
+  static constexpr uint32_t NEVER = 0x7FFFFFFF;
+  lv_timer_set_period(refresh, NEVER);
+  if (lv_anim_get_timer()) lv_timer_set_period(lv_anim_get_timer(), NEVER);
+  uint32_t now = RgbPanel::latches();
+  if (now == last) return;
+  last = now;
+  lv_timer_handler();  // an app's own timers: one of 33 ms comes due here, on every second scan, not 35 ms on
+  lv_anim_refr_now();  // Resident's 5 ms grid
+  if (!refresh->paused) lv_display_refr_timer(refresh);
+}
+
 void loop() {
   static uint32_t loops = 0, loopUs = 0, loopMax = 0, lastStats = 0;
   uint32_t t0 = micros();
+  Lcd::service();
   sandbox.loop();
+  lvglOnScan();
+  Lcd::service();
   BootGuard::loop();
 #ifdef BENCH_PROFILE
   Profiler::loop([](const char* code) { sandbox.loadApp(code); });

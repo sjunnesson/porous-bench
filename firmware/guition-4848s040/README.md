@@ -3,7 +3,7 @@
 Firmware that puts the Guition ESP32-S3-4848S040 (a 4" 480×480 touch panel for an 86 mm wall box,
 with its own ESP32-S3) on Resident's relay, so porous.systems Bench can mirror apps onto it. One
 PlatformIO project per stage of Resident's start-building guide, each buildable on its own; Resident
-is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `59cd3cf`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
+is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `244b126`, which adds the tick interval, `SandboxConfig::tickDue` (the tick in step with the panel's scan), the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, the panel's scan rate, a test card, I2C scan, touch crosshair, a flash-write test
@@ -104,7 +104,7 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
 - **The chip scans a frame out of PSRAM continuously.** IDF 4.4's `esp_lcd` RGB driver (the one in
   Arduino core 2.0.17) owns a 450 KB frame buffer in PSRAM and streams it at a 12 MHz pixel clock,
   with Arduino_GFX's porches for this init sequence (H 10/8/50, V 10/8/20): 548 × 518 clocks a
-  frame, 42.3 frames a second. Pixels go out in RGB565 as the chip stores them; no byte swap.
+  frame, 42.3 frames a second (stage 3, with bounce buffers, runs the clock at 17.03 MHz: 60). Pixels go out in RGB565 as the chip stores them; no byte swap.
 - **A late refill, and how it looks.** The scan reads two buffers of 10 frame rows in turn, and an
   interrupt refills the one just sent, so it can wait ~450 us at most (10 rows at 45.7 us, less the
   copy). With the picture turned 270°, a frame row is a picture column, scanned from the right of the
@@ -197,18 +197,76 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   CH340 (no `ARDUINO_USB_CDC_ON_BOOT`). The 16 MB holds one 4 MB app slot and ~12 MB of LittleFS.
 - **Saved apps** go to `/app.lua` on LittleFS (`AppStore.h`, as on the S3-Touch-LCD-2: NVS is too
   small for big apps).
-- **LVGL refreshes every 15 ms, and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
+- **LVGL refreshed every 15 ms until 2026-11-10 (now as each scan starts: "In step with the scan"), and fonts aren't compressed** (since 2026-10-23, `lv_conf.h`).
   `LV_DEF_REFR_PERIOD` was 33, which held LVGL to 30 frames a second however fast it drew. Resident
   runs LVGL's timers at most every 5 ms (`lv_timer_handler_run_in_period(5)`), so the period should
   be a multiple of 5: 16 only came due at 20 ms (50 fps), 15 gives up to ~66. `LV_USE_FONT_COMPRESSED` is off, so no glyph is decompressed as it's drawn; the
   one compressed built-in font, `MONTSERRAT_28_COMPRESSED`, is off with it (plain `MONTSERRAT_28`
   stays). Flash 2,523,021 → 2,496,157 bytes. LVGL's frames still go out whole, and the panel
   scans at ~42 Hz, so ~66 is a ceiling it won't show; check the `[perf]` line with `lvgl-check.lua`.
-- **`on_tick` every 33 ms, not 100** (since 2026-10-23): `SandboxConfig::tickIntervalMs = 33`, a
+- **`on_tick` every 33 ms, not 100** (since 2026-10-23; on every second scan since 2026-11-10): `SandboxConfig::tickIntervalMs = 33`, a
   field on Bench's Resident fork (`sjunnesson/resident`, 0.12.0 plus the field) until
   inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
   fps). On this board `lvgl-check`, which moves its box in `on_tick`, pushes 28 frames a second:
   the tick is what holds it. Bench's profile for the display ticks at 33 too (`tickMs`).
+
+## In step with the scan (2026-11-10)
+
+The panel was scanned 42.3 times a second and apps ticked every 33 ms, so a frame stayed on the
+glass for one scan (23.6 ms) or two (47.3), in no order: of 364 frames of Bounce in 12 s, 220 for
+one and 144 for two, and the same for `driver-check` and Rainbow. Patterns' frames, drawn every 30 ms
+on LVGL's own clock, went 254-274 for one scan and 117-127 for two, with 10-37 never shown (the next
+was flipped before the scan took them). Even motion drawn like that judders, at any frame rate.
+Measured with a profile build's `f`, which prints how many scans each frame stayed (`Lcd::takeHeld`).
+
+- **60 scans a second**: a 17.03 MHz pixel clock, the same porches (59.98 measured). Stages 1 and 2,
+  with no bounce buffers, stay at 12 MHz. A bounce buffer now lasts 322 us, not 457: no frame lost a
+  refill in 4 minutes of Patterns and `driver-check` with Wi-Fi up, nor in a dozen app saves, and a
+  9 ms hold-off (`x`) came back within two frames as before. The refills cost 9.4% of the app's core
+  (a spin loop 150.7 ms without the scan, 164.8 with it), where they cost 6.5%. `c<hz>` in a profile
+  build changes the clock while it runs.
+- **A tick on every second scan** (`Lcd::tickDue`, through `SandboxConfig::tickDue` on Bench's
+  Resident fork): 30 a second, as the scan starts on a frame. `dt_ms` is 33 or 34.
+- **A frame stays as long as the one before** (`Lcd::presentDirty`, `Lcd::service`). A `screen` or
+  `lgfx` flip is named to the panel at once if the scan that will take it comes two or more after
+  the one that took the frame before; otherwise it waits, and the loop names it after the next scan
+  has started. So a frame drawn early in one tick and late in the next still stays two scans, and
+  after one late frame an app's frames all go out a scan later and stay in step. The frame that
+  waits is the newest and is never drawn into; with one on the glass and one named, a draw from
+  outside a tick waits for the scan to free one. Status text goes out at once (`Lcd::present`).
+- **LVGL draws as a scan starts** (`lvglOnScan` in `main.cpp`). Its animation and refresh timers are
+  set never to come due; each scan, after the tick, LVGL's timers are run (an app's `lvgl.Timer` of
+  33 ms comes due on every second scan, where on Resident's 5 ms grid it came every 35), the
+  animations are moved to now and what changed is drawn. A frame that draws in under a scan is on
+  the glass from the next.
+- **Patterns asks for a frame every 31 ms and carries at most 4 ms of lateness** (it was 30 and up
+  to 30): on this board its clock comes as each scan starts, and carrying more brought every fifth
+  frame a scan early.
+
+The same apps after, frames by the scans they stayed (never / 1 / 2 / 3 / more), 12 s each, on the
+first board (`107497c7`):
+
+| | before, 42.3 scans a second | after, 60 |
+|---|---|---|
+| Bounce | 0 / 220 / 144 / 0 / 0 | 0 / 0 / 359 / 0 / 0 |
+| Rainbow | 0 / 220 / 143 / 0 / 0 | 0 / 0 / 359 / 0 / 0 |
+| `driver-check` (the whole screen every tick) | 0 / 219 / 144 / 0 / 0 | 1 / 0 / 357 / 2 / 0 |
+| Patterns: Orbits | 14 / 265 / 121 / 0 / 0 | 0 / 0 / 356 / 2 / 0 |
+| Patterns: Tiles | 18 / 257 / 126 / 0 / 0 | 0 / 0 / 360 / 0 / 0 |
+| Patterns: Rings | 19 / 254 / 127 / 0 / 0 | 0 / 1 / 357 / 1 / 0 |
+| Patterns: Bars | 37 / 222 / 141 / 1 / 0 | 0 / 6 / 349 / 6 / 0 |
+| Patterns: Spinner | 10 / 274 / 117 / 0 / 0 | 0 / 0 / 359 / 0 / 0 |
+| `lvgl-check` (a 33 ms `lvgl.Timer`) | 0 / 166 / 150 / 0 / 7 | 0 / 1 / 327 / 1 / 7 |
+| LVGL motion (`Anim`s) | not measured | 0 / 709 / 3 / 1 / 0 |
+
+LVGL motion's `Anim`s show 59 frames a second, each for one scan. Over 150 s Bars held 4317 frames
+for two scans, 87 for one and 89 for three; `driver-check` over 100 s 2965, 24 for three and 12
+never shown: a frame that takes over 33 ms now and then. Little devil with someone near (stubs for
+its radar and buzzer) draws 12.7 frames a second, each for four scans or more: what's left there is
+LVGL's drawing, as below. Nobody has looked at the glass at 17 MHz yet.
+
+The numbers under "Speed and memory" were measured before this, at 42.3 scans a second, in passes
+of LVGL's timer: LVGL no longer makes a pass that isn't shown.
 
 ## Speed and memory
 
