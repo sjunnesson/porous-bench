@@ -355,6 +355,12 @@ bool begin(int frames) {
 
   initSequence();
   if (!startScan()) return false;
+  // And off until the whole panel has been scanned, eight times over. Lit as the first scan began, the
+  // rows it hadn't reached yet showed what the glass powers up with, a strip of noise 5 mm wide along
+  // the last edge scanned, for a moment at every cold start (2026-11-15); after two scans a faint
+  // shadow of it was left, the liquid crystal still settling. The frames are zeroed, so what's scanned
+  // is black. 250 ms at most, if the scan isn't counted.
+  for (uint32_t from = scans(), t0 = millis(); scans() - from < 8 && millis() - t0 < 250;) delay(1);
   setBacklight(s_backlight);
   return true;
 }
