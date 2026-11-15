@@ -170,6 +170,46 @@ describe('Resident sandbox', () => {
     expect(indexed).toEqual(Array.from({ length: 256 }, (_, k) => ((255 - k) << 8) | (255 - k)));
   });
 
+  it('draws a ring of a picture turned and scaled, from a string or from rows', async () => {
+    // A 6 x 6 picture, a colour a quarter: red, green above; blue, white below.
+    const t = await boot(`local g = lgfx.bind("main")
+      local R, G, B, W = "\\248\\0", "\\7\\224", "\\0\\31", "\\255\\255"
+      local top, bottom = R:rep(3) .. G:rep(3), B:rep(3) .. W:rep(3)
+      local rows = { top, top, top, bottom, bottom, bottom }
+      function init(ctx)
+        g:fillScreen(0x000000)
+        g:pushDisc(8, 8, 1, 2, 6, 6, table.concat(rows), 0)
+        g:pushDisc(28, 8, 1, 2, 6, 6, rows, 90)
+        local a, b = "\\0\\0\\0\\1\\1\\1", "\\1\\1\\1\\2\\2\\2"
+        g:setClipRect(40, 0, 16, 9)
+        g:pushDisc(48, 8, 0, 4, 6, 6, { a, a, a, b, b, b }, 0, 2, "\\248\\0\\7\\224")
+        g:clearClipRect()
+        rows[3] = bottom -- the same table, another picture
+        g:pushDisc(68, 8, 1, 2, 6, 6, rows, 0)
+        g:flip()
+        for _, args in ipairs { { 8, 8, 0, 3, 6, 6, rows, 0 }, { 8, 8, 0, 1, 6, 6, { top }, 0 }, { 8, 8, 0, 1, 6, 6, "abc", 0 }, { 8, 8, 0, 1, 600, 1, "abc", 0 } } do
+          local ok, err = pcall(g.pushDisc, g, table.unpack(args))
+          log.info(tostring(ok) .. " " .. err)
+        end
+        log.info(tostring(pcall(g.pushDisc, g, 88, 8, 0, 3, 6, 6, rows, 0, 2)))
+      end`);
+    expect(t.error).toBeUndefined();
+    await run(t, 50);
+    const px = (x: number, y: number) => t.display.getPixel(x, y);
+    // Unturned: the hole, the four quarters, straight up (the picture's column 3), past the ring.
+    expect([px(8, 8), px(7, 7), px(9, 7), px(7, 9), px(9, 9), px(8, 6), px(6, 6)]).toEqual([0, 0xf800, 0x07e0, 0x001f, 0xffff, 0x07e0, 0]);
+    // A quarter turn clockwise: what was up and left is up and right.
+    expect([px(29, 7), px(29, 9), px(27, 9), px(27, 7)]).toEqual([0xf800, 0x07e0, 0xffff, 0x001f]);
+    // Twice the size through a palette: an index past its end is black, and the clip holds.
+    expect([px(46, 6), px(50, 6), px(45, 8), px(51, 8), px(48, 9)]).toEqual([0xf800, 0x07e0, 0x07e0, 0, 0]);
+    expect([px(67, 7), px(69, 7)]).toEqual([0x001f, 0xffff]);
+    expect(t.logs[0]).toContain("the ring reaches past the picture");
+    expect(t.logs[1]).toContain("expected h rows, each a string of w pixels");
+    expect(t.logs[2]).toContain("expected w * h pixels");
+    expect(t.logs[3]).toContain("expected a picture of 1 to 512 pixels each way");
+    expect(t.logs[4]).toContain("true");
+  });
+
   it('pushes an image through a palette, clipped, and clears the clip for the next app', async () => {
     // Indices into red, green, blue: index 1 is transparent and 3 is past the palette's end.
     const t = await boot(`local g = lgfx.bind("main")

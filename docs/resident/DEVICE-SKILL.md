@@ -90,8 +90,10 @@ enough memory" and the board stays online for the next one.
 Each dispatch (loading the app, `init`, a tick, an event) gets 1000 ms. Past that, a board raises
 `execution deadline exceeded (1000 ms)` and the app carries on. Bench counts the 1000 ms as about 4
 million Lua instructions, what an ESP32-S3 runs (the C6 runs far fewer: see below). Nothing times an
-LVGL callback, a coroutine that never yields back, or a dispatch that catches the deadline error
-with `pcall` and carries on. On a board those hang it, so Bench halts the app.
+LVGL callback, and before Resident 0.14 nothing stopped a coroutine that never yields back or a
+dispatch that catches the deadline error with `pcall` and carries on. Those hang a board, so Bench
+halts the app. Bench's own boards run 0.14, where the deadline reaches coroutines and can't be
+caught, and an app stopped three times in 30 s is paused (`app_throttled`).
 
 As on a board, an error doesn't end the app: one in `init` (or in the top-level code, past the
 callbacks defined above it) is reported and `on_tick` and `on_event` still run. The board takes
@@ -355,14 +357,26 @@ g:drawString("hi", g:width() // 2, g:height() // 2)
 g:flip()                          -- nothing is visible until flip
 ```
 
-Two more on Bench's boards, from Bench's Resident (fork `59cd3cf`; upstream's sheet doesn't have them):
+Three more on Bench's boards, from Bench's Resident (fork `61fcd0f`; upstream's sheet doesn't have them):
 
 ```lua
 g:pushImage(x, y, w, h, rgb565)           -- w*h*2 bytes, big-endian RGB565, row by row
 g:pushImage(x, y, w, h, idx, palette[, t]) -- w*h bytes, each an index into palette (1-256 colours,
                                            -- 2 bytes each, big-endian RGB565); index t isn't drawn
 g:setClipRect(x, y, w, h)  g:clearClipRect() -- nothing drawn outside it until cleared
+g:pushDisc(cx, cy, r0, r1, w, h, data, angle[, zoom[, palette]])
+                                           -- a round piece of a w x h picture (1-512 each way), its middle
+                                           -- on cx, cy: the ring from r0 to r1 px out, turned angle degrees
+                                           -- clockwise and drawn zoom times its size (1 if left out)
 ```
+
+`pushDisc` is for a thing that spins (a record's label, a dial's face): one call draws every pixel of
+the ring from the picture, turned, so the app keeps one picture and never moves a pixel itself.
+`data` is RGB565 as `pushImage`'s, or with a `palette` a byte a pixel, as one string or as a table
+of `h` strings, a row each (a large picture is better made or received a few rows a tick than as one
+150 KB string). The ring must stay inside the picture however it's turned: `r1 / zoom` less than
+half its shorter side, or the call raises. Firmware flashed before 2026-11-13 hasn't got it:
+`if g.pushDisc then`.
 
 An image goes straight into the frame, far faster than drawing it a pixel or a rect at a time: a
 backdrop and sprites over it (palette images with a transparent index), redrawn in a clipped

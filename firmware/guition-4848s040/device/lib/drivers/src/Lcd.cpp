@@ -1,4 +1,5 @@
 #include "Lcd.h"
+#include <math.h>
 
 // How far the picture is turned on the glass, degrees clockwise (platformio.ini).
 #ifndef SCREEN_ROTATION
@@ -248,6 +249,82 @@ void Canvas::pushIndexed(int x, int y, int w, int h, const uint8_t* idx, const u
   prepare(min(fx0, fx1), min(fy0, fy1), max(fx0, fx1), max(fy0, fy1), covers);
   const uint32_t* table = pal;
   put(x, y, w, x0, y0, x1, y1, idx, 1, [table](const uint8_t* p) { return table[*p]; });
+}
+
+// The frame is walked a row at a time, and each row's part of the ring (one run, or two either side
+// of the hole) is read along a slanted line through the picture, in 16.16 steps. Turning the frame
+// only changes which way a step along a frame row goes in the picture. One call for Platter's label,
+// 135 px out, took 12 to 14.5 ms where 192 images through palettes took 28 (2026-11-13).
+void Canvas::pushDisc(int cx, int cy, int r0, int r1, const uint8_t* const* rows, int w, int h, const uint8_t* palette,
+                      int ncolors, int32_t c16, int32_t s16) {
+  static uint16_t pal[256];
+  if (palette) {
+    for (int i = 0; i < 256; i++) pal[i] = i < ncolors ? (uint16_t)(palette[i * 2] << 8 | palette[i * 2 + 1]) : 0;
+  }
+  // The frame pixel of the middle, and the picture's step for a step along a frame row and down one.
+  int fcx, fcy, ax, ay, bx, by;
+  toFrame(cx, cy, fcx, fcy);
+  switch (rot_) {
+    case 90: ax = 0, ay = -1, bx = 1, by = 0; break;
+    case 180: ax = -1, ay = 0, bx = 0, by = -1; break;
+    case 270: ax = 0, ay = 1, bx = -1, by = 0; break;
+    default: ax = 1, ay = 0, bx = 0, by = 1;
+  }
+  // The clip, in the frame.
+  if (clipX1 <= clipX0 || clipY1 <= clipY0) return;
+  int kx0, ky0, kx1, ky1;
+  toFrame(clipX0, clipY0, kx0, ky0);
+  toFrame(clipX1 - 1, clipY1 - 1, kx1, ky1);
+  if (kx1 < kx0) std::swap(kx0, kx1);
+  if (ky1 < ky0) std::swap(ky0, ky1);
+  int fx0 = max(fcx - r1, kx0), fx1 = min(fcx + r1, kx1), fy0 = max(fcy - r1, ky0), fy1 = min(fcy + r1, ky1);
+  if (fx1 < fx0 || fy1 < fy0) return;
+  // Tiles the ring covers whole (and the clip doesn't cut) are written all over: nothing is brought
+  // over for those. Tiles its edges cross come over first, and tiles it misses aren't touched.
+  if (!open_) open();
+  for (int band = fy0 / TILE; band <= fy1 / TILE; band++) {
+    uint32_t cross = 0, whole = 0;
+    int ty0 = band * TILE, ty1 = ty0 + TILE - 1;
+    int near_y = max(max(ty0 - fcy, fcy - ty1), 0), far_y = max(fcy - ty0, ty1 - fcy);
+    for (int col = fx0 / TILE; col <= fx1 / TILE; col++) {
+      int tx0 = col * TILE, tx1 = tx0 + TILE - 1;
+      int near_x = max(max(tx0 - fcx, fcx - tx1), 0), far_x = max(fcx - tx0, tx1 - fcx);
+      int nearest = near_x * near_x + near_y * near_y, farthest = far_x * far_x + far_y * far_y;
+      if (nearest > r1 * r1 || farthest < r0 * r0) continue;
+      bool all = nearest >= r0 * r0 && farthest <= r1 * r1 && tx0 >= fx0 && tx1 <= fx1 && ty0 >= fy0 && ty1 <= fy1;
+      (all ? whole : cross) |= 1u << col;
+    }
+    uint32_t s = stale_[back_][band] & cross;
+    if (s) bring(band, s);
+    stale_[back_][band] &= ~(cross | whole);
+    dirty_[band] |= cross | whole;
+  }
+  // In the picture, a step along a frame row and a step down one: the sum lgfx gives for a picture
+  // pixel (dx, dy) from the middle, u = (w << 15) + dx * c16 + dy * s16 and v = (h << 15) - dx * s16 + dy * c16.
+  int32_t dux = ax * c16 + ay * s16, dvx = -ax * s16 + ay * c16;
+  int32_t duy = bx * c16 + by * s16, dvy = -bx * s16 + by * c16;
+  auto root = [](int v) { int r = (int)sqrtf((float)v); while (r * r > v) r--; while ((r + 1) * (r + 1) <= v) r++; return r; };
+  for (int fy = fy0; fy <= fy1; fy++) {
+    int dy = fy - fcy, out = r1 * r1 - dy * dy;
+    if (out < 0) continue;
+    int half = root(out), in = r0 * r0 - dy * dy, hole = in >= 1 ? root(in - 1) : -1;  // |dx| <= hole: inside r0
+    int runs[2][2] = {{-half, hole >= 0 ? -hole - 1 : half}, {hole + 1, hole >= 0 ? half : -half - 1}};
+    for (auto& run : runs) {
+      int a = max(fcx + run[0], fx0), b = min(fcx + run[1], fx1);
+      if (b < a) continue;
+      int dx = a - fcx;
+      int32_t u = (w << 15) + dy * duy + dx * dux, v = (h << 15) + dy * dvy + dx * dvx;
+      uint16_t* d = buf_ + fy * W + a;
+      if (palette) {
+        for (int n = b - a + 1; n > 0; n--, u += dux, v += dvx) *d++ = pal[rows[v >> 16][u >> 16]];
+      } else {
+        for (int n = b - a + 1; n > 0; n--, u += dux, v += dvx) {
+          const uint8_t* p = rows[v >> 16] + (u >> 16) * 2;
+          *d++ = (uint16_t)(p[0] << 8 | p[1]);
+        }
+      }
+    }
+  }
 }
 
 // What this frame still lacks comes over from the newest, and it is the newest itself: the caller has

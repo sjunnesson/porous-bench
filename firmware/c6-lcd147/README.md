@@ -16,7 +16,7 @@ device-prebuilt-core/     the same firmware on the prebuilt core: quick to build
 ```
 
 The projects pull Resident from GitHub, pinned to the commit they were built and tested against
-(0.12.0, `5ca238c`; stage 3 on Bench's fork at `59cd3cf`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
+(0.14.0, `89ba835`; stage 3 on Bench's fork at `61fcd0f`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```bash
 cd firmware/c6-lcd147/device && pio run -t upload && pio device monitor
@@ -123,7 +123,7 @@ enter your network. The screen then shows the 8-character device ID.
   doesn't have it yet, so with the project's `-O2` there those files kept the core's `-Os` after it.
 - **`on_tick` every 33 ms, not 100** (since 2026-10-23). Resident ticked every app at a fixed 10
   fps; the firmware now sets `SandboxConfig::tickIntervalMs = 33`, a field on Bench's Resident fork
-  (`sjunnesson/resident`, 0.12.0 plus the field) until inanimate-tech/resident takes it. Measured:
+  (`sjunnesson/resident`, branch `bench-v0.14.0`) until inanimate-tech/resident takes it. Measured:
   the flame, whose tick takes ~65 ms, went from 10 to 15.2 fps, a tick every 66 ms rather than
   every 100; an app whose tick is short gets ~30. Apps get the real gap as `dt_ms`, so one that
   moves by it runs at the same speed. Bench's profile for the display ticks at 33 too (`tickMs`).
@@ -134,7 +134,7 @@ enter your network. The screen then shows the 8-character device ID.
   rest at any tick rate: 10-19 of 40 sent at once.
 - **`lgfx` has `pushImage` and a clip rectangle** (since 2026-11-01, as on the Guition 4848S040):
   `pushImage` plain (RGB565) or through a palette with a transparent index, and `setClipRect` /
-  `clearClipRect`, on Bench's Resident fork at `59cd3cf` (branch `lgfx-pushimage`; `device/` and
+  `clearClipRect`, on Bench's Resident fork at `61fcd0f` (branch `bench-v0.14.0`; `device/` and
   `device-prebuilt-core/` both). The canvas writes both kinds of image straight into its buffer,
   marking the tiles they cover, and clips everything drawn into it, `screen` included, until the app
   clears the clip or the next app starts. No new buffer: each palette index is looked up in the

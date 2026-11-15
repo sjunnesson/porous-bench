@@ -43,6 +43,11 @@ g:pushImage(x, y, w, h, data)    -- data: w*h*2 bytes, RGB565 big-endian, row by
 g:pushImage(x, y, w, h, idx, pal[, t])  -- idx: w*h bytes, each a colour of pal (1-256 colours,
                                  -- RGB565 big-endian); index t, or one past pal's end, isn't drawn
 g:setClipRect(x, y, w, h)  g:clearClipRect()  -- drawing (screen too) stays inside until cleared
+g:pushDisc(cx, cy, r0, r1, w, h, data, angle[, zoom[, pal]])  -- a w x h picture (1-512 each way) turned
+                                 -- angle degrees clockwise about its middle, which lands on cx, cy,
+                                 -- and drawn zoom times its size: the ring from r0 to r1 px out, every
+                                 -- pixel. data: RGB565 as pushImage's, or with pal a byte a pixel; one
+                                 -- string or a table of h rows. r1 / zoom must be under half the picture
 g:width()  g:height()            -- 480, 480
 g:flip()                         -- nothing changes on the glass until flip
 ```

@@ -128,6 +128,7 @@ export class ResidentHost {
   private loadedAt: number;
   private lastTick: number;
   private datum = 0;
+  private discs = new Map<number, Uint8Array>(); // pushDisc's pictures, by the prelude's number
   private tickErrors = 0;
   private lastTickErrorReport = -Infinity;
   private taps = 0;
@@ -601,6 +602,32 @@ export class ResidentHost {
           for (let c = 0; c < w; c++, k++) {
             const i = s.charCodeAt(k) - 256;
             if (i !== transparent && i < n) d.drawPixel(x + c, y + r, colours[i]);
+          }
+        }
+      },
+      // A picture for pushDisc, kept under the prelude's number until it drops it: the bytes as pushImage's.
+      lg_discData: (id: number, s: string) => {
+        const bytes = new Uint8Array(s.length);
+        for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i) - 256;
+        this.discs.set(id, bytes);
+      },
+      lg_discDrop: (id: number) => void this.discs.delete(id),
+      // The ring from r0 to r1 pixels out of picture `id`, turned: ResidentLgfxModule.h's sum, pixel by pixel.
+      lg_pushDisc: (cx: number, cy: number, r0: number, r1: number, id: number, w: number, h: number, pal: string, c16: number, s16: number) => {
+        const px = this.discs.get(id);
+        if (!px) return;
+        const n = pal.length >> 1;
+        const colours: number[] = [];
+        for (let i = 0; i < n; i++) colours[i] = ((pal.charCodeAt(2 * i) - 256) << 8) | (pal.charCodeAt(2 * i + 1) - 256);
+        for (let dy = -r1; dy <= r1; dy++) {
+          for (let dx = -r1; dx <= r1; dx++) {
+            const d2 = dx * dx + dy * dy;
+            if (d2 < r0 * r0 || d2 > r1 * r1) continue;
+            const u = ((w << 15) + dx * c16 + dy * s16) >> 16, v = ((h << 15) - dx * s16 + dy * c16) >> 16;
+            let c = 0;
+            if (n === 0) c = (px[(v * w + u) * 2] << 8) | px[(v * w + u) * 2 + 1];
+            else if (px[v * w + u] < n) c = colours[px[v * w + u]];
+            d.drawPixel(cx + dx, cy + dy, c);
           }
         }
       },

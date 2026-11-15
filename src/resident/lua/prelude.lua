@@ -77,6 +77,7 @@ local function wrap(fname, spec, fn, method)
       elseif c == "n" then a[idx] = ck_num(v, k, fname, n - off)
       elseif c == "s" then a[idx] = ck_str(v, k, fname, n - off)
       elseif c == "I" then if v ~= nil then a[idx] = ck_int(v, k, fname, n - off) end
+      elseif c == "N" then if v ~= nil then a[idx] = ck_num(v, k, fname, n - off) end
       elseif c == "S" then if v ~= nil then a[idx] = ck_str(v, k, fname, n - off) end
       elseif c == "t" then
         local x = ck_num(v, k, fname, n - off)
@@ -187,6 +188,68 @@ local function pushImage(x, y, w, h, data)
   H.lg_pushImage(x, y, w, h, across(data))
 end
 
+-- g:pushDisc(cx, cy, r0, r1, w, h, data, angle[, zoom[, palette]]): the ring from r0 to r1 pixels out
+-- of a picture turned about its middle (ResidentLgfxModule.h has the sum, and the host does the same
+-- one). The picture goes across once, not every call: the last few are kept by the host under a
+-- number, and found again here by being the same string, or the same table with the same rows.
+local discs, discSeq = {}, 0 -- each { key, rows, id, w, h, row }: newest first
+local function discId(data, w, h, row)
+  local isTable = type(data) == "table"
+  for i = 1, #discs do
+    local d = discs[i]
+    if d.key == data and d.w == w and d.h == h and d.row == row then
+      local same = true
+      if isTable then
+        for r = 1, h do if d.rows[r] ~= data[r] then same = false break end end
+      end
+      if same then
+        if i > 1 then table.insert(discs, 1, table.remove(discs, i)) end
+        return d.id
+      end
+    end
+  end
+  local rows = isTable and {} or nil
+  if isTable then
+    for r = 1, h do
+      local s = data[r]
+      if type(s) ~= "string" or #s ~= row then
+        error("bad argument #7 to 'pushDisc' (expected h rows, each a string of w pixels)", 4)
+      end
+      rows[r] = s
+    end
+  elseif type(data) ~= "string" then
+    error("bad argument #7 to 'pushDisc' (string expected, got " .. type(data) .. ")", 4)
+  elseif #data ~= row * h then
+    error("bad argument #7 to 'pushDisc' (expected w * h pixels)", 4)
+  end
+  discSeq = discSeq + 1
+  H.lg_discData(discSeq, across(isTable and concat(rows) or data))
+  table.insert(discs, 1, { key = data, rows = rows, id = discSeq, w = w, h = h, row = row })
+  if #discs > 4 then H.lg_discDrop(table.remove(discs).id) end
+  return discSeq
+end
+local function pushDisc(cx, cy, r0, r1, w, h, data, angle, zoom, palette)
+  zoom = zoom or 1
+  if palette and (#palette == 0 or #palette > 512 or #palette % 2 ~= 0) then
+    error("bad argument #10 to 'pushDisc' (expected 1 to 256 colours of RGB565, big-endian)", 3)
+  end
+  if w < 1 or h < 1 or w > 512 or h > 512 then
+    error("bad argument #5 to 'pushDisc' (expected a picture of 1 to 512 pixels each way)", 3)
+  end
+  if not (zoom >= 1 / 16 and zoom <= 16) then
+    error("bad argument #9 to 'pushDisc' (expected a zoom from 1/16 to 16)", 3)
+  end
+  local id = discId(data, w, h, w * (palette and 1 or 2))
+  if r1 < 0 or r0 > r1 then return end
+  local turn = angle * math.pi / 180
+  local c16 = math.floor(math.cos(turn) * 65536 / zoom + 0.5)
+  local s16 = math.floor(math.sin(turn) * 65536 / zoom + 0.5)
+  if math.ceil(r1 * math.sqrt(c16 * c16 + s16 * s16)) >= math.min(w, h) * 32768 then
+    error("bad argument #4 to 'pushDisc' (the ring reaches past the picture)", 3)
+  end
+  H.lg_pushDisc(cx, cy, math.max(r0, 0), r1, id, w, h, palette and across(palette) or "", c16, s16)
+end
+
 -- The display's clip, { x0, y0, x1, y1 } while set: one for every handle bound to it, as the board
 -- keeps one. The prelude sends an indexed block only where it's inside it.
 local clip
@@ -200,6 +263,10 @@ function lgfx.bind(name)
     if palette == nil then pushImage(x, y, w, h, data)
     else pushIndexed(x, y, w, h, data, palette, transparent, clip) end
   end, true)
+  -- A turned picture, where the host has it (the iPhone app hasn't yet: apps see no pushDisc there).
+  if H.lg_pushDisc then
+    g.pushDisc = wrap("pushDisc", "iiiiiianNS", function(...) pushDisc(...) end, true)
+  end
   -- The clip, where the host has one (the iPhone app hasn't yet: apps see no setClipRect there).
   if H.lg_setClipRect then
     g.setClipRect = wrap("setClipRect", "iiii", function(x, y, w, h)

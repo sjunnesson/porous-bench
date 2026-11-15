@@ -80,6 +80,14 @@ public:
   void pushIndexed(int x, int y, int w, int h, const uint8_t* idx, const uint8_t* palette, int ncolors,
                    int transparent);
 
+  // lgfx's pushDisc: the ring from r0 to r1 pixels out of a picture turned about its middle, which
+  // lands on (cx, cy), every pixel of it. rows: the picture's h rows of w pixels, bytes that index
+  // palette (RGB565 big-endian, ncolors of them; past its end is black), or with no palette RGB565
+  // big-endian itself. c16, s16: the turn's cosine and sine over the zoom, times 65536; the caller
+  // has made sure the ring stays inside the picture (ResidentLgfxModule.h has the sum).
+  void pushDisc(int cx, int cy, int r0, int r1, const uint8_t* const* rows, int w, int h, const uint8_t* palette,
+                int ncolors, int32_t c16, int32_t s16);
+
   // Show what has been drawn since the last flip, from the next vertical sync on.
   // Returns the pixels in the tiles drawn (0: nothing was, and nothing happens).
   uint32_t flip();

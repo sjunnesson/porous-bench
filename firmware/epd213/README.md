@@ -13,8 +13,8 @@ device-lvgl/              experiment: stage 3 + LVGL 9 (luavgl) + a heap probe (
 device-s3/                the same drivers + lvgl on an ESP32-S3 with PSRAM (see "Moving to an ESP32-S3")
 ```
 
-Each project pulls Resident from GitHub, pinned by commit, so nothing needs cloning: stage 2 0.12.0
-(`5ca238c`), the projects with drivers Bench's fork at `59cd3cf` (0.12.0 plus `lgfx`'s `pushImage`
+Each project pulls Resident from GitHub, pinned by commit, so nothing needs cloning: stage 2 0.14.0
+(`89ba835`), the projects with drivers Bench's fork at `61fcd0f` (0.14.0 plus `lgfx`'s `pushImage`
 and clip rectangle, the tick interval and the event drain; since 2026-11-01). `device-lvgl/` and
 `device-s3/` share `device/`'s drivers, so they move together.
 

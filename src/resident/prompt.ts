@@ -214,7 +214,7 @@ export function appPrompt(input: PromptInput): string {
     '## Rules',
     `- One Lua file in the Resident sandbox: \`init(ctx)\`, \`on_tick(ctx, dt_ms)\` at ${tickHz(input.device)} on this display (Resident's default is 10 Hz; boards differ, so move things by \`dt_ms\`, never a fixed step a tick), \`on_event(ctx, e)\`.`,
     '- First line: `-- Name: one-sentence description` (Bench shows it in the App menu).',
-    "- Keep each callback well under a second. A board stops init, a tick or an event still running after 1000 ms (`execution deadline exceeded (1000 ms)`). Nothing stops an LVGL callback, a coroutine that never yields, or code that catches that error with pcall and carries on: those hang a board, and Bench halts the app.",
+    "- Keep each callback well under a second. A board stops init, a tick or an event still running after 1000 ms (`execution deadline exceeded (1000 ms)`). Nothing stops an LVGL callback (nor, before Resident 0.14, a coroutine that never yields or code that catches that error with pcall and carries on): those hang a board, and Bench halts the app.",
     `- Bench runs Lua far faster than a board. For an animation to keep ${tickHz(input.device).replace(' Hz', '')} fps on the glass, each tick (with its \`flip()\`) has to finish in under ${input.device.tickMs ?? 100} ms: follow the device skill's *Speed on a real board* section, which says how (an ESP32-C6 has no FPU).`,
     '',
     '## Deliver',

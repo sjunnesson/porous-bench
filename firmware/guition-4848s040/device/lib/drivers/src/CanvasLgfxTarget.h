@@ -81,6 +81,10 @@ public:
                    int32_t ncolors, int32_t transparent) override {
     canvas().pushIndexed(x, y, w, h, idx, palette, ncolors, transparent);
   }
+  void pushDisc(int32_t cx, int32_t cy, int32_t r0, int32_t r1, const uint8_t* const* rows, int32_t w, int32_t h,
+                const uint8_t* palette, int32_t ncolors, int32_t c16, int32_t s16) override {
+    canvas().pushDisc(cx, cy, r0, r1, rows, w, h, palette, ncolors, c16, s16);
+  }
   void setClipRect(int32_t x, int32_t y, int32_t w, int32_t h) override {
     LgfxTarget::setClipRect(x, y, w, h);
     canvas().setClip(x, y, w, h);

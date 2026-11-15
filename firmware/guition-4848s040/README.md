@@ -3,7 +3,7 @@
 Firmware that puts the Guition ESP32-S3-4848S040 (a 4" 480×480 touch panel for an 86 mm wall box,
 with its own ESP32-S3) on Resident's relay, so porous.systems Bench can mirror apps onto it. One
 PlatformIO project per stage of Resident's start-building guide, each buildable on its own; Resident
-is pinned by commit (0.12.0, `5ca238c`; stage 3 on Bench's fork at `244b126`, which adds the tick interval, `SandboxConfig::tickDue` (the tick in step with the panel's scan), the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
+is pinned by commit (0.14.0, `89ba835`; stage 3 on Bench's fork at `61fcd0f`, which adds the tick interval, `SandboxConfig::tickDue` (the tick in step with the panel's scan), the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, the panel's scan rate, a test card, I2C scan, touch crosshair, a flash-write test
@@ -48,8 +48,9 @@ code (2.7 MB, copied there at boot), three 450 KB frames and Lua: about 3.9 MB i
 running. Bench's board entry (`guition-esp32-s3-4848s040`: screen, lgfx, lvgl, 8192 KB) names the
 chip's PSRAM, as for every board with PSRAM; no app comes near what's left.
 
-`lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
-`setClipRect` / `clearClipRect` (Resident's fork, branch `lgfx-pushimage`). The canvas writes both
+`lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index,
+`setClipRect` / `clearClipRect`, and `pushDisc`, a ring of a picture turned and scaled (Resident's
+fork, branch `bench-v0.14.0`). The canvas writes both
 kinds of image straight into its buffer and clips everything drawn into it. Plenum's isometric
 scenes draw each changed 16 px cell as the backdrop and the sprites over it, pushed through the
 palette and clipped to the cell. Measured on the board with a full-screen harbour scene (~115 cells
@@ -205,7 +206,7 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   stays). Flash 2,523,021 → 2,496,157 bytes. LVGL's frames still go out whole, and the panel
   scans at ~42 Hz, so ~66 is a ceiling it won't show; check the `[perf]` line with `lvgl-check.lua`.
 - **`on_tick` every 33 ms, not 100** (since 2026-10-23; on every second scan since 2026-11-10): `SandboxConfig::tickIntervalMs = 33`, a
-  field on Bench's Resident fork (`sjunnesson/resident`, 0.12.0 plus the field) until
+  field on Bench's Resident fork (`sjunnesson/resident`, branch `bench-v0.14.0`) until
   inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
   fps). On this board `lvgl-check`, which moves its box in `on_tick`, pushes 28 frames a second:
   the tick is what holds it. Bench's profile for the display ticks at 33 too (`tickMs`).
@@ -293,6 +294,65 @@ the tick's 30. One LVGL `set` costs 109 us where it cost 278 (a new table each c
 Internal RAM free went from 229 KB at boot to 202, and from ~110 KB with Patterns running to ~75
 (lowest 66). With an LVGL app at 62 KB free, Wi-Fi was dropped three times and the relay's
 connection came back each time.
+
+Resident 0.12 to 0.14 (2026-11-12, this board, `BENCH_PROFILE` builds, offline, apps over serial):
+0.14 serves the Lua heap's small blocks from a slab arena of its own instead of `heap_caps_malloc`
+in PSRAM. `device/device-apps/lua-probe.lua`, ms a loop (three runs, all within 2 ms):
+
+| | 0.12 (`244b126`) | 0.14 (`3996f40`) |
+|---|---|---|
+| 10,000 `{i, i+1, i+2}` | 463 | 95 |
+| 10,000 `{x=i, y=i+1}` | 590 | 116 |
+| 10,000 closures made and called | 460 | 92 |
+| 5,000 `"a"..i` | 326 | 100 |
+| 3,000 `string.format` | 118 | 74 |
+| 20,000 `math.sin` of a large argument | 364 | 134 |
+
+Frame rates didn't move: `driver-check` 30.0 and `lvgl-check` 28.2 / 28.3 pushes a second on both,
+held by the tick, and the probe's scene (225 `pushImage` tiles and 12 palette sprites in a clip) took
+13.1 / 13.0 ms a draw, all of it C. The longest loop pass went from 37 ms to 28 with `driver-check`
+and from 20 to 7 with `lvgl-check`.
+
+Platter (`../bench-apps/platter.lua`) the same way, with a harness appended that plays the feed's
+part: a track playing, then every 45 s another with a cover it hasn't seen (one made by
+`spotify-feed/cover.mjs` from a synthetic picture, 9 parts, 92 colours), its parts a tick apart.
+0.14 refuses Platter's `collectgarbage("incremental", 200, 100, 9)` (no app may retune the collector
+every app shares), and with the `pcall` round it Platter carries on with Lua's own. It still does better:
+
+| Platter, 10 s windows | 0.12 | 0.14 |
+|---|---|---|
+| spinning: pushes a second | 29.4-30.0 | 29.5-30.0 |
+| spinning: loop pass, average | 22.6-25.0 ms | 16.2-19.1 ms |
+| a new cover: ticks over 33 ms | 59 | 52 |
+| a new cover: the longest tick | 83-85 ms | 64 ms |
+| a new cover: the collector's steps | 11, 111 ms, the longest 52 | 2, 58 ms, the longest 34 |
+| the Lua heap | 1403-1460 KB | 1262-1319 KB |
+
+`lgfx`'s `pushDisc` (2026-11-13) draws a ring of a picture turned and scaled: the frame is walked a
+row at a time and each row's run of the ring is read along a slanted line through the picture, so
+the picture's turn in the frame costs it nothing. Platter draws its label with one such call where
+there is one. The same harness, the same day, Resident 0.14, a cover from a photograph:
+
+| Platter, spinning | 192 palette images | `pushDisc`, the cover as a picture | `pushDisc`, the cover as cells |
+|---|---|---|---|
+| the label, a draw | 27.8 ms | 12.3 ms, 14.5 after a second cover | |
+| a tick | 30.5 ms | 15.0-17.4 ms | 15.2-16.0 ms |
+| a new cover: ticks over 33 ms, the longest | 52, 66 ms | 2-5, 49-55 ms | 0-2, 31-45 ms |
+| a new cover is on, after its last part | 2.05-2.3 s | with it (48 parts, not 9) | 1.85 s |
+| the Lua heap, spinning and at its peak | 1.3, 2.2 MB | 0.6, 1.1 MB | 0.4, 0.6 MB |
+
+What limits a label drawn either way is how fast pixels move in and out of PSRAM, about 2.8 us a
+64-byte cache line (fitted to these runs, not measured directly): the 192 images read 138,000
+index bytes and 192 cold palettes a frame to write 58,000 pixels. Two things that didn't help: not
+copying stale tiles before images with holes are drawn on them (the copy was what fetched those
+tiles into the cache; without it the drawing waited for the same fetch, and the tick went from 30.5
+to 31.5 ms), and a larger cache (it is at its largest, 64 KB in 64-byte lines). `pushDisc` skips the
+copy for tiles the ring covers whole, which was worth 6 ms of 18 in a first version: it writes along frame rows,
+where the images write down columns.
+
+Push the probe only after the board's loop is running (past the
+Wi-Fi attempt, ~20 s with no network): the profiler reads anything sent earlier as one-letter
+commands, and `f` with no time gone divides by zero and panics the board.
 
 - **Profile first.** Build with `PLATFORMIO_BUILD_FLAGS=-DBENCH_PROFILE` and `Profiler.h` samples
   where the app's core is, 1000 times a second with two callers; `../prof.py firmware.elf log`
