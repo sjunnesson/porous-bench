@@ -23,6 +23,7 @@
 #include "AppStore.h"
 #include "RootCerts.h"
 #include "TlsInPsram.h"
+#include "WifiScanFix.h"
 #include "BootGuard.h"
 #include "Profiler.h"
 
@@ -166,6 +167,7 @@ void setup() {
 
   appStore.begin();  // Resident doesn't start a store the board supplies
   sandbox.setup();
+  WifiScanFix::begin();  // Wi-Fi is started and nothing has scanned yet: WiFiManager's portal does, as it opens
   printMemory("after Resident");
 }
 

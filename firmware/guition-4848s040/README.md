@@ -447,6 +447,16 @@ Also from that board:
 - Memory, turned, with `driver-check` running: 164 KB of internal RAM free (151 KB in one block),
   7.4 MB of PSRAM.
 - Stage 3 connects to the relay ~6 s after power-on, on a supply that held 5 V (no brownouts).
+- **A scan for Wi-Fi networks crashed the board, every time** (2026-11-15, found by Platter's own
+  firmware listing networks): a jump to 0xbaad5678 from `scan_parse_beacon`, in the Wi-Fi library.
+  WiFiManager's portal scans as it opens, so a board with no network saved couldn't be given one;
+  joining a saved network never scans this way, which is why every board here had worked. The
+  rebuilt core is the cause: `custom_sdkconfig` has pioarduino rebuild the SDK from its ESP-IDF
+  package, older than the Wi-Fi library it links (a binary), and that library calls a 28th function
+  of the supplicant's table (`wpa_parse_wpa_ie_scan_only`) that the rebuilt supplicant doesn't have.
+  `WifiScanFix.h` hands the library a table of 28, and `main.cpp` calls it once Wi-Fi is started.
+  With it: five scans in a row, each with the networks. The S3-Touch-LCD-2 and the C6 rebuild their
+  cores too, on another platform version; neither has been checked for this.
 
 ## Check apps (device/device-apps/)
 
