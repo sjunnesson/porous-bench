@@ -26,8 +26,12 @@
 namespace Lcd {
 
 constexpr int WIDTH = RgbPanel::WIDTH, HEIGHT = RgbPanel::HEIGHT;
-// The panel is scanned 60 times a second and apps tick on every second scan: 30 a second.
-constexpr int TICK_SCANS = 2;
+// The panel is scanned 60 times a second and apps tick on every second scan: 30 a second. A firmware
+// whose app draws a frame in well under a scan can build with -DLCD_TICK_SCANS=1: 60 a second.
+#ifndef LCD_TICK_SCANS
+#define LCD_TICK_SCANS 2
+#endif
+constexpr int TICK_SCANS = LCD_TICK_SCANS;
 
 void service();
 

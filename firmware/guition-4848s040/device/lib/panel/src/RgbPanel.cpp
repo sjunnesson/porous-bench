@@ -29,7 +29,9 @@ static constexpr int PIN_BL = 38;
 // Timing as Arduino_GFX runs this board with the same init sequence (ESPHome
 // uses 8/10/20 and 8/10/10 with its own). Line: 480 + 10 + 8 + 50 clocks;
 // frame: 480 + 10 + 8 + 20 lines; at 12 MHz, 42.3 frames a second.
-#if ESP_IDF_VERSION_MAJOR >= 5
+#ifdef LCD_PCLK_HZ
+static constexpr uint32_t PCLK_HZ = LCD_PCLK_HZ;  // a firmware's own: 283,864 clocks a frame, so 12000000 is 42.3 a second
+#elif ESP_IDF_VERSION_MAJOR >= 5
 static constexpr uint32_t PCLK_HZ = 17030000;  // 60 frames a second, with bounce buffers (stage 3)
 #else
 static constexpr uint32_t PCLK_HZ = 12000000;
