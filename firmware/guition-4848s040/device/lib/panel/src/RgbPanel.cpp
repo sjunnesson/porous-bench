@@ -521,7 +521,9 @@ bool inUse(const uint16_t* frame) { return frame == s_shown || frame == s_scanne
 
 void setBacklight(float v) {
   s_backlight = constrain(v, 0.0f, 1.0f);
-  setBacklightRaw((uint32_t)(s_backlight * ((1 << BL_BITS) - 1) + 0.5f));
+  // Full on is a duty of 2^bits, which every core passes to the LEDC as it is. Up to 4.0.0-RC1 the core
+  // also took 2^bits - 1 for full on; on 4.0.0 that's a step short, and the pin kept switching at 20 kHz.
+  setBacklightRaw((uint32_t)(s_backlight * (1 << BL_BITS) + 0.5f));
 }
 
 float backlight() { return s_backlight; }
