@@ -14,7 +14,7 @@ device-s3/                the same drivers + lvgl on an ESP32-S3 with PSRAM (see
 ```
 
 Each project pulls Resident from GitHub, pinned by commit, so nothing needs cloning: stage 2 0.14.0
-(`89ba835`), the projects with drivers Bench's fork at `61fcd0f` (0.14.0 plus `lgfx`'s `pushImage`
+(`89ba835`), the projects with drivers Bench's fork at `75aa3ab` (0.15.0 plus `lgfx`'s `pushImage`
 and clip rectangle, the tick interval and the event drain; since 2026-11-01). `device-lvgl/` and
 `device-s3/` share `device/`'s drivers, so they move together.
 

@@ -357,7 +357,7 @@ g:drawString("hi", g:width() // 2, g:height() // 2)
 g:flip()                          -- nothing is visible until flip
 ```
 
-Three more on Bench's boards, from Bench's Resident (fork `61fcd0f`; upstream's sheet doesn't have them):
+Three more on Bench's boards, from Bench's Resident (fork `75aa3ab`; upstream's sheet doesn't have them):
 
 ```lua
 g:pushImage(x, y, w, h, rgb565)           -- w*h*2 bytes, big-endian RGB565, row by row

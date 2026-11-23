@@ -3,7 +3,7 @@
 Firmware that puts the Guition ESP32-S3-4848S040 (a 4" 480×480 touch panel for an 86 mm wall box,
 with its own ESP32-S3) on Resident's relay, so porous.systems Bench can mirror apps onto it. One
 PlatformIO project per stage of Resident's start-building guide, each buildable on its own; Resident
-is pinned by commit (0.14.0, `89ba835`; stage 3 on Bench's fork at `61fcd0f`, which adds the tick interval, `SandboxConfig::tickDue` (the tick in step with the panel's scan), the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
+is pinned by commit (0.14.0, `89ba835`; stage 3 on Bench's fork at `75aa3ab`, 0.15.0 plus the tick interval, `SandboxConfig::tickDue` (the tick in step with the panel's scan), the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, the panel's scan rate, a test card, I2C scan, touch crosshair, a flash-write test
@@ -50,7 +50,7 @@ chip's PSRAM, as for every board with PSRAM; no app comes near what's left.
 
 `lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index,
 `setClipRect` / `clearClipRect`, and `pushDisc`, a ring of a picture turned and scaled (Resident's
-fork, branch `bench-v0.14.0`). The canvas writes both
+fork, branch `bench-v0.15.0`). The canvas writes both
 kinds of image straight into its buffer and clips everything drawn into it. Plenum's isometric
 scenes draw each changed 16 px cell as the backdrop and the sprites over it, pushed through the
 palette and clipped to the cell. Measured on the board with a full-screen harbour scene (~115 cells
@@ -211,7 +211,7 @@ boot countdown, a touch anywhere loads the saved app now and a long one forgets 
   stays). Flash 2,523,021 → 2,496,157 bytes. LVGL's frames still go out whole, and the panel
   scans at ~42 Hz, so ~66 is a ceiling it won't show; check the `[perf]` line with `lvgl-check.lua`.
 - **`on_tick` every 33 ms, not 100** (since 2026-10-23; on every second scan since 2026-11-10): `SandboxConfig::tickIntervalMs = 33`, a
-  field on Bench's Resident fork (`sjunnesson/resident`, branch `bench-v0.14.0`) until
+  field on Bench's Resident fork (`sjunnesson/resident`, branch `bench-v0.15.0`) until
   inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
   fps). On this board `lvgl-check`, which moves its box in `on_tick`, pushes 28 frames a second:
   the tick is what holds it. Bench's profile for the display ticks at 33 too (`tickMs`).

@@ -3,7 +3,7 @@
 Firmware that puts the Seeed Studio Round Display for XIAO, driven by a XIAO ESP32S3 plugged into
 its back, on Resident's relay, so porous.systems Bench can mirror apps onto it. One PlatformIO
 project per stage of Resident's start-building guide, each buildable on its own; Resident is pinned
-by commit (0.14.0, `89ba835`; stage 3 on Bench's fork at `61fcd0f`, which adds the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
+by commit (0.14.0, `89ba835`; stage 3 on Bench's fork at `75aa3ab`, 0.15.0 plus the tick interval, the event drain, and `lgfx`'s `pushImage` and clip rectangle), so nothing needs cloning.
 
 ```
 device-no-resident/       stage 1: chip info, a test card, I2C scan, RTC, touch crosshair
@@ -30,7 +30,7 @@ at 0.8 ms a push, a full-frame push 18.9 ms (~17.5), static RAM 65,624 → 71,11
 2.48 → 2.71 MB; touch, B taps and holds and the backlight checked with `driver-check.lua`.
 
 `lgfx` also has `pushImage`, plain (RGB565) or through a palette with a transparent index, and
-`setClipRect` / `clearClipRect` (Resident's fork at `61fcd0f`, branch `bench-v0.14.0`; since
+`setClipRect` / `clearClipRect` (Resident's fork at `75aa3ab`, branch `bench-v0.15.0`; since
 2026-11-01, as on the Guition 4848S040). The canvas writes both kinds of image straight into its
 buffer, marking the tiles they cover, and clips everything drawn into it, `screen` included, until
 the app clears the clip or the next app starts. The palette is made native once and kept until it
@@ -87,7 +87,7 @@ Brought up and tested on hardware 2026-10-12: device type `xiao-round`, firmware
   stays). Flash 2,501,589 → 2,474,741 bytes. Measured on the S3-Touch-LCD-2, which shares this
   `lv_conf.h` (small redraws 28.6 → 65.6 fps); not yet on this board: an LVGL app's `[perf]` line.
 - **`on_tick` every 33 ms, not 100** (since 2026-10-23): `SandboxConfig::tickIntervalMs = 33`, a
-  field on Bench's Resident fork (`sjunnesson/resident`, branch `bench-v0.14.0`) until
+  field on Bench's Resident fork (`sjunnesson/resident`, branch `bench-v0.15.0`) until
   inanimate-tech/resident takes it. Measured on the C6-LCD-1.47 (a 65 ms flame went from 10 to 15
   fps); not yet on this board. Bench's profile for the display ticks at 33 too (`tickMs`).
 - **Backlight:** D6 (GPIO43) through a transistor, PWM at 10 kHz, 10-bit, with the KE switch's 2 on;
